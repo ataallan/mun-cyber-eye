@@ -1,0 +1,9 @@
+flask>=3.0.0
+python-dotenv>=1.0.0
+opencv-python-headless>=4.8.0
+numpy>=1.24.0
+Pillow>=10.0.0
+pytest>=7.4.0
+werkzeug>=3.0.0
+# Optional: ultralytics YOLO (falls back to MOCK if not installed)
+# ultralytics>=8.0.0

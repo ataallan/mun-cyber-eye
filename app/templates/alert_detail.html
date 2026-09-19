@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Alert review · {{ product_name }}{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('main.dashboard') }}">&larr; Back to console</a></p>
+
+<article class="card alert-detail">
+  <header class="detail-head">
+    <div>
+      <h1>Alert review</h1>
+      <p class="mono muted">{{ alert.id }}</p>
+    </div>
+    <div class="badges">
+      <span class="badge risk-{{ alert.risk_level }}">{{ alert.risk_level }}</span>
+      <span class="badge status-{{ alert.status }}">{{ alert.status }}</span>
+    </div>
+  </header>
+
+  <div class="detail-grid">
+    <div>
+      <dl class="kv">
+        <dt>Category</dt><dd>{{ alert.category }}</dd>
+        <dt>Confidence</dt><dd>{{ '%.1f'|format(alert.confidence * 100) }}%</dd>
+        <dt>Source</dt><dd>{{ alert.source_label }}</dd>
+        <dt>Frame</dt><dd>#{{ alert.frame_index }} @ {{ '%.2f'|format(alert.timestamp_sec) }}s</dd>
+        <dt>Created</dt><dd class="mono">{{ alert.created_at }}</dd>
+      </dl>
+      <h2>Rationale</h2>
+      <p>{{ alert.rationale }}</p>
+      <p class="fineprint">This is an AI-assisted alert, not a legal determination. A trained human must verify before any consequential response.</p>
+    </div>
+    <div class="snapshot-panel">
+      {% if alert.snapshot_path %}
+        {% set fname = alert.snapshot_path.split('/')[-1] %}
+        <img src="{{ url_for('main.snapshot_file', filename=fname) }}" alt="Alert snapshot from authorized source">
+      {% else %}
+        <div class="empty-snap">No snapshot available</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <section class="actions">
+    <h2>Human decision</h2>
+    <form method="post" action="{{ url_for('main.alert_action', alert_id=alert.id) }}" class="form inline-form">
+      <label>Note (optional)
+        <input type="text" name="note" placeholder="Verification notes…">
+      </label>
+      <div class="btn-row">
+        <button class="btn btn-primary" name="action" value="acknowledge" type="submit">Acknowledge</button>
+        <button class="btn btn-warn" name="action" value="escalate" type="submit">Escalate</button>
+        <button class="btn btn-ghost" name="action" value="dismiss" type="submit">Dismiss</button>
+        <button class="btn btn-ghost" name="action" value="reopen" type="submit">Reopen</button>
+      </div>
+    </form>
+  </section>
+
+  <section>
+    <h2>Audit log</h2>
+    <table class="table">
+      <thead><tr><th>Time</th><th>Action</th><th>Actor</th><th>Note</th></tr></thead>
+      <tbody>
+      {% for e in audit %}
+        <tr>
+          <td class="mono">{{ e.created_at }}</td>
+          <td>{{ e.action }}</td>
+          <td>{{ e.actor }}</td>
+          <td>{{ e.note or '—' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</article>
+{% endblock %}

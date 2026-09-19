@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Run pipeline · {{ product_name }}{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Run detection pipeline</h1>
+  <p class="muted">Process an authorized video file or generate synthetic demo alerts. Webcam capture is stubbed and disabled by default.</p>
+
+  <form method="post" enctype="multipart/form-data" class="form">
+    <fieldset>
+      <legend>Mode</legend>
+      <label class="radio">
+        <input type="radio" name="mode" value="synthetic" checked>
+        Synthetic demo (MOCK detections — no video file needed)
+      </label>
+      <label class="radio">
+        <input type="radio" name="mode" value="upload">
+        Authorized video file upload
+      </label>
+    </fieldset>
+    <label>Video file (optional)
+      <input type="file" name="video" accept="video/*,.mp4,.avi,.mov,.mkv">
+    </label>
+    <button class="btn btn-primary" type="submit">Run</button>
+  </form>
+
+  {% if result %}
+  <div class="result-box">
+    <h2>Last run</h2>
+    <ul>
+      <li>Frames processed: {{ result.frames }}</li>
+      <li>Alerts created: {{ result.alerts }}</li>
+      <li>Vision backend: <code>{{ result.backend }}</code></li>
+      <li>Source: {{ result.source }}</li>
+    </ul>
+    <a class="btn btn-primary" href="{{ url_for('main.dashboard') }}">View alerts</a>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

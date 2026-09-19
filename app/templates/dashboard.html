@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Alert console · {{ product_name }}{% endblock %}
+{% block content %}
+<section class="hero">
+  <h1>Alert console</h1>
+  <p class="muted">Structured alerts from authorized sources. Review, acknowledge, dismiss, or escalate — the system does not act on its own.</p>
+</section>
+
+<section class="stats">
+  <div class="stat"><span class="stat-n">{{ stats.total }}</span><span class="stat-l">Total</span></div>
+  <div class="stat open"><span class="stat-n">{{ stats.open }}</span><span class="stat-l">Open</span></div>
+  <div class="stat"><span class="stat-n">{{ stats.acknowledged }}</span><span class="stat-l">Acknowledged</span></div>
+  <div class="stat"><span class="stat-n">{{ stats.escalated }}</span><span class="stat-l">Escalated</span></div>
+  <div class="stat"><span class="stat-n">{{ stats.dismissed }}</span><span class="stat-l">Dismissed</span></div>
+</section>
+
+<div class="toolbar">
+  <div class="filters">
+    <a class="chip {% if filter_status == 'all' %}active{% endif %}" href="{{ url_for('main.dashboard') }}">All</a>
+    <a class="chip {% if filter_status == 'open' %}active{% endif %}" href="{{ url_for('main.dashboard', status='open') }}">Open</a>
+    <a class="chip {% if filter_status == 'acknowledged' %}active{% endif %}" href="{{ url_for('main.dashboard', status='acknowledged') }}">Acknowledged</a>
+    <a class="chip {% if filter_status == 'escalated' %}active{% endif %}" href="{{ url_for('main.dashboard', status='escalated') }}">Escalated</a>
+    <a class="chip {% if filter_status == 'dismissed' %}active{% endif %}" href="{{ url_for('main.dashboard', status='dismissed') }}">Dismissed</a>
+  </div>
+  <a class="btn btn-primary" href="{{ url_for('main.run_pipeline') }}">Run pipeline</a>
+</div>
+
+{% if not alerts %}
+<div class="card empty">
+  <p>No alerts yet. Run the synthetic demo pipeline to generate sample alerts for human review.</p>
+  <a class="btn btn-primary" href="{{ url_for('main.run_pipeline') }}">Generate demo alerts</a>
+</div>
+{% else %}
+<table class="table">
+  <thead>
+    <tr>
+      <th>Time (UTC)</th>
+      <th>Risk</th>
+      <th>Category</th>
+      <th>Confidence</th>
+      <th>Source</th>
+      <th>Status</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for a in alerts %}
+    <tr>
+      <td class="mono">{{ a.created_at }}</td>
+      <td><span class="badge risk-{{ a.risk_level }}">{{ a.risk_level }}</span></td>
+      <td>{{ a.category }}</td>
+      <td>{{ '%.0f'|format(a.confidence * 100) }}%</td>
+      <td>{{ a.source_label }}</td>
+      <td><span class="badge status-{{ a.status }}">{{ a.status }}</span></td>
+      <td><a href="{{ url_for('main.alert_detail', alert_id=a.id) }}">Review</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}
