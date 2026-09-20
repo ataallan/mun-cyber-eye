@@ -21,6 +21,7 @@ def test_activity_pipeline_creates_alerts(tmp_path):
     store = AlertStore(tmp_path / "alerts.db")
     result = demo_activity_run(store, checkpoint=ckpt, per_class=2)
     assert result.backend == "activity"
+    assert result.source_label == "Authorized Camera — Activity Demo"
     assert result.frames_processed == 8  # 4 classes × 2
     assert len(result.alerts_created) >= 1
     categories = {a.category for a in result.alerts_created}

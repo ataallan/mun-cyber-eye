@@ -208,4 +208,6 @@ def demo_activity_run(
                 )
             )
             idx += 1
-    return pipeline.run_frames(synthetic)
+    return pipeline.run_frames(
+        synthetic, source_label="Authorized Camera — Activity Demo"
+    )
