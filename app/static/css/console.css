@@ -224,5 +224,15 @@ fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 0.85rem
 }
 .actions { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); }
 .result-box { margin-top: 1.25rem; padding: 1rem; border-radius: 10px; background: var(--bg); border: 1px solid var(--border); }
+.result-quiet { border-color: #2f6b4e; }
+.quiet-run {
+  margin: 0.85rem 0 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: 8px;
+  background: #143528;
+  border: 1px solid #2f6b4e;
+}
+.quiet-run p { margin: 0 0 0.55rem; }
+.quiet-run a { margin-top: 0.25rem; }
 .empty { text-align: center; padding: 2rem; }
 code { background: #0a101c; padding: 0.1rem 0.35rem; border-radius: 4px; }

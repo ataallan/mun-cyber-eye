@@ -69,7 +69,7 @@ Alerts created from a registry camera carry that camera’s `camera_id` and `loc
 | Path | Who | Purpose |
 |------|-----|---------|
 | `/cameras` | admin / operator | List, add, edit, enable / disable |
-| `/run` | signed-in reviewer | MOCK, activity demo, one camera, all enabled, or upload |
+| `/run` | signed-in reviewer | MOCK, activity demo, one camera, all enabled, or upload. Attaching a video file auto-selects **Authorized video file upload** (server-side if a filename is present, so Synthetic MOCK cannot run silently). Zero-alert runs still report frames processed. |
 | `/` | signed-in reviewer | Alert console + camera health |
 
 ## Safety
@@ -83,7 +83,7 @@ Alerts created from a registry camera carry that camera’s `camera_id` and `loc
 
 1. Sign in as `admin` or `operator`.
 2. Open **Cameras**. Confirm the seeded Demo Lab File camera (or **Add camera** → type `file`, URI `MOCK` or an authorized path).
-3. **Run Pipeline** → Registered camera → that camera (or “All enabled”).
+3. **Run Pipeline** → Registered camera → that camera (or “All enabled”). For an authorized clip, select **Authorized video file upload** or attach the file (upload is auto-selected so Synthetic MOCK cannot run silently).
 4. Open an alert: `camera_id` and `location_label` match the registry row.
 5. To try RTSP: set `RTSP_DEMO_URI` in `.env`, enable the stub camera. A bad or empty URI marks `last_error` and creates no alerts.
 

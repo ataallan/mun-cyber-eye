@@ -65,6 +65,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         AUTH_DB_PATH=os.getenv("AUTH_DB_PATH", str(root / "data" / "auth.db")),
         CAMERA_DB_PATH=os.getenv("CAMERA_DB_PATH", str(root / "data" / "cameras.db")),
         SNAPSHOT_DIR=os.getenv("SNAPSHOT_DIR", str(root / "data" / "snapshots")),
+        UPLOAD_DIR=os.getenv("UPLOAD_DIR", str(root / "data" / "uploads")),
         ALLOW_WEBCAM=_env_flag("ALLOW_WEBCAM", "0"),
         RTSP_CONNECT_TIMEOUT_SEC=float(os.getenv("RTSP_CONNECT_TIMEOUT_SEC", "8")),
         VISION_BACKEND=os.getenv("VISION_BACKEND", "auto"),
@@ -99,6 +100,10 @@ def create_app(test_config: dict | None = None) -> Flask:
             app.config["CAMERA_DB_PATH"] = str(
                 Path(app.config["ALERT_DB_PATH"]).with_name("cameras.db")
             )
+        if "UPLOAD_DIR" not in test_config and test_config.get("SNAPSHOT_DIR"):
+            app.config["UPLOAD_DIR"] = str(
+                Path(app.config["SNAPSHOT_DIR"]).parent / "uploads"
+            )
 
     def _abs(path_value: str) -> str:
         path = Path(path_value)
@@ -110,6 +115,9 @@ def create_app(test_config: dict | None = None) -> Flask:
         app.config.get("CAMERA_DB_PATH") or str(root / "data" / "cameras.db")
     )
     app.config["SNAPSHOT_DIR"] = _abs(app.config["SNAPSHOT_DIR"])
+    app.config["UPLOAD_DIR"] = _abs(
+        app.config.get("UPLOAD_DIR") or str(Path(app.config["SNAPSHOT_DIR"]).parent / "uploads")
+    )
     app.config["ACTIVITY_CHECKPOINT"] = _abs(app.config["ACTIVITY_CHECKPOINT"])
     app.config["ALLOW_WEBCAM"] = bool(app.config.get("ALLOW_WEBCAM", False))
     try:
@@ -123,6 +131,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     Path(app.config["AUTH_DB_PATH"]).parent.mkdir(parents=True, exist_ok=True)
     Path(app.config["CAMERA_DB_PATH"]).parent.mkdir(parents=True, exist_ok=True)
     Path(app.config["SNAPSHOT_DIR"]).mkdir(parents=True, exist_ok=True)
+    Path(app.config["UPLOAD_DIR"]).mkdir(parents=True, exist_ok=True)
 
     store = AlertStore(app.config["ALERT_DB_PATH"])
     notify_config = NotifyConfig(

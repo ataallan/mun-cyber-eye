@@ -74,6 +74,7 @@ Phase 3 training and metrics are documented in [PHASE3.md](PHASE3.md).
 - `data/auth.db` — console login accounts (admin / operator)  
 - `data/cameras.db` — authorized camera registry + last_seen / last_error  
 - `data/snapshots/` — JPEG frames attached to alerts  
+- `data/uploads/` — operator-supplied authorized video files (gitignored)  
 - `data/activity/` — labeled activity frames (`train` / `val` / `test`)  
 - `data/checkpoints/activity_demo.joblib` — default activity model  
 - Paths configurable via `.env`
