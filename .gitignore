@@ -11,6 +11,7 @@ venv/
 .env.local
 data/alerts.db
 data/auth.db
+data/cameras.db
 data/snapshots/
 data/uploads/
 data/activity/train/

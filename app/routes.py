@@ -22,6 +22,7 @@ from werkzeug.utils import secure_filename
 
 from alerts.notify import parse_env_recipients, send_resend_email
 from alerts.schema import structured_payload
+from ingest.cameras import camera_from_form, mask_uri
 
 from .auth import (
     guest_only,
@@ -63,6 +64,10 @@ def _notifier():
 
 def _users():
     return current_app.extensions["user_store"]
+
+
+def _cameras():
+    return current_app.extensions["camera_store"]
 
 
 def _reset_url(token: str) -> str:
@@ -255,6 +260,7 @@ def dashboard():
         alerts=alerts,
         stats=stats,
         delivery_stats=store.delivery_stats(),
+        cameras=_cameras().list_cameras(),
         filter_status=status or "all",
         vision_backend=current_app.config["VISION_BACKEND"],
     )
@@ -373,11 +379,138 @@ def recipient_active(recipient_id: int):
     return redirect(url_for("main.recipients"))
 
 
+def _pipeline_result_summary(results) -> dict:
+    rows = results if isinstance(results, list) else [results]
+    frames = sum(r.frames_processed for r in rows)
+    alerts = sum(len(r.alerts_created) for r in rows)
+    backends = sorted({r.backend for r in rows if r.backend})
+    errors = [r for r in rows if getattr(r, "error", None)]
+    return {
+        "frames": frames,
+        "alerts": alerts,
+        "backend": ", ".join(backends) if backends else "",
+        "source": rows[0].source_label if len(rows) == 1 else f"{len(rows)} camera(s)",
+        "cameras": [
+            {
+                "id": r.camera_id,
+                "source": r.source_label,
+                "location": r.location_label,
+                "frames": r.frames_processed,
+                "alerts": len(r.alerts_created),
+                "error": r.error,
+            }
+            for r in rows
+        ],
+        "failures": len(errors),
+    }
+
+
+def _run_registered_selection(camera_id: str, store, notifier, snapshot_dir: str):
+    from pipeline import CyberEyePipeline, run_registered_cameras
+    from vision.detector import create_adapter
+
+    cameras_store = _cameras()
+    if camera_id == "all":
+        selected = cameras_store.list_cameras(enabled_only=True)
+        if not selected:
+            raise ValueError("No enabled cameras in the registry.")
+    else:
+        camera = cameras_store.get(camera_id)
+        if camera is None:
+            raise ValueError("Camera not found.")
+        selected = [camera]
+
+    adapter = create_adapter(current_app.config["VISION_BACKEND"])
+    pipe = CyberEyePipeline(
+        store=store,
+        adapter=adapter,
+        snapshot_dir=snapshot_dir,
+        notifier=notifier,
+    )
+    return run_registered_cameras(
+        pipe,
+        selected,
+        cameras_store,
+        max_frames=current_app.config["MAX_FRAMES_PER_RUN"],
+        project_root=current_app.config["PROJECT_ROOT"],
+        allow_webcam=bool(current_app.config.get("ALLOW_WEBCAM")),
+        timeout_sec=float(current_app.config.get("RTSP_CONNECT_TIMEOUT_SEC") or 8),
+    )
+
+
+@bp.route("/cameras")
+@operator_required
+def cameras():
+    return render_template(
+        "cameras.html",
+        cameras=_cameras().list_cameras(),
+        allow_webcam=bool(current_app.config.get("ALLOW_WEBCAM")),
+    )
+
+
+@bp.route("/cameras/new", methods=["GET", "POST"])
+@operator_required
+def camera_new():
+    if request.method == "POST":
+        try:
+            payload = camera_from_form(request.form)
+            camera = _cameras().create(**payload)
+            flash(f"Authorized camera “{camera.name}” registered.", "ok")
+            return redirect(url_for("main.cameras"))
+        except (ValueError, TypeError) as exc:
+            flash(str(exc), "error")
+    return render_template(
+        "camera_form.html",
+        camera=None,
+        masked_uri="",
+        allow_webcam=bool(current_app.config.get("ALLOW_WEBCAM")),
+    )
+
+
+@bp.route("/cameras/<camera_id>/edit", methods=["GET", "POST"])
+@operator_required
+def camera_edit(camera_id: str):
+    store = _cameras()
+    camera = store.get(camera_id)
+    if camera is None:
+        flash("Camera not found.", "error")
+        return redirect(url_for("main.cameras"))
+    if request.method == "POST":
+        try:
+            payload = camera_from_form(request.form, existing=camera)
+            store.update(camera_id, **payload)
+            flash(f"Camera “{camera.name}” updated.", "ok")
+            return redirect(url_for("main.cameras"))
+        except (ValueError, TypeError, KeyError) as exc:
+            flash(str(exc), "error")
+            camera = store.get(camera_id) or camera
+    return render_template(
+        "camera_form.html",
+        camera=camera,
+        masked_uri=mask_uri(camera.uri),
+        allow_webcam=bool(current_app.config.get("ALLOW_WEBCAM")),
+    )
+
+
+@bp.route("/cameras/<camera_id>/enabled", methods=["POST"])
+@operator_required
+def camera_enabled(camera_id: str):
+    enabled = request.form.get("enabled", "0") == "1"
+    try:
+        camera = _cameras().set_enabled(camera_id, enabled)
+        state = "enabled" if camera.enabled else "disabled"
+        flash(f"Camera “{camera.name}” {state}.", "ok")
+    except KeyError as exc:
+        flash(str(exc), "error")
+    return redirect(url_for("main.cameras"))
+
+
 @bp.route("/run", methods=["GET", "POST"])
 @login_required
 def run_pipeline():
-    """Operator-triggered pipeline run on uploaded or synthetic authorized video."""
+    """Operator-triggered pipeline run on a registry camera, upload, or MOCK."""
     result_summary = None
+    cameras = _cameras().list_cameras()
     if request.method == "POST":
         mode = request.form.get("mode", "synthetic")
         store = _store()
@@ -404,6 +537,7 @@ def run_pipeline():
                     notifier=notifier,
                     snapshot_dir=snapshot_dir,
                 )
+                result_summary = _pipeline_result_summary(result)
             elif mode == "activity":
                 result = demo_activity_run(
                     store,
@@ -411,6 +545,16 @@ def run_pipeline():
                     notifier=notifier,
                     snapshot_dir=snapshot_dir,
                 )
+                result_summary = _pipeline_result_summary(result)
+            elif mode == "camera":
+                camera_id = (request.form.get("camera_id") or "").strip()
+                if not camera_id:
+                    flash("Select a registered camera, or all enabled cameras.", "error")
+                    return redirect(url_for("main.run_pipeline"))
+                results = _run_registered_selection(
+                    camera_id, store, notifier, snapshot_dir
+                )
+                result_summary = _pipeline_result_summary(results)
             else:
                 upload = request.files.get("video")
                 if not upload or not upload.filename:
@@ -436,22 +580,31 @@ def run_pipeline():
                     max_frames=current_app.config["MAX_FRAMES_PER_RUN"],
                     source_label=current_app.config["DEFAULT_CAMERA_LABEL"],
                 )
+                result_summary = _pipeline_result_summary(result)
 
-            result_summary = {
-                "frames": result.frames_processed,
-                "alerts": len(result.alerts_created),
-                "backend": result.backend,
-                "source": result.source_label,
-            }
-            flash(
-                f"Processed {result.frames_processed} frames via {result.backend}; "
-                f"{len(result.alerts_created)} alert(s) queued for human review.",
-                "ok",
-            )
+            if result_summary.get("failures"):
+                flash(
+                    f"Processed {result_summary['frames']} frames; "
+                    f"{result_summary['alerts']} alert(s) queued for human review. "
+                    f"{result_summary['failures']} camera(s) reported an honest error "
+                    "(offline or missing credentials) — no fake detections.",
+                    "warn",
+                )
+            else:
+                flash(
+                    f"Processed {result_summary['frames']} frames via {result_summary['backend']}; "
+                    f"{result_summary['alerts']} alert(s) queued for human review.",
+                    "ok",
+                )
         except Exception as exc:
             flash(f"Pipeline error: {exc}", "error")
 
-    return render_template("run.html", result=result_summary)
+    return render_template(
+        "run.html",
+        result=result_summary,
+        cameras=cameras,
+        enabled_cameras=[c for c in cameras if c.enabled],
+    )
 
 
 @bp.route("/snapshots/<path:filename>")
@@ -469,13 +622,18 @@ def health():
     return {
         "status": "ok",
         "product": "Mun Cyber Eye",
-        "phase": 4,
+        "phase": 5,
         "vision_backend": current_app.config.get("VISION_BACKEND"),
         "activity_checkpoint_ready": ckpt.is_file(),
+        "allow_webcam": bool(current_app.config.get("ALLOW_WEBCAM")),
         "notify": {
             "resend_configured": notify.resend_configured,
             "webhook_configured": notify.webhook_configured,
             "recipient_count": len(_notifier().recipient_emails()),
             "db_operators": len(store.list_recipients(active_only=True)),
+        },
+        "cameras": {
+            "total": _cameras().count(),
+            "enabled": len(_cameras().list_cameras(enabled_only=True)),
         },
     }

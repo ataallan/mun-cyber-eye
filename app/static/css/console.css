@@ -127,7 +127,9 @@ body {
 .form input[type="text"],
 .form input[type="password"],
 .form input[type="email"],
+.form input[type="number"],
 .form input[type="file"],
+.form textarea,
 .form select {
   background: var(--bg);
   border: 1px solid var(--border);
@@ -187,6 +189,11 @@ fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 0.85rem
 .delivery-partial { background: #3d3118; color: #ffd27a; }
 .delivery-failed { background: #3d1820; color: #ff9aa6; }
 .delivery-undelivered, .delivery-skipped { background: #2a3140; color: #aab4c8; }
+.health-ok { background: #1f3d32; color: #8dffc8; }
+.health-error { background: #3d1820; color: #ff9aa6; }
+.health-unknown { background: #2a3140; color: #aab4c8; }
+.camera-health { margin-bottom: 1.25rem; }
+.camera-health h2 { margin: 0 0 0.35rem; font-size: 1.1rem; }
 .payload {
   background: #0a101c;
   border: 1px solid var(--border);

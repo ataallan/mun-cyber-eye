@@ -94,9 +94,9 @@ class FrameSampler:
 class WebcamStub:
     """Optional webcam stub for local demos.
 
-    Disabled by default. Operators must explicitly enable webcam capture.
-    Frames are treated as authorized local lab sources only — never as
-    production surveillance without proper authorization.
+    Disabled by default. Operators must set ALLOW_WEBCAM=1 *and* pass
+    enabled=True. Frames are treated as authorized local lab sources only.
+    Prefer ingest.webcam.WebcamSampler for registry-backed runs.
     """
 
     def __init__(
@@ -114,11 +114,10 @@ class WebcamStub:
         self.enabled = enabled
 
     def frames(self) -> Generator[SampledFrame, None, None]:
-        if not self.enabled:
-            raise RuntimeError(
-                "WebcamStub is disabled. Pass enabled=True only for authorized "
-                "local lab demos. Production cameras require proper authorization."
-            )
+        from ingest.webcam import WEBCAM_REFUSED_MESSAGE, allow_webcam
+
+        if not self.enabled or not allow_webcam():
+            raise RuntimeError(WEBCAM_REFUSED_MESSAGE)
 
         cap = cv2.VideoCapture(self.device_index)
         if not cap.isOpened():

@@ -17,7 +17,10 @@ import cv2
 from alerts.notify import NotificationService
 from alerts.schema import recommended_human_action, short_rationale
 from alerts.store import Alert, AlertStore
+from ingest.cameras import Camera, CameraStore
+from ingest.errors import IngestError
 from ingest.sampler import FrameSampler, SampledFrame
+from ingest.source import iter_camera_frames
 from risk.engine import RiskEngine
 from vision.detector import Detection, VisionAdapter, create_adapter
 
@@ -30,6 +33,9 @@ class PipelineResult:
     alerts_created: List[Alert]
     backend: str
     source_label: str
+    camera_id: str = ""
+    location_label: str = ""
+    error: Optional[str] = None
 
 
 class CyberEyePipeline:
@@ -76,10 +82,51 @@ class CyberEyePipeline:
         self,
         frames: List[SampledFrame],
         source_label: str = "Authorized Camera — Demo Lab",
+        camera_id: Optional[str] = None,
+        location_label: Optional[str] = None,
     ) -> PipelineResult:
-        return self._process(iter(frames), source_label=source_label)
+        return self._process(
+            iter(frames),
+            source_label=source_label,
+            camera_id=camera_id,
+            location_label=location_label,
+        )
 
-    def _process(self, frame_iter, source_label: str) -> PipelineResult:
+    def run_camera(
+        self,
+        camera: Camera,
+        *,
+        max_frames: Optional[int] = None,
+        project_root: str | Path | None = None,
+        allow_webcam: Optional[bool] = None,
+        timeout_sec: Optional[float] = None,
+        rtsp_opener=None,
+        webcam_opener=None,
+    ) -> PipelineResult:
+        """Run the pipeline on one registered authorized camera."""
+        frames = iter_camera_frames(
+            camera,
+            max_frames=max_frames,
+            project_root=project_root,
+            allow_webcam=allow_webcam,
+            timeout_sec=timeout_sec,
+            rtsp_opener=rtsp_opener,
+            webcam_opener=webcam_opener,
+        )
+        return self._process(
+            frames,
+            source_label=camera.source_label(),
+            camera_id=camera.id,
+            location_label=camera.location_label,
+        )
+
+    def _process(
+        self,
+        frame_iter,
+        source_label: str,
+        camera_id: Optional[str] = None,
+        location_label: Optional[str] = None,
+    ) -> PipelineResult:
         alerts: List[Alert] = []
         count = 0
         run_correlation = self.correlation_id or str(uuid.uuid4())
@@ -91,7 +138,13 @@ class CyberEyePipeline:
             if not risk.should_alert:
                 continue
 
-            snap_path = self._save_snapshot(frame, risk.category.value)
+            stamp_camera = camera_id if camera_id is not None else self.camera_id
+            stamp_location = (
+                location_label if location_label is not None else self.location_label
+            )
+            snap_path = self._save_snapshot(
+                frame, risk.category.value, camera_id=stamp_camera or ""
+            )
             det_payload = [
                 {
                     "label": d.label,
@@ -104,6 +157,10 @@ class CyberEyePipeline:
                 "vision_backend": self.adapter.name,
                 "contributing_labels": risk.contributing_labels,
             }
+            if stamp_camera:
+                metadata["camera_id"] = stamp_camera
+            if stamp_location:
+                metadata["location_label"] = stamp_location
             ckpt = getattr(self.adapter, "checkpoint_path", None)
             if ckpt is not None:
                 metadata["activity_checkpoint"] = str(ckpt)
@@ -129,8 +186,10 @@ class CyberEyePipeline:
                 snapshot_path=str(snap_path) if snap_path else None,
                 detections=det_payload,
                 metadata=metadata,
-                location_label=self.location_label,
-                camera_id=self.camera_id,
+                location_label=location_label
+                if location_label is not None
+                else self.location_label,
+                camera_id=camera_id if camera_id is not None else self.camera_id,
                 short_rationale_text=short_rationale(risk.rationale),
                 recommended_action=recommended_human_action(risk.category.value),
                 correlation_id=run_correlation,
@@ -152,11 +211,25 @@ class CyberEyePipeline:
             alerts_created=alerts,
             backend=self.adapter.name,
             source_label=source_label,
+            camera_id=(camera_id if camera_id is not None else self.camera_id) or "",
+            location_label=(
+                location_label if location_label is not None else self.location_label
+            )
+            or "",
         )
 
-    def _save_snapshot(self, frame: SampledFrame, category: str) -> Optional[Path]:
+    def _save_snapshot(
+        self,
+        frame: SampledFrame,
+        category: str,
+        camera_id: str = "",
+    ) -> Optional[Path]:
         try:
-            name = f"frame_{frame.index:05d}_{category}.jpg"
+            cam = "".join(
+                ch if ch.isalnum() or ch in "-_" else "-"
+                for ch in (camera_id or "cam")
+            )[:24] or "cam"
+            name = f"{cam}_frame_{frame.index:05d}_{category}.jpg"
             path = self.snapshot_dir / name
             ok = cv2.imwrite(str(path), frame.image_bgr)
             return path if ok else None
@@ -241,3 +314,59 @@ def demo_activity_run(
     return pipeline.run_frames(
         synthetic, source_label="Authorized Camera — Activity Demo"
     )
+
+
+def run_registered_cameras(
+    pipeline: CyberEyePipeline,
+    cameras: List[Camera],
+    camera_store: CameraStore,
+    *,
+    max_frames: Optional[int] = None,
+    project_root: str | Path | None = None,
+    allow_webcam: Optional[bool] = None,
+    timeout_sec: Optional[float] = None,
+    rtsp_opener=None,
+    webcam_opener=None,
+) -> List[PipelineResult]:
+    """Run enabled cameras sequentially (prototype: not true parallel streaming).
+
+    Each camera failure is recorded on that row. The batch continues so one
+    offline feed cannot crash the console or invent detections.
+    """
+    results: List[PipelineResult] = []
+    for camera in cameras:
+        try:
+            result = pipeline.run_camera(
+                camera,
+                max_frames=max_frames,
+                project_root=project_root,
+                allow_webcam=allow_webcam,
+                timeout_sec=timeout_sec,
+                rtsp_opener=rtsp_opener,
+                webcam_opener=webcam_opener,
+            )
+            if result.frames_processed <= 0:
+                raise IngestError(
+                    "Camera produced no frames. No detections generated."
+                )
+            camera_store.record_success(camera.id)
+            results.append(result)
+        except Exception as exc:
+            message = str(exc) or exc.__class__.__name__
+            logger.warning("Camera %s (%s) failed: %s", camera.id, camera.name, message)
+            try:
+                camera_store.record_error(camera.id, message)
+            except KeyError:
+                pass
+            results.append(
+                PipelineResult(
+                    frames_processed=0,
+                    alerts_created=[],
+                    backend=pipeline.adapter.name,
+                    source_label=camera.source_label(),
+                    camera_id=camera.id,
+                    location_label=camera.location_label,
+                    error=message,
+                )
+            )
+    return results

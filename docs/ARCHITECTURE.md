@@ -1,4 +1,4 @@
-# Mun Cyber Eye — Architecture (Phase 4 Prototype)
+# Mun Cyber Eye — Architecture (Phase 5 Prototype)
 
 **Company:** Mun Cyber Technologies  
 **Product:** Mun Cyber Eye — AI-Powered Human Activity Recognition and Early Threat Detection  
@@ -13,9 +13,9 @@ This prototype analyzes **authorized** video sources only. It does **not** perfo
 ## Pipeline
 
 ```
-Authorized video / synthetic demo
+Camera registry (SQLite)  →  authorized file / RTSP / webcam / MOCK
         ↓
-   Frame sampler (ingest/)
+   Frame sampler (ingest/)   sequential per camera in this prototype
         ↓
  Vision adapters (vision/)  ← Phase 3 activity checkpoint if present
                             ← else YOLO if installed
@@ -23,11 +23,11 @@ Authorized video / synthetic demo
         ↓
    Risk engine (risk/)      ← ordinary | potential_fight | potential_fall | potential_weapon_object
         ↓
- Alert store (alerts/)      ← SQLite + structured schema + audit + delivery log
+ Alert store (alerts/)      ← SQLite + structured schema + camera_id + location_label
         ↓
  Notify adapters (alerts/)  ← console (primary) · Resend email · optional webhook
         ↓
- Flask console (app/)       ← SQLite users · session auth · human review · recipients
+ Flask console (app/)       ← SQLite users · cameras · human review · recipients
         ↓
  Authorized human reviewer
 ```
@@ -36,14 +36,14 @@ Authorized video / synthetic demo
 
 | Module | Role |
 |--------|------|
-| `ingest/` | Video file sampling; optional webcam **stub** (disabled by default) |
+| `ingest/` | Camera registry; file sampler; RTSP with timeout; webcam gated by `ALLOW_WEBCAM` |
 | `vision/` | Pluggable detectors (`ActivityVisionAdapter`, `YoloVisionAdapter`, `MockVisionAdapter`) plus train/eval |
 | `risk/` | Phase 3 category labels or Phase 2 heuristics → `low` / `elevated` / `high` |
 | `alerts/` | SQLite persistence, structured payload, recipients, delivery adapters |
 | `app/` | Dark-theme Flask console for review and authorized notification |
 | `data/activity/` | Labeled train/val/test frames |
 | `data/checkpoints/` | Default `activity_demo.joblib` |
-| `docs/` | Architecture, ethics & safety, Phase 3, Phase 4 |
+| `docs/` | Architecture, ethics & safety, Phase 3, Phase 4, Phase 5 |
 | `pipeline.py` | End-to-end orchestration |
 | `run.py` | Console entrypoint |
 
@@ -72,19 +72,23 @@ Phase 3 training and metrics are documented in [PHASE3.md](PHASE3.md).
 
 - `data/alerts.db` — alerts + audit log + delivery log + operators  
 - `data/auth.db` — console login accounts (admin / operator)  
+- `data/cameras.db` — authorized camera registry + last_seen / last_error  
 - `data/snapshots/` — JPEG frames attached to alerts  
 - `data/activity/` — labeled activity frames (`train` / `val` / `test`)  
 - `data/checkpoints/activity_demo.joblib` — default activity model  
 - Paths configurable via `.env`
 
-## Non-goals (Phase 4)
+## Non-goals (Phase 5)
 
-- Production camera fleet management  
+- True parallel live streaming of a camera fleet (sequential ingest is the prototype)  
 - Autonomous lockdown / weapons discharge / facial criminal labeling  
 - Large GPU HAR models (optional later; this phase is CPU OpenCV + sklearn)  
 - Legal identity or guilt determination  
-- Guaranteed third-party email delivery (we report the provider result honestly)
+- Guaranteed third-party email delivery (we report the provider result honestly)  
+- Connecting to unauthorized cameras
 
 ## Roadmap alignment
 
-Phase 2 = working HITL prototype on controlled sources. Phase 3 = trainable activity categories with documented metrics and fallback. Phase 4 = structured alerts and secure notification to authorized personnel. Later phases add reviewer-agreement studies, controlled pilots, and lawful integrations — always with human oversight.
+Phase 2 = working HITL prototype on controlled sources. Phase 3 = trainable activity categories with documented metrics and fallback. Phase 4 = structured alerts and secure notification to authorized personnel. Phase 5 = camera registry and live ingest (file / RTSP / gated webcam) that still feeds human review. Later phases add reviewer-agreement studies, controlled pilots, and lawful integrations — always with human oversight.
+
+Live ingest details: [PHASE5.md](PHASE5.md).

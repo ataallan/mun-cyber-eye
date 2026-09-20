@@ -3,7 +3,7 @@
 {% block content %}
 <section class="card">
   <h1>Run detection pipeline</h1>
-  <p class="muted">Process an authorized video file, run the Phase 3 activity model on synthetic class scenes, or generate MOCK alerts. Created alerts are stored for human review and optionally emailed or posted to a webhook. Webcam capture is stubbed and disabled by default.</p>
+  <p class="muted">Pick a registered authorized camera, run all enabled cameras sequentially, or keep the synthetic MOCK / Phase 3 activity demo. Webcam capture is refused unless <code>ALLOW_WEBCAM=1</code>. Offline or unconfigured cameras are reported honestly — no fake detections.</p>
 
   <form method="post" enctype="multipart/form-data" class="form">
     <fieldset>
@@ -18,10 +18,27 @@
         {% if activity_checkpoint_ready %}— checkpoint ready{% else %}— falls back to MOCK if no checkpoint{% endif %})
       </label>
       <label class="radio">
+        <input type="radio" name="mode" value="camera">
+        Registered camera (file / RTSP / webcam)
+      </label>
+      <label class="radio">
         <input type="radio" name="mode" value="upload">
         Authorized video file upload (uses activity checkpoint when present, else YOLO/MOCK)
       </label>
     </fieldset>
+    <label>Camera
+      <select name="camera_id">
+        <option value="all">All enabled cameras (sequential)</option>
+        {% for c in cameras %}
+        <option value="{{ c.id }}">{{ c.name }} · {{ c.source_type }}{% if not c.enabled %} (disabled){% endif %}{% if c.location_label %} — {{ c.location_label }}{% endif %}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% if session.get('role') in ['admin', 'operator'] %}
+    <p class="fineprint"><a href="{{ url_for('main.cameras') }}">Manage camera registry</a>
+      · {{ enabled_cameras|length }} enabled
+      · true parallel streaming is not in this prototype</p>
+    {% endif %}
     <label>Video file (optional)
       <input type="file" name="video" accept="video/*,.mp4,.avi,.mov,.mkv">
     </label>
@@ -37,6 +54,31 @@
       <li>Vision backend: <code>{{ result.backend }}</code></li>
       <li>Source: {{ result.source }}</li>
     </ul>
+    {% if result.cameras %}
+    <table class="table">
+      <thead>
+        <tr><th>Camera</th><th>Location</th><th>Frames</th><th>Alerts</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+      {% for row in result.cameras %}
+        <tr>
+          <td>{{ row.source or row.id or '—' }}</td>
+          <td>{{ row.location or '—' }}</td>
+          <td>{{ row.frames }}</td>
+          <td>{{ row.alerts }}</td>
+          <td>
+            {% if row.error %}
+              <span class="badge health-error">error</span>
+              <div class="fineprint">{{ row.error }}</div>
+            {% else %}
+              <span class="badge health-ok">ok</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
     <a class="btn btn-primary" href="{{ url_for('main.dashboard') }}">View alerts</a>
   </div>
   {% endif %}

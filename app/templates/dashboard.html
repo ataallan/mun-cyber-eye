@@ -31,6 +31,32 @@
   <a class="btn btn-primary" href="{{ url_for('main.run_pipeline') }}">Run pipeline</a>
 </div>
 
+{% if cameras is defined and cameras %}
+<section class="card camera-health">
+  <h2>Camera health</h2>
+  <p class="muted">Last seen and last error from the authorized registry. Offline or missing credentials stay visible — they do not produce alerts.</p>
+  <table class="table">
+    <thead>
+      <tr><th>Camera</th><th>Location</th><th>Type</th><th>Last seen</th><th>Last error</th></tr>
+    </thead>
+    <tbody>
+    {% for c in cameras %}
+      <tr>
+        <td>{{ c.name }}{% if not c.enabled %} <span class="badge status-dismissed">disabled</span>{% endif %}</td>
+        <td>{{ c.location_label or '—' }}</td>
+        <td class="mono">{{ c.source_type }}</td>
+        <td class="mono">{{ c.last_seen_at or '—' }}</td>
+        <td>{% if c.last_error %}<span class="badge health-error">error</span> {{ c.last_error }}{% else %}<span class="muted">—</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if session.get('role') in ['admin', 'operator'] %}
+  <p class="fineprint"><a href="{{ url_for('main.cameras') }}">Manage cameras</a></p>
+  {% endif %}
+</section>
+{% endif %}
+
 {% if not alerts %}
 <div class="card empty">
   <p>No alerts yet. Run the synthetic demo pipeline to generate sample alerts for human review.</p>
