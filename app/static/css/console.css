@@ -89,6 +89,14 @@ body {
   margin: 0.15rem auto 0.65rem;
   filter: drop-shadow(0 0 18px rgba(59, 160, 255, 0.22));
 }
+@media (max-width: 640px) {
+  .auth-logo {
+    width: min(200px, 64%);
+    margin-bottom: 0.4rem;
+  }
+  .auth-card { margin: 1rem auto; padding: 1rem 1.1rem; }
+  .auth-card h1 { font-size: 1.45rem; }
+}
 .auth-product {
   margin: 0;
   font-weight: 700;
