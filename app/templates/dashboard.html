@@ -3,7 +3,10 @@
 {% block content %}
 <section class="hero">
   <h1>Alert console</h1>
-  <p class="muted">Structured alerts from authorized sources. Review, acknowledge, dismiss, or escalate — the system does not act on its own.</p>
+  <p class="muted">Structured alerts from authorized sources. Review, acknowledge, dismiss, or escalate — the system does not act on its own.
+    Vision backend: <code>{{ vision_backend }}</code>
+    {% if activity_checkpoint_ready %}· Phase 3 activity checkpoint ready{% endif %}
+  </p>
 </section>
 
 <section class="stats">

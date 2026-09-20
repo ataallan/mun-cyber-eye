@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Launch the Mun Cyber Eye Phase 2 Flask console."""
+"""Launch the Mun Cyber Eye Phase 3 Flask console."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ def main() -> None:
     port = int(os.getenv("FLASK_PORT", "5055"))
     debug = os.getenv("FLASK_DEBUG", "0") == "1"
     print(
-        f"Mun Cyber Eye Phase 2 · http://{host}:{port}\n"
+        f"Mun Cyber Eye Phase 3 · http://{host}:{port}\n"
         "AI detects and alerts. Humans verify and decide.\n"
         "Authorized cameras only — no autonomous enforcement."
     )

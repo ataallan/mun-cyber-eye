@@ -1,4 +1,4 @@
-"""Pluggable vision adapters (YOLO or MOCK)."""
+"""Pluggable vision adapters (activity, YOLO, or MOCK)."""
 
 from .detector import Detection, VisionAdapter, create_adapter
 

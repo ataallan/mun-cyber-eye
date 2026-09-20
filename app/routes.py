@@ -119,15 +119,21 @@ def run_pipeline():
         if str(root) not in sys.path:
             sys.path.insert(0, str(root))
 
-        from pipeline import CyberEyePipeline, demo_synthetic_run
+        from pipeline import CyberEyePipeline, demo_activity_run, demo_synthetic_run
         from vision.detector import create_adapter
 
         os.environ["VISION_BACKEND"] = current_app.config["VISION_BACKEND"]
+        os.environ["ACTIVITY_CHECKPOINT"] = current_app.config["ACTIVITY_CHECKPOINT"]
         snapshot_dir = current_app.config["SNAPSHOT_DIR"]
 
         try:
             if mode == "synthetic":
                 result = demo_synthetic_run(store, frames=16)
+            elif mode == "activity":
+                result = demo_activity_run(
+                    store,
+                    checkpoint=current_app.config["ACTIVITY_CHECKPOINT"],
+                )
             else:
                 upload = request.files.get("video")
                 if not upload or not upload.filename:
@@ -175,4 +181,11 @@ def snapshot_file(filename: str):
 
 @bp.route("/health")
 def health():
-    return {"status": "ok", "product": "Mun Cyber Eye", "phase": 2}
+    ckpt = Path(current_app.config.get("ACTIVITY_CHECKPOINT", ""))
+    return {
+        "status": "ok",
+        "product": "Mun Cyber Eye",
+        "phase": 3,
+        "vision_backend": current_app.config.get("VISION_BACKEND"),
+        "activity_checkpoint_ready": ckpt.is_file(),
+    }

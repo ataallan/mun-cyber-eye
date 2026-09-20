@@ -3,7 +3,7 @@
 {% block content %}
 <section class="card">
   <h1>Run detection pipeline</h1>
-  <p class="muted">Process an authorized video file or generate synthetic demo alerts. Webcam capture is stubbed and disabled by default.</p>
+  <p class="muted">Process an authorized video file, run the Phase 3 activity model on synthetic class scenes, or generate MOCK alerts. Webcam capture is stubbed and disabled by default.</p>
 
   <form method="post" enctype="multipart/form-data" class="form">
     <fieldset>
@@ -13,8 +13,13 @@
         Synthetic demo (MOCK detections — no video file needed)
       </label>
       <label class="radio">
+        <input type="radio" name="mode" value="activity">
+        Phase 3 activity model (synthetic class scenes
+        {% if activity_checkpoint_ready %}— checkpoint ready{% else %}— falls back to MOCK if no checkpoint{% endif %})
+      </label>
+      <label class="radio">
         <input type="radio" name="mode" value="upload">
-        Authorized video file upload
+        Authorized video file upload (uses activity checkpoint when present, else YOLO/MOCK)
       </label>
     </fieldset>
     <label>Video file (optional)

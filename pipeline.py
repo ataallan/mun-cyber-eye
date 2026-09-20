@@ -1,4 +1,4 @@
-"""End-to-end Phase 2 pipeline: ingest → vision → risk → alerts.
+"""End-to-end pipeline: ingest → vision (Phase 3 activity / YOLO / MOCK) → risk → alerts.
 
 Authorized sources only. Alerts require human review — no autonomous enforcement.
 """
@@ -88,6 +88,24 @@ class CyberEyePipeline:
                 }
                 for d in detections
             ]
+            metadata = {
+                "vision_backend": self.adapter.name,
+                "contributing_labels": risk.contributing_labels,
+            }
+            ckpt = getattr(self.adapter, "checkpoint_path", None)
+            if ckpt is not None:
+                metadata["activity_checkpoint"] = str(ckpt)
+            scores = next(
+                (
+                    d.extras.get("scores")
+                    for d in detections
+                    if isinstance(d.extras, dict) and d.extras.get("scores")
+                ),
+                None,
+            )
+            if scores:
+                metadata["activity_scores"] = scores
+
             alert = self.store.create_alert(
                 source_label=frame.source_label or source_label,
                 category=risk.category.value,
@@ -98,10 +116,7 @@ class CyberEyePipeline:
                 timestamp_sec=frame.timestamp_sec,
                 snapshot_path=str(snap_path) if snap_path else None,
                 detections=det_payload,
-                metadata={
-                    "vision_backend": self.adapter.name,
-                    "contributing_labels": risk.contributing_labels,
-                },
+                metadata=metadata,
             )
             alerts.append(alert)
             logger.info(
@@ -155,3 +170,44 @@ def demo_synthetic_run(store: AlertStore, frames: int = 16) -> PipelineResult:
             )
         )
     return pipeline.run_frames(synthetic)
+
+
+def demo_activity_run(
+    store: AlertStore,
+    checkpoint: Optional[str | Path] = None,
+    per_class: int = 2,
+) -> PipelineResult:
+    """Run the Phase 3 activity adapter on synthetic class-typical frames.
+
+    Falls back to MOCK if the checkpoint cannot be loaded — human review
+    remains required either way.
+    """
+    from vision.activity import try_load_activity_adapter
+    from vision.dataset import ACTIVITY_CATEGORIES, render_demo_frame
+    from vision.detector import MockVisionAdapter
+
+    adapter = try_load_activity_adapter(checkpoint)
+    if adapter is None:
+        logger.warning(
+            "Activity demo: checkpoint unavailable; falling back to MOCK heuristics"
+        )
+        adapter = MockVisionAdapter()
+
+    pipeline = CyberEyePipeline(store=store, adapter=adapter)
+    synthetic = []
+    idx = 0
+    for cat in ACTIVITY_CATEGORIES:
+        for k in range(per_class):
+            img = render_demo_frame(cat, seed=100 + idx * 3)
+            synthetic.append(
+                SampledFrame(
+                    index=idx,
+                    timestamp_sec=idx / 2.0,
+                    image_bgr=img,
+                    source_label="Authorized Camera — Activity Demo",
+                )
+            )
+            idx += 1
+    return pipeline.run_frames(
+        synthetic, source_label="Authorized Camera — Activity Demo"
+    )
