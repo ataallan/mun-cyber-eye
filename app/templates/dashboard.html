@@ -6,6 +6,8 @@
   <p class="muted">Structured alerts from authorized sources. Review, acknowledge, dismiss, or escalate — the system does not act on its own.
     Vision backend: <code>{{ vision_backend }}</code>
     {% if activity_checkpoint_ready %}· Phase 3 activity checkpoint ready{% endif %}
+    · Email {{ "configured" if notify_resend_configured else "offline / no Resend key" }}
+    · Webhook {{ "configured" if notify_webhook_configured else "off" }}
   </p>
 </section>
 
@@ -15,6 +17,7 @@
   <div class="stat"><span class="stat-n">{{ stats.acknowledged }}</span><span class="stat-l">Acknowledged</span></div>
   <div class="stat"><span class="stat-n">{{ stats.escalated }}</span><span class="stat-l">Escalated</span></div>
   <div class="stat"><span class="stat-n">{{ stats.dismissed }}</span><span class="stat-l">Dismissed</span></div>
+  <div class="stat"><span class="stat-n">{{ delivery_stats.sent }}</span><span class="stat-l">Delivered</span></div>
 </section>
 
 <div class="toolbar">
@@ -38,11 +41,12 @@
   <thead>
     <tr>
       <th>Time (UTC)</th>
-      <th>Risk</th>
+      <th>Severity</th>
       <th>Category</th>
       <th>Confidence</th>
       <th>Source</th>
-      <th>Status</th>
+      <th>Review</th>
+      <th>Delivery</th>
       <th></th>
     </tr>
   </thead>
@@ -50,11 +54,12 @@
   {% for a in alerts %}
     <tr>
       <td class="mono">{{ a.created_at }}</td>
-      <td><span class="badge risk-{{ a.risk_level }}">{{ a.risk_level }}</span></td>
+      <td><span class="badge risk-{{ a.risk_level }}">{{ a.severity or a.risk_level }}</span></td>
       <td>{{ a.category }}</td>
       <td>{{ '%.0f'|format(a.confidence * 100) }}%</td>
       <td>{{ a.source_label }}</td>
       <td><span class="badge status-{{ a.status }}">{{ a.status }}</span></td>
+      <td><span class="badge delivery-{{ a.delivery_status }}">{{ a.delivery_status }}</span></td>
       <td><a href="{{ url_for('main.alert_detail', alert_id=a.id) }}">Review</a></td>
     </tr>
   {% endfor %}

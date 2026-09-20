@@ -82,7 +82,8 @@ body {
 .form label { display: grid; gap: 0.35rem; font-size: 0.9rem; color: var(--muted); }
 .form input[type="text"],
 .form input[type="password"],
-.form input[type="file"] {
+.form input[type="file"],
+.form select {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -136,6 +137,21 @@ fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 0.85rem
 .status-acknowledged { background: #1f3d32; color: #8dffc8; }
 .status-escalated { background: #3d3118; color: #ffd27a; }
 .status-dismissed { background: #2a3140; color: #aab4c8; }
+.delivery-pending, .delivery-queued { background: #18324d; color: #8ec7ff; }
+.delivery-sent, .delivery-success { background: #1f3d32; color: #8dffc8; }
+.delivery-partial { background: #3d3118; color: #ffd27a; }
+.delivery-failed { background: #3d1820; color: #ff9aa6; }
+.delivery-undelivered, .delivery-skipped { background: #2a3140; color: #aab4c8; }
+.payload {
+  background: #0a101c;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  overflow: auto;
+  font-size: 0.82rem;
+  color: #c9d7f0;
+}
+.kv { align-items: start; }
 
 .flashes { list-style: none; padding: 0; margin: 0 0 1rem; }
 .flash { padding: 0.7rem 0.9rem; border-radius: 8px; margin-bottom: 0.4rem; }
