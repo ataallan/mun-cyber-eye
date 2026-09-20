@@ -11,6 +11,34 @@ from flask import Flask
 from alerts.notify import NotificationService, NotifyConfig
 from alerts.store import AlertStore
 
+from .auth import UserStore
+
+
+def _env_flag(name: str, default: str = "0") -> bool:
+    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _seed_env_users(user_store: UserStore, config: dict) -> None:
+    sync = bool(config.get("ADMIN_SYNC_PASSWORD", True))
+    admin_username = config["ADMIN_USERNAME"]
+    user_store.ensure_bootstrap_admin(
+        admin_username,
+        config["ADMIN_PASSWORD"],
+        config.get("ADMIN_EMAIL") or f"{admin_username}@localhost",
+        sync_password=sync,
+        role=config.get("ADMIN_ROLE") or "admin",
+    )
+    op_user = (config.get("OPERATOR_USERNAME") or "").strip()
+    op_pass = config.get("OPERATOR_PASSWORD") or ""
+    if op_user and op_pass:
+        user_store.ensure_env_user(
+            op_user,
+            op_pass,
+            config.get("OPERATOR_EMAIL") or f"{op_user}@localhost",
+            role="operator",
+            sync_password=sync,
+        )
+
 
 def create_app(test_config: dict | None = None) -> Flask:
     root = Path(__file__).resolve().parent.parent
@@ -21,14 +49,19 @@ def create_app(test_config: dict | None = None) -> Flask:
         template_folder="templates",
         static_folder="static",
     )
+    admin_username = os.getenv("ADMIN_USERNAME", "operator")
     app.config.update(
         SECRET_KEY=os.getenv("FLASK_SECRET_KEY", "dev-only-change-me"),
-        ADMIN_USERNAME=os.getenv("ADMIN_USERNAME", "operator"),
+        ADMIN_USERNAME=admin_username,
         ADMIN_PASSWORD=os.getenv("ADMIN_PASSWORD", "changeme"),
         ADMIN_ROLE=os.getenv("ADMIN_ROLE", "admin"),
+        ADMIN_EMAIL=os.getenv("ADMIN_EMAIL", f"{admin_username}@localhost"),
+        ADMIN_SYNC_PASSWORD=_env_flag("ADMIN_SYNC_PASSWORD", "1"),
         OPERATOR_USERNAME=os.getenv("OPERATOR_USERNAME", ""),
         OPERATOR_PASSWORD=os.getenv("OPERATOR_PASSWORD", ""),
+        OPERATOR_EMAIL=os.getenv("OPERATOR_EMAIL", ""),
         ALERT_DB_PATH=os.getenv("ALERT_DB_PATH", str(root / "data" / "alerts.db")),
+        AUTH_DB_PATH=os.getenv("AUTH_DB_PATH", str(root / "data" / "auth.db")),
         SNAPSHOT_DIR=os.getenv("SNAPSHOT_DIR", str(root / "data" / "snapshots")),
         VISION_BACKEND=os.getenv("VISION_BACKEND", "auto"),
         ACTIVITY_CHECKPOINT=os.getenv(
@@ -52,6 +85,9 @@ def create_app(test_config: dict | None = None) -> Flask:
         ALERT_NOTIFY_ON_CREATE=os.getenv("ALERT_NOTIFY_ON_CREATE", "1") != "0",
         ALERT_NOTIFY_MAX_ATTEMPTS=int(os.getenv("ALERT_NOTIFY_MAX_ATTEMPTS", "3")),
         PROJECT_ROOT=str(root),
+        PUBLIC_BASE_URL=os.getenv("PUBLIC_BASE_URL", "").rstrip("/"),
+        RESET_TOKEN_MINUTES=int(os.getenv("RESET_TOKEN_MINUTES", "45")),
+        AUTH_SHOW_RESET_URL=_env_flag("AUTH_SHOW_RESET_URL", "0"),
     )
     if test_config:
         app.config.update(test_config)
@@ -61,10 +97,12 @@ def create_app(test_config: dict | None = None) -> Flask:
         return str(path if path.is_absolute() else root / path)
 
     app.config["ALERT_DB_PATH"] = _abs(app.config["ALERT_DB_PATH"])
+    app.config["AUTH_DB_PATH"] = _abs(app.config["AUTH_DB_PATH"])
     app.config["SNAPSHOT_DIR"] = _abs(app.config["SNAPSHOT_DIR"])
     app.config["ACTIVITY_CHECKPOINT"] = _abs(app.config["ACTIVITY_CHECKPOINT"])
 
     Path(app.config["ALERT_DB_PATH"]).parent.mkdir(parents=True, exist_ok=True)
+    Path(app.config["AUTH_DB_PATH"]).parent.mkdir(parents=True, exist_ok=True)
     Path(app.config["SNAPSHOT_DIR"]).mkdir(parents=True, exist_ok=True)
 
     store = AlertStore(app.config["ALERT_DB_PATH"])
@@ -81,6 +119,10 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.extensions["alert_store"] = store
     app.extensions["notify_config"] = notify_config
     app.extensions["notifier"] = NotificationService(store, notify_config)
+
+    user_store = UserStore(app.config["AUTH_DB_PATH"])
+    _seed_env_users(user_store, app.config)
+    app.extensions["user_store"] = user_store
 
     from . import routes
 

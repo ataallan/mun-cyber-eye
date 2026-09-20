@@ -22,8 +22,12 @@ cp .env.example .env
 python run.py
 ```
 
-Open **http://127.0.0.1:5055**  
-Default demo login (change in `.env`): `operator` / `changeme`
+Open **http://127.0.0.1:5055**
+
+Sign in with either:
+
+- **Create account** on the login page (new operators), or  
+- The seeded demo admin (change in `.env`): `operator` / `changeme`
 
 1. Sign in  
 2. **Run Pipeline** → Synthetic demo (MOCK) or **Phase 3 activity model**  
@@ -31,6 +35,8 @@ Default demo login (change in `.env`): `operator` / `changeme`
 4. Optional: **Recipients** + `RESEND_API_KEY` to email authorized operators  
 
 Without a Resend key the console still works. Delivery is marked `queued` / `undelivered` — never reported as sent.
+
+Forgot password: if `RESEND_API_KEY` and `RESEND_FROM` are set, a time-limited reset link is emailed. If they are not set, the console says email is not configured (it will not claim a message was sent). Local demos can read the reset URL from the application log, or set `AUTH_SHOW_RESET_URL=1`. Details: [docs/AUTH.md](docs/AUTH.md).
 
 ### Tests
 
@@ -95,7 +101,7 @@ If YOLO is missing and no activity checkpoint loads, the app uses honest **MOCK*
 | Risk categories & levels | Phase 3 model labels, else Phase 2 heuristics |
 | Structured SQLite alerts + audit log | Real |
 | Snapshot attachment | Real |
-| Flask dark console + session auth | Real |
+| Flask dark console + session auth | Real (SQLite users, register, forgot/reset password) |
 | Authorized recipient directory | Real (`.env` + `operators` table) |
 | Resend email / webhook delivery | Real **if** configured; otherwise honest `queued` / `undelivered` |
 | Delivery + ack tracking | Real (`delivery_log` + Phase 2 audit) |
@@ -121,7 +127,7 @@ ingest/          Frame sampler, webcam stub
 vision/          Activity + YOLO + MOCK adapters; train/eval
 risk/            Risk engine (model labels or heuristics)
 alerts/          SQLite store, structured schema, notify adapters
-app/             Flask console (templates, static)
+app/             Flask console (templates, static, auth)
 data/activity/   Labeled frames (train/val/test/<category>)
 data/checkpoints/activity_demo.joblib
 docs/            ARCHITECTURE.md, ETHICS_AND_SAFETY.md, PHASE3.md, PHASE4.md
@@ -135,6 +141,7 @@ tests/           pytest (risk + alerts + notify + mock + activity)
 - [Phase 4 — alert system](docs/PHASE4.md)
 - [Phase 3 — activity recognition](docs/PHASE3.md)
 - [Architecture](docs/ARCHITECTURE.md)
+- [Authentication](docs/AUTH.md)
 - [Ethics and safety](docs/ETHICS_AND_SAFETY.md)
 
 ## Mission (from proposal)

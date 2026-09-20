@@ -27,7 +27,7 @@ Authorized video / synthetic demo
         ↓
  Notify adapters (alerts/)  ← console (primary) · Resend email · optional webhook
         ↓
- Flask console (app/)       ← session auth · human review · recipient management
+ Flask console (app/)       ← SQLite users · session auth · human review · recipients
         ↓
  Authorized human reviewer
 ```
@@ -51,7 +51,7 @@ Authorized video / synthetic demo
 
 1. Risk engine sets `should_alert=True` → structured alert created (`status=open`, `delivery_status=pending`).
 2. Optional outbound delivery: Resend email to authorized recipients and/or SIEM webhook. Missing keys are `queued` / `undelivered` — never reported as sent.
-3. Operator signs in (minimal session auth; `admin` or `operator` may manage recipients and resend).
+3. Operator signs in (SQLite users; env admin is seeded on boot). `admin` or `operator` may manage recipients and resend. See [AUTH.md](AUTH.md).
 4. Operator **acknowledges**, **dismisses**, or **escalates** with optional note.
 5. Every review action and notify/resend attempt is written to `audit_log` with actor + timestamp. Channel attempts go to `delivery_log`.
 
@@ -71,6 +71,7 @@ Phase 3 training and metrics are documented in [PHASE3.md](PHASE3.md).
 ## Data
 
 - `data/alerts.db` — alerts + audit log + delivery log + operators  
+- `data/auth.db` — console login accounts (admin / operator)  
 - `data/snapshots/` — JPEG frames attached to alerts  
 - `data/activity/` — labeled activity frames (`train` / `val` / `test`)  
 - `data/checkpoints/activity_demo.joblib` — default activity model  

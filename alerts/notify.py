@@ -396,3 +396,56 @@ class NotificationService:
             if attempt < self.config.max_attempts:
                 self.config.sleep_fn(min(2.0, 0.25 * attempt))
         return last
+
+
+def send_resend_email(
+    *,
+    api_key: str,
+    from_addr: str,
+    to: str,
+    subject: str,
+    html: str,
+    text: Optional[str] = None,
+    timeout: float = 20,
+    user_agent: str = DEFAULT_USER_AGENT,
+    opener: Optional[Callable[..., Any]] = None,
+) -> tuple[bool, str]:
+    """Send one transactional email (password reset). Honest if the key is missing."""
+    if not (api_key or "").strip():
+        return False, "RESEND_API_KEY is not configured"
+    if not (from_addr or "").strip():
+        return False, "RESEND_FROM is not configured"
+    if not (to or "").strip():
+        return False, "Recipient is missing"
+
+    payload: dict[str, Any] = {
+        "from": from_addr.strip(),
+        "to": [to.strip()],
+        "subject": subject,
+        "html": html,
+    }
+    if text:
+        payload["text"] = text
+
+    status, body = _http_post_json(
+        RESEND_API_URL,
+        payload,
+        {
+            "Authorization": f"Bearer {api_key.strip()}",
+            "User-Agent": (user_agent or DEFAULT_USER_AGENT),
+        },
+        timeout=timeout,
+        opener=opener,
+    )
+    provider_id = ""
+    try:
+        parsed = json.loads(body) if body else {}
+        if isinstance(parsed, dict):
+            provider_id = str(parsed.get("id") or "").strip()
+    except json.JSONDecodeError:
+        provider_id = ""
+    if 200 <= status < 300:
+        return True, provider_id or f"http-{status}"
+    if status == 0:
+        return False, f"Resend request failed: {body[:240] or 'no response'}"
+    return False, f"Resend HTTP {status}: {body[:240] or 'no response body'}"

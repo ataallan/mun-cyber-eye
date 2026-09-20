@@ -23,7 +23,7 @@ Mun Cyber Eye is an **assistance** system for authorized security personnel. It 
 
 ## Privacy and security (prototype expectations)
 
-- Minimal session authentication on the console.
+- Local operator accounts on the console (hashed passwords; optional Resend reset email).
 - Prefer least-privilege access to video and alert data.
 - Plan for encryption, retention limits, and access audits before any pilot.
 - Do not scrape or reuse biometric identity databases in this prototype.
