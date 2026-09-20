@@ -170,3 +170,27 @@ def test_ack_still_works(app, client):
     assert loaded.status == "acknowledged"
     trail = app.extensions["alert_store"].audit_trail(alert.id)
     assert trail[-1]["note"] == "Checked feed"
+
+
+def test_relative_snapshot_dir_resolves_and_serves(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    monkeypatch.chdir(tmp_path)
+    application = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "ADMIN_USERNAME": "operator",
+            "ADMIN_PASSWORD": "changeme",
+            "ALERT_DB_PATH": str(tmp_path / "app.db"),
+            "SNAPSHOT_DIR": "data/snapshots",
+        }
+    )
+    resolved = Path(application.config["SNAPSHOT_DIR"])
+    assert resolved.is_absolute()
+    resolved.mkdir(parents=True, exist_ok=True)
+    (resolved / "frame_demo.jpg").write_bytes(b"\xff\xd8\xff\xd9")
+    client = application.test_client()
+    client.post("/login", data={"username": "operator", "password": "changeme"})
+    resp = client.get("/snapshots/frame_demo.jpg")
+    assert resp.status_code == 200

@@ -171,10 +171,16 @@ def alert_resend(alert_id: str):
         return redirect(url_for("main.dashboard"))
     actor = session.get("user", "unknown")
     updated = _notifier().deliver(alert, actor=actor, force=True)
+    if updated.delivery_status in {"sent", "partial"}:
+        flash_cat = "ok"
+    elif updated.delivery_status in {"queued", "undelivered"}:
+        flash_cat = "warn"
+    else:
+        flash_cat = "error"
     flash(
         f"Delivery attempt recorded as {updated.delivery_status}. "
         "Success is only shown when a channel actually accepted the message.",
-        "ok" if updated.delivery_status in {"sent", "partial"} else "error",
+        flash_cat,
     )
     return redirect(url_for("main.alert_detail", alert_id=alert_id))
 
@@ -246,12 +252,18 @@ def run_pipeline():
 
         try:
             if mode == "synthetic":
-                result = demo_synthetic_run(store, frames=16, notifier=notifier)
+                result = demo_synthetic_run(
+                    store,
+                    frames=16,
+                    notifier=notifier,
+                    snapshot_dir=snapshot_dir,
+                )
             elif mode == "activity":
                 result = demo_activity_run(
                     store,
                     checkpoint=current_app.config["ACTIVITY_CHECKPOINT"],
                     notifier=notifier,
+                    snapshot_dir=snapshot_dir,
                 )
             else:
                 upload = request.files.get("video")

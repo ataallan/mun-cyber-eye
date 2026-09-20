@@ -169,6 +169,7 @@ def demo_synthetic_run(
     store: AlertStore,
     frames: int = 16,
     notifier: Optional[NotificationService] = None,
+    snapshot_dir: str | Path = "data/snapshots",
 ) -> PipelineResult:
     """Run MOCK detections over blank frames — no video file required."""
     import numpy as np
@@ -176,7 +177,9 @@ def demo_synthetic_run(
     from vision.detector import MockVisionAdapter
 
     adapter = MockVisionAdapter()
-    pipeline = CyberEyePipeline(store=store, adapter=adapter, notifier=notifier)
+    pipeline = CyberEyePipeline(
+        store=store, adapter=adapter, notifier=notifier, snapshot_dir=snapshot_dir
+    )
     synthetic = []
     for i in range(frames):
         img = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -200,6 +203,7 @@ def demo_activity_run(
     checkpoint: Optional[str | Path] = None,
     per_class: int = 2,
     notifier: Optional[NotificationService] = None,
+    snapshot_dir: str | Path = "data/snapshots",
 ) -> PipelineResult:
     """Run the Phase 3 activity adapter on synthetic class-typical frames.
 
@@ -217,7 +221,9 @@ def demo_activity_run(
         )
         adapter = MockVisionAdapter()
 
-    pipeline = CyberEyePipeline(store=store, adapter=adapter, notifier=notifier)
+    pipeline = CyberEyePipeline(
+        store=store, adapter=adapter, notifier=notifier, snapshot_dir=snapshot_dir
+    )
     synthetic = []
     idx = 0
     for cat in ACTIVITY_CATEGORIES:

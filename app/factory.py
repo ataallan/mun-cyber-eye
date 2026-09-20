@@ -56,6 +56,14 @@ def create_app(test_config: dict | None = None) -> Flask:
     if test_config:
         app.config.update(test_config)
 
+    def _abs(path_value: str) -> str:
+        path = Path(path_value)
+        return str(path if path.is_absolute() else root / path)
+
+    app.config["ALERT_DB_PATH"] = _abs(app.config["ALERT_DB_PATH"])
+    app.config["SNAPSHOT_DIR"] = _abs(app.config["SNAPSHOT_DIR"])
+    app.config["ACTIVITY_CHECKPOINT"] = _abs(app.config["ACTIVITY_CHECKPOINT"])
+
     Path(app.config["ALERT_DB_PATH"]).parent.mkdir(parents=True, exist_ok=True)
     Path(app.config["SNAPSHOT_DIR"]).mkdir(parents=True, exist_ok=True)
 
