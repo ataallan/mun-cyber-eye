@@ -47,6 +47,10 @@ Forgot password: if `RESEND_API_KEY` and `RESEND_FROM` are set, a time-limited r
 pytest -q
 ```
 
+### Troubleshooting
+
+If `import cv2` fails with `No module named cv2`, run `pip install -r requirements.txt` and ensure opencv-python-headless is 4.x (the 5.x Windows wheel has been seen to install without a usable `cv2` module).
+
 ### Phase 5 camera registry
 
 ```bash
