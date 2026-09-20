@@ -18,6 +18,8 @@ Mun Cyber Eye is an **assistance** system for authorized security personnel. It 
 - Console actions (acknowledge / dismiss / escalate) are audited.
 - Confidence scores and rationales support judgment; they do not replace it.
 - Weapon-related detections are **indicators**, not proof of possession or intent.
+- Outbound email and webhooks notify **authorized personnel only**. They do not close a review, lock doors, or dispatch force.
+- Recommended human actions in the payload are **advisory**. A missing Resend key is reported as queued or undelivered — never as a successful send.
 
 ## Privacy and security (prototype expectations)
 

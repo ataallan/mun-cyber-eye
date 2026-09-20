@@ -10,23 +10,35 @@
       <p class="mono muted">{{ alert.id }}</p>
     </div>
     <div class="badges">
-      <span class="badge risk-{{ alert.risk_level }}">{{ alert.risk_level }}</span>
+      <span class="badge risk-{{ alert.risk_level }}">{{ alert.severity or alert.risk_level }}</span>
       <span class="badge status-{{ alert.status }}">{{ alert.status }}</span>
+      <span class="badge delivery-{{ alert.delivery_status }}">{{ alert.delivery_status }}</span>
     </div>
   </header>
 
   <div class="detail-grid">
     <div>
       <dl class="kv">
+        <dt>Severity</dt><dd>{{ payload.severity }}</dd>
+        <dt>Risk level</dt><dd>{{ alert.risk_level }}</dd>
         <dt>Category</dt><dd>{{ alert.category }}</dd>
         <dt>Confidence</dt><dd>{{ '%.1f'|format(alert.confidence * 100) }}%</dd>
+        <dt>Location</dt><dd>{{ alert.location_label or '—' }}</dd>
+        <dt>Camera ID</dt><dd>{{ alert.camera_id or '—' }}</dd>
         <dt>Source</dt><dd>{{ alert.source_label }}</dd>
-        <dt>Frame</dt><dd>#{{ alert.frame_index }} @ {{ '%.2f'|format(alert.timestamp_sec) }}s</dd>
+        <dt>Frame</dt><dd>#{{ alert.frame_index }} @ {{ alert.frame_time or ('%.2f'|format(alert.timestamp_sec) ~ 's') }}</dd>
         <dt>Created</dt><dd class="mono">{{ alert.created_at }}</dd>
+        <dt>Correlation</dt><dd class="mono">{{ alert.correlation_id }}</dd>
+        <dt>Snapshot</dt><dd class="mono">{{ alert.snapshot_path or '—' }}</dd>
+        <dt>Delivery</dt><dd><span class="badge delivery-{{ alert.delivery_status }}">{{ alert.delivery_status }}</span></dd>
       </dl>
-      <h2>Rationale</h2>
+      <h2>Short rationale</h2>
+      <p>{{ alert.short_rationale or alert.rationale }}</p>
+      <h2>Full rationale</h2>
       <p>{{ alert.rationale }}</p>
-      <p class="fineprint">This is an AI-assisted alert, not a legal determination. A trained human must verify before any consequential response.</p>
+      <h2>Recommended human action</h2>
+      <p>{{ alert.recommended_human_action }}</p>
+      <p class="fineprint">This is an AI-assisted alert, not a legal determination. A trained human must verify before any consequential response. Recommended actions are advisory only — the system does not lock down, detain, or dispatch force.</p>
     </div>
     <div class="snapshot-panel">
       {% if alert.snapshot_path %}
@@ -51,6 +63,45 @@
         <button class="btn btn-ghost" name="action" value="reopen" type="submit">Reopen</button>
       </div>
     </form>
+  </section>
+
+  <section class="actions">
+    <h2>Outbound delivery</h2>
+    <p class="muted">Console review is primary. Email (Resend) and webhook are optional channels. Missing keys are marked queued or undelivered — never reported as sent.</p>
+    {% if can_resend %}
+    <form method="post" action="{{ url_for('main.alert_resend', alert_id=alert.id) }}" class="form inline-form">
+      <div class="btn-row">
+        <button class="btn btn-primary" type="submit">Resend to authorized recipients</button>
+        <a class="btn btn-ghost" href="{{ url_for('main.alert_json', alert_id=alert.id) }}">Structured JSON</a>
+      </div>
+    </form>
+    {% endif %}
+    <table class="table">
+      <thead>
+        <tr><th>Time</th><th>Channel</th><th>Recipient</th><th>Status</th><th>Attempt</th><th>Detail</th></tr>
+      </thead>
+      <tbody>
+      {% if delivery %}
+        {% for e in delivery %}
+          <tr>
+            <td class="mono">{{ e.created_at }}</td>
+            <td>{{ e.channel }}</td>
+            <td>{{ e.recipient or '—' }}</td>
+            <td><span class="badge delivery-{{ e.status }}">{{ e.status }}</span></td>
+            <td>{{ e.attempt }}</td>
+            <td>{{ e.error or e.provider_id or '—' }}</td>
+          </tr>
+        {% endfor %}
+      {% else %}
+        <tr><td colspan="6" class="muted">No outbound attempts yet.</td></tr>
+      {% endif %}
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Structured payload</h2>
+    <pre class="payload">{{ payload_json }}</pre>
   </section>
 
   <section>

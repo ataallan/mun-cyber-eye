@@ -24,7 +24,10 @@
     <nav class="nav">
       <a href="{{ url_for('main.dashboard') }}">Alerts</a>
       <a href="{{ url_for('main.run_pipeline') }}">Run Pipeline</a>
-      <span class="user">{{ session.user }}</span>
+      {% if session.get('role') in ['admin', 'operator'] %}
+      <a href="{{ url_for('main.recipients') }}">Recipients</a>
+      {% endif %}
+      <span class="user">{{ session.user }}{% if session.get('role') %} · {{ session.role }}{% endif %}</span>
       <a class="btn btn-ghost" href="{{ url_for('main.logout') }}">Sign out</a>
     </nav>
     {% endif %}
@@ -44,7 +47,7 @@
   </main>
 
   <footer class="footer">
-    <p>{{ company_name }} · Phase 3 Prototype · Human-in-the-loop review required</p>
+    <p>{{ company_name }} · Phase 4 Prototype · Human-in-the-loop review required</p>
   </footer>
 </body>
 </html>

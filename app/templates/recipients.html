@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Authorized recipients · {{ product_name }}{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Authorized recipients</h1>
+  <p class="muted">Outbound email is sent only to addresses listed here or in <code>ALERT_EMAIL_RECIPIENTS</code>. Admin and operator roles can manage this list. The console remains the primary review surface.</p>
+
+  <dl class="kv">
+    <dt>Resend</dt>
+    <dd>{% if notify.resend_configured %}API key present{% else %}No <code>RESEND_API_KEY</code> — emails stay queued / undelivered{% endif %}</dd>
+    <dt>From</dt>
+    <dd>{{ notify.resend_from }}</dd>
+    <dt>Webhook</dt>
+    <dd>{% if notify.webhook_configured %}{{ notify.webhook_url }}{% else %}Not configured{% endif %}</dd>
+  </dl>
+
+  <h2>Environment recipients</h2>
+  {% if env_recipients %}
+  <ul>
+    {% for email in env_recipients %}
+      <li class="mono">{{ email }} <span class="badge status-acknowledged">.env</span></li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted">None set in <code>ALERT_EMAIL_RECIPIENTS</code>.</p>
+  {% endif %}
+
+  <h2>Operator directory</h2>
+  {% if recipients %}
+  <table class="table">
+    <thead>
+      <tr><th>Email</th><th>Name</th><th>Role</th><th>Active</th><th>Added</th><th></th></tr>
+    </thead>
+    <tbody>
+    {% for r in recipients %}
+      <tr>
+        <td class="mono">{{ r.email }}</td>
+        <td>{{ r.display_name or '—' }}</td>
+        <td>{{ r.role }}</td>
+        <td>{% if r.active %}<span class="badge status-acknowledged">active</span>{% else %}<span class="badge status-dismissed">inactive</span>{% endif %}</td>
+        <td class="mono">{{ r.created_at }}</td>
+        <td>
+          <form method="post" action="{{ url_for('main.recipient_active', recipient_id=r.id) }}">
+            {% if r.active %}
+              <input type="hidden" name="active" value="0">
+              <button class="btn btn-ghost" type="submit">Deactivate</button>
+            {% else %}
+              <input type="hidden" name="active" value="1">
+              <button class="btn btn-primary" type="submit">Activate</button>
+            {% endif %}
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No directory recipients yet. Add an authorized operator email below.</p>
+  {% endif %}
+
+  <h2>Add recipient</h2>
+  <form method="post" class="form">
+    <label>Email
+      <input type="text" name="email" required placeholder="operator@example.org">
+    </label>
+    <label>Display name
+      <input type="text" name="display_name" placeholder="On-call operator">
+    </label>
+    <label>Role
+      <select name="role">
+        <option value="operator" selected>operator</option>
+        <option value="admin">admin</option>
+      </select>
+    </label>
+    <button class="btn btn-primary" type="submit">Save recipient</button>
+  </form>
+  <p class="fineprint">Only authorized personnel should receive these alerts. Recipients are for notification, not enforcement.</p>
+</section>
+{% endblock %}

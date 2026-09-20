@@ -7,12 +7,15 @@ from __future__ import annotations
 
 import logging
 import os
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
 
 import cv2
 
+from alerts.notify import NotificationService
+from alerts.schema import recommended_human_action, short_rationale
 from alerts.store import Alert, AlertStore
 from ingest.sampler import FrameSampler, SampledFrame
 from risk.engine import RiskEngine
@@ -36,12 +39,20 @@ class CyberEyePipeline:
         adapter: Optional[VisionAdapter] = None,
         engine: Optional[RiskEngine] = None,
         snapshot_dir: str | Path = "data/snapshots",
+        notifier: Optional[NotificationService] = None,
+        location_label: Optional[str] = None,
+        camera_id: Optional[str] = None,
+        correlation_id: Optional[str] = None,
     ) -> None:
         self.store = store
         self.adapter = adapter or create_adapter()
         self.engine = engine or RiskEngine()
         self.snapshot_dir = Path(snapshot_dir)
         self.snapshot_dir.mkdir(parents=True, exist_ok=True)
+        self.notifier = notifier
+        self.location_label = location_label or os.getenv("DEFAULT_LOCATION_LABEL", "")
+        self.camera_id = camera_id or os.getenv("DEFAULT_CAMERA_ID", "")
+        self.correlation_id = correlation_id
 
     def run_video(
         self,
@@ -71,6 +82,7 @@ class CyberEyePipeline:
     def _process(self, frame_iter, source_label: str) -> PipelineResult:
         alerts: List[Alert] = []
         count = 0
+        run_correlation = self.correlation_id or str(uuid.uuid4())
         for frame in frame_iter:
             count += 1
             detections = self.adapter.detect(frame.image_bgr, frame_index=frame.index)
@@ -117,7 +129,14 @@ class CyberEyePipeline:
                 snapshot_path=str(snap_path) if snap_path else None,
                 detections=det_payload,
                 metadata=metadata,
+                location_label=self.location_label,
+                camera_id=self.camera_id,
+                short_rationale_text=short_rationale(risk.rationale),
+                recommended_action=recommended_human_action(risk.category.value),
+                correlation_id=run_correlation,
             )
+            if self.notifier:
+                alert = self.notifier.deliver(alert, actor="system")
             alerts.append(alert)
             logger.info(
                 "Alert %s [%s/%s] conf=%.2f frame=%s",
@@ -146,14 +165,21 @@ class CyberEyePipeline:
             return None
 
 
-def demo_synthetic_run(store: AlertStore, frames: int = 16) -> PipelineResult:
+def demo_synthetic_run(
+    store: AlertStore,
+    frames: int = 16,
+    notifier: Optional[NotificationService] = None,
+    snapshot_dir: str | Path = "data/snapshots",
+) -> PipelineResult:
     """Run MOCK detections over blank frames — no video file required."""
     import numpy as np
 
     from vision.detector import MockVisionAdapter
 
     adapter = MockVisionAdapter()
-    pipeline = CyberEyePipeline(store=store, adapter=adapter)
+    pipeline = CyberEyePipeline(
+        store=store, adapter=adapter, notifier=notifier, snapshot_dir=snapshot_dir
+    )
     synthetic = []
     for i in range(frames):
         img = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -176,6 +202,8 @@ def demo_activity_run(
     store: AlertStore,
     checkpoint: Optional[str | Path] = None,
     per_class: int = 2,
+    notifier: Optional[NotificationService] = None,
+    snapshot_dir: str | Path = "data/snapshots",
 ) -> PipelineResult:
     """Run the Phase 3 activity adapter on synthetic class-typical frames.
 
@@ -193,7 +221,9 @@ def demo_activity_run(
         )
         adapter = MockVisionAdapter()
 
-    pipeline = CyberEyePipeline(store=store, adapter=adapter)
+    pipeline = CyberEyePipeline(
+        store=store, adapter=adapter, notifier=notifier, snapshot_dir=snapshot_dir
+    )
     synthetic = []
     idx = 0
     for cat in ACTIVITY_CATEGORIES:

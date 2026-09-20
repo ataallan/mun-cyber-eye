@@ -5,7 +5,7 @@
 
 > See danger earlier. Alert faster. Protect people.
 
-Phase 3 **prototype**: ingest authorized video → sample frames → **activity model** (or YOLO / MOCK) → risk engine → SQLite alerts → Flask console for **human review**.
+Phase 4 **prototype**: ingest authorized video → sample frames → **activity model** (or YOLO / MOCK) → risk engine → structured SQLite alerts → Flask console for **human review** → optional Resend email / SIEM webhook to **authorized personnel**.
 
 **Safety banner (always on):** *AI detects and alerts. Humans verify and decide.*
 
@@ -27,13 +27,31 @@ Default demo login (change in `.env`): `operator` / `changeme`
 
 1. Sign in  
 2. **Run Pipeline** → Synthetic demo (MOCK) or **Phase 3 activity model**  
-3. Review alerts → acknowledge / dismiss / escalate  
+3. Open an alert → structured payload, delivery status, acknowledge / dismiss / escalate  
+4. Optional: **Recipients** + `RESEND_API_KEY` to email authorized operators  
+
+Without a Resend key the console still works. Delivery is marked `queued` / `undelivered` — never reported as sent.
 
 ### Tests
 
 ```bash
 pytest -q
 ```
+
+### Phase 4 alert delivery
+
+Console review is primary. Email and webhook are pluggable delivery channels.
+
+```bash
+# .env — never invent success if the key is empty
+RESEND_API_KEY=re_xxxxxxxx
+RESEND_FROM=Mun Cyber Technologies <info@muncyber.com>
+ALERT_EMAIL_RECIPIENTS=you@your-domain.com
+# optional SIEM/SOAR
+ALERT_WEBHOOK_URL=
+```
+
+The Resend adapter uses stdlib `urllib` with an explicit `User-Agent` so Cloudflare does not block the request. Full demo steps: [docs/PHASE4.md](docs/PHASE4.md).
 
 ### Phase 3 activity recognition
 
@@ -75,9 +93,12 @@ If YOLO is missing and no activity checkpoint loads, the app uses honest **MOCK*
 | Ultralytics YOLO adapter | Real **if** installed |
 | MOCK vision adapter | Real, deterministic demo |
 | Risk categories & levels | Phase 3 model labels, else Phase 2 heuristics |
-| SQLite alerts + audit log | Real |
+| Structured SQLite alerts + audit log | Real |
 | Snapshot attachment | Real |
 | Flask dark console + session auth | Real |
+| Authorized recipient directory | Real (`.env` + `operators` table) |
+| Resend email / webhook delivery | Real **if** configured; otherwise honest `queued` / `undelivered` |
+| Delivery + ack tracking | Real (`delivery_log` + Phase 2 audit) |
 | Autonomous enforcement | **Not implemented** (by design) |
 
 ### Activity categories
@@ -91,24 +112,27 @@ If YOLO is missing and no activity checkpoint loads, the app uses honest **MOCK*
 
 `low` · `elevated` · `high` (with confidence + rationale)
 
+Responder-facing **severity**: `info` · `warning` · `critical`
+
 ## Layout
 
 ```
 ingest/          Frame sampler, webcam stub
 vision/          Activity + YOLO + MOCK adapters; train/eval
 risk/            Risk engine (model labels or heuristics)
-alerts/          SQLite store + audit log
+alerts/          SQLite store, structured schema, notify adapters
 app/             Flask console (templates, static)
 data/activity/   Labeled frames (train/val/test/<category>)
 data/checkpoints/activity_demo.joblib
-docs/            ARCHITECTURE.md, ETHICS_AND_SAFETY.md, PHASE3.md
+docs/            ARCHITECTURE.md, ETHICS_AND_SAFETY.md, PHASE3.md, PHASE4.md
 pipeline.py      End-to-end orchestration
 run.py           Entrypoint
-tests/           pytest (risk + alerts + mock + activity)
+tests/           pytest (risk + alerts + notify + mock + activity)
 ```
 
 ## Docs
 
+- [Phase 4 — alert system](docs/PHASE4.md)
 - [Phase 3 — activity recognition](docs/PHASE3.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Ethics and safety](docs/ETHICS_AND_SAFETY.md)

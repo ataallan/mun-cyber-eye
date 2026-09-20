@@ -1,5 +1,13 @@
-"""SQLite alert store and audit log."""
+"""SQLite alert store, structured payload, and notification adapters."""
 
-from .store import AlertStore, Alert
+from .notify import NotificationService, NotifyConfig
+from .schema import structured_payload
+from .store import Alert, AlertStore
 
-__all__ = ["AlertStore", "Alert"]
+__all__ = [
+    "Alert",
+    "AlertStore",
+    "NotificationService",
+    "NotifyConfig",
+    "structured_payload",
+]

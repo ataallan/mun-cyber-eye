@@ -82,7 +82,8 @@ body {
 .form label { display: grid; gap: 0.35rem; font-size: 0.9rem; color: var(--muted); }
 .form input[type="text"],
 .form input[type="password"],
-.form input[type="file"] {
+.form input[type="file"],
+.form select {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -136,16 +137,32 @@ fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 0.85rem
 .status-acknowledged { background: #1f3d32; color: #8dffc8; }
 .status-escalated { background: #3d3118; color: #ffd27a; }
 .status-dismissed { background: #2a3140; color: #aab4c8; }
+.delivery-pending, .delivery-queued { background: #18324d; color: #8ec7ff; }
+.delivery-sent, .delivery-success { background: #1f3d32; color: #8dffc8; }
+.delivery-partial { background: #3d3118; color: #ffd27a; }
+.delivery-failed { background: #3d1820; color: #ff9aa6; }
+.delivery-undelivered, .delivery-skipped { background: #2a3140; color: #aab4c8; }
+.payload {
+  background: #0a101c;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  overflow: auto;
+  font-size: 0.82rem;
+  color: #c9d7f0;
+}
+.kv { align-items: start; }
 
 .flashes { list-style: none; padding: 0; margin: 0 0 1rem; }
 .flash { padding: 0.7rem 0.9rem; border-radius: 8px; margin-bottom: 0.4rem; }
 .flash-ok { background: #143528; border: 1px solid #2f6b4e; }
+.flash-warn { background: #3d3118; border: 1px solid #8a6a2a; }
 .flash-error { background: #3a1520; border: 1px solid #7a2d3d; }
 
 .detail-head { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; }
 .detail-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 1.25rem; margin: 1rem 0; }
 @media (max-width: 800px) { .detail-grid { grid-template-columns: 1fr; } }
-.kv { display: grid; grid-template-columns: 120px 1fr; gap: 0.35rem 0.75rem; }
+.kv { display: grid; grid-template-columns: 140px 1fr; gap: 0.35rem 0.75rem; }
 .kv dt { color: var(--muted); }
 .kv dd { margin: 0; }
 .snapshot-panel img { width: 100%; border-radius: 10px; border: 1px solid var(--border); background: #000; }
