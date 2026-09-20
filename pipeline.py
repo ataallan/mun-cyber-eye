@@ -138,7 +138,13 @@ class CyberEyePipeline:
             if not risk.should_alert:
                 continue
 
-            snap_path = self._save_snapshot(frame, risk.category.value)
+            stamp_camera = camera_id if camera_id is not None else self.camera_id
+            stamp_location = (
+                location_label if location_label is not None else self.location_label
+            )
+            snap_path = self._save_snapshot(
+                frame, risk.category.value, camera_id=stamp_camera or ""
+            )
             det_payload = [
                 {
                     "label": d.label,
@@ -147,10 +153,6 @@ class CyberEyePipeline:
                 }
                 for d in detections
             ]
-            stamp_camera = camera_id if camera_id is not None else self.camera_id
-            stamp_location = (
-                location_label if location_label is not None else self.location_label
-            )
             metadata = {
                 "vision_backend": self.adapter.name,
                 "contributing_labels": risk.contributing_labels,
@@ -216,9 +218,18 @@ class CyberEyePipeline:
             or "",
         )
 
-    def _save_snapshot(self, frame: SampledFrame, category: str) -> Optional[Path]:
+    def _save_snapshot(
+        self,
+        frame: SampledFrame,
+        category: str,
+        camera_id: str = "",
+    ) -> Optional[Path]:
         try:
-            name = f"frame_{frame.index:05d}_{category}.jpg"
+            cam = "".join(
+                ch if ch.isalnum() or ch in "-_" else "-"
+                for ch in (camera_id or "cam")
+            )[:24] or "cam"
+            name = f"{cam}_frame_{frame.index:05d}_{category}.jpg"
             path = self.snapshot_dir / name
             ok = cv2.imwrite(str(path), frame.image_bgr)
             return path if ok else None

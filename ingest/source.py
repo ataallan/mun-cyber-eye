@@ -36,8 +36,10 @@ def iter_camera_frames(
 
     if source_type == "file":
         if is_mock_uri(uri) or is_mock_uri(camera.uri):
+            # MOCK is a CI/demo stand-in, not a live stream — keep runs short.
+            limit = 16 if max_frames is None else min(int(max_frames), 16)
             yield from mock_frames(
-                max_frames=max_frames or 16,
+                max_frames=limit,
                 sample_fps=fps,
                 source_label=label,
             )

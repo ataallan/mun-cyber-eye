@@ -56,7 +56,7 @@ On first boot, if the table is empty, the app seeds:
 
 | Source | Behavior |
 |--------|----------|
-| `file` | Existing OpenCV file sampler. `MOCK` / empty URI yields synthetic frames for CI. Missing file → `last_error`, no alerts. |
+| `file` | Existing OpenCV file sampler. `MOCK` / empty URI yields up to 16 synthetic frames for CI. Missing file → `last_error`, no alerts. Snapshots are named with `camera_id` so sequential multi-camera runs do not overwrite each other. |
 | `rtsp` | `cv2.VideoCapture` with `RTSP_CONNECT_TIMEOUT_SEC` (thread join + OpenCV open/read timeouts). Failure → `last_error`, no fake detections. |
 | `webcam` | Refused unless `ALLOW_WEBCAM=1`. Default is off with a clear message. |
 
