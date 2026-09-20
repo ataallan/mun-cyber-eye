@@ -79,11 +79,12 @@ def _make_alert(app, **kwargs):
     return store.create_alert(**defaults)
 
 
-def test_health_reports_phase_4_and_honest_notify(client):
+def test_health_reports_phase_5_and_honest_notify(client):
     data = client.get("/health").get_json()
-    assert data["phase"] == 4
+    assert data["phase"] == 5
     assert data["notify"]["resend_configured"] is False
     assert data["notify"]["recipient_count"] >= 1
+    assert "cameras" in data
 
 
 def test_recipients_requires_auth(client):

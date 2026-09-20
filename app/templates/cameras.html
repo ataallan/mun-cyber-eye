@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Cameras · {{ product_name }}{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Authorized cameras</h1>
+  <p class="muted">Register only feeds you are authorized to monitor. AI detects and alerts; humans verify and decide. Offline cameras and missing credentials are reported honestly — the pipeline will not invent detections.</p>
+  <p class="fineprint">Webcam ingest is {{ "enabled (ALLOW_WEBCAM=1)" if allow_webcam else "refused (ALLOW_WEBCAM=0)" }}. RTSP passwords are masked here; prefer <code>env:VAR_NAME</code> secret references.</p>
+
+  <div class="toolbar">
+    <p class="muted" style="margin:0">{{ cameras|length }} registered · {{ cameras|selectattr('enabled')|list|length }} enabled</p>
+    <a class="btn btn-primary" href="{{ url_for('main.camera_new') }}">Add camera</a>
+  </div>
+
+  {% if cameras %}
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Location</th>
+        <th>Type</th>
+        <th>URI</th>
+        <th>Rate</th>
+        <th>Health</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for c in cameras %}
+      <tr>
+        <td>
+          {{ c.name }}
+          {% if c.enabled %}
+            <span class="badge status-acknowledged">enabled</span>
+          {% else %}
+            <span class="badge status-dismissed">disabled</span>
+          {% endif %}
+        </td>
+        <td>{{ c.location_label or '—' }}</td>
+        <td class="mono">{{ c.source_type }}</td>
+        <td class="mono">{{ c.to_public_dict().uri or '—' }}</td>
+        <td>{{ '%.1f'|format(c.effective_fps()) }} fps</td>
+        <td>
+          {% if c.last_error %}
+            <span class="badge health-error" title="{{ c.last_error }}">error</span>
+            <div class="fineprint">{{ c.last_error }}</div>
+          {% elif c.last_seen_at %}
+            <span class="badge health-ok">seen</span>
+            <div class="mono fineprint">{{ c.last_seen_at }}</div>
+          {% else %}
+            <span class="badge health-unknown">never seen</span>
+          {% endif %}
+        </td>
+        <td>
+          <div class="btn-row">
+            <a class="btn btn-ghost" href="{{ url_for('main.camera_edit', camera_id=c.id) }}">Edit</a>
+            <form method="post" action="{{ url_for('main.camera_enabled', camera_id=c.id) }}">
+              {% if c.enabled %}
+                <input type="hidden" name="enabled" value="0">
+                <button class="btn btn-ghost" type="submit">Disable</button>
+              {% else %}
+                <input type="hidden" name="enabled" value="1">
+                <button class="btn btn-primary" type="submit">Enable</button>
+              {% endif %}
+            </form>
+          </div>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No cameras registered yet. Add an authorized file, RTSP, or (lab-only) webcam source.</p>
+  {% endif %}
+</section>
+{% endblock %}

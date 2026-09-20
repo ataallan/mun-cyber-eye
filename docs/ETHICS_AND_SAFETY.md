@@ -8,9 +8,10 @@ Mun Cyber Eye is an **assistance** system for authorized security personnel. It 
 
 ## Authorized use only
 
-- Process only **authorized** camera feeds and approved demo sources.
+- Process only **authorized** camera feeds and approved demo sources. Register those feeds in the camera registry; do not point RTSP or webcam ingest at unauthorized streams.
 - Deploy only where monitoring is lawful and appropriately authorized (e.g., schools, residential communities, businesses, public spaces with lawful infrastructure).
 - Operators are responsible for permissions, notices, and local compliance.
+- An offline camera or missing RTSP secret is an **error**, not a clear scene and not a fabricated threat. The system must not invent detections to fill the gap.
 
 ## Human-in-the-loop
 
@@ -42,7 +43,9 @@ This system must **not**:
 
 - Trigger locks, weapons, or physical interventions without a human decision path.
 - Publish public “wanted” or guilt labels from detections alone.
+- Label faces as criminal or attach identity-based guilt from a detection.
 - Be marketed as infallible weapon or violence detection.
+- Treat a live ingest hook as an enforcement trigger (no locks, dispatch, or detention on camera events).
 
 ## Children and vulnerable populations
 

@@ -5,7 +5,7 @@
 
 > See danger earlier. Alert faster. Protect people.
 
-Phase 4 **prototype**: ingest authorized video → sample frames → **activity model** (or YOLO / MOCK) → risk engine → structured SQLite alerts → Flask console for **human review** → optional Resend email / SIEM webhook to **authorized personnel**.
+Phase 5 **prototype**: register authorized cameras → ingest file / RTSP / (gated) webcam or MOCK → sample frames → **activity model** (or YOLO / MOCK) → risk engine → structured SQLite alerts → Flask console for **human review** → optional Resend email / SIEM webhook to **authorized personnel**.
 
 **Safety banner (always on):** *AI detects and alerts. Humans verify and decide.*
 
@@ -30,9 +30,12 @@ Sign in with either:
 - The seeded demo admin (change in `.env`): `operator` / `changeme`
 
 1. Sign in  
-2. **Run Pipeline** → Synthetic demo (MOCK) or **Phase 3 activity model**  
-3. Open an alert → structured payload, delivery status, acknowledge / dismiss / escalate  
-4. Optional: **Recipients** + `RESEND_API_KEY` to email authorized operators  
+2. **Cameras** → confirm the seeded Demo Lab File camera, or add an authorized file / RTSP source  
+3. **Run Pipeline** → pick that camera (or all enabled) — MOCK / Phase 3 activity demo still work  
+4. Open an alert → `camera_id` + `location_label` from the registry, then acknowledge / dismiss / escalate  
+5. Optional: **Recipients** + `RESEND_API_KEY` to email authorized operators  
+
+Webcam capture stays off unless `ALLOW_WEBCAM=1`. A missing RTSP secret or dead stream marks `last_error` on the camera and does not invent detections. Details: [docs/PHASE5.md](docs/PHASE5.md).
 
 Without a Resend key the console still works. Delivery is marked `queued` / `undelivered` — never reported as sent.
 
@@ -43,6 +46,17 @@ Forgot password: if `RESEND_API_KEY` and `RESEND_FROM` are set, a time-limited r
 ```bash
 pytest -q
 ```
+
+### Phase 5 camera registry
+
+```bash
+# .env — authorized feeds only
+ALLOW_WEBCAM=0
+RTSP_CONNECT_TIMEOUT_SEC=8
+# RTSP_DEMO_URI=rtsp://user:pass@authorized-nvr.example/stream
+```
+
+Seeded cameras: enabled **Demo Lab File** (`MOCK` or `sample_data/demo.mp4`) and a **disabled RTSP stub** (`env:RTSP_DEMO_URI`). Multi-camera runs are sequential in this prototype.
 
 ### Phase 4 alert delivery
 
@@ -91,8 +105,10 @@ If YOLO is missing and no activity checkpoint loads, the app uses honest **MOCK*
 
 | Capability | Status |
 |------------|--------|
+| Camera registry (SQLite) | Real (`/cameras`) |
 | Video file ingest + frame sampling | Real (`opencv`) |
-| Webcam stub | Stub only (disabled by default) |
+| RTSP ingest | Real OpenCV open + timeout; honest `last_error` on failure |
+| Webcam ingest | Real **only if** `ALLOW_WEBCAM=1` (default refused) |
 | Phase 3 activity model (OpenCV + sklearn) | Real **if** checkpoint loads |
 | Train / eval (accuracy, P/R/F1 per class) | Real (`python -m vision.train_activity` / `eval_activity`) |
 | Demo activity checkpoint | Bundled (`data/checkpoints/activity_demo.joblib`, synthetic data) |
@@ -123,21 +139,22 @@ Responder-facing **severity**: `info` · `warning` · `critical`
 ## Layout
 
 ```
-ingest/          Frame sampler, webcam stub
+ingest/          Camera registry, file / RTSP / webcam ingest
 vision/          Activity + YOLO + MOCK adapters; train/eval
 risk/            Risk engine (model labels or heuristics)
 alerts/          SQLite store, structured schema, notify adapters
 app/             Flask console (templates, static, auth)
 data/activity/   Labeled frames (train/val/test/<category>)
 data/checkpoints/activity_demo.joblib
-docs/            ARCHITECTURE.md, ETHICS_AND_SAFETY.md, PHASE3.md, PHASE4.md
+docs/            ARCHITECTURE.md, ETHICS_AND_SAFETY.md, PHASE3.md, PHASE4.md, PHASE5.md
 pipeline.py      End-to-end orchestration
 run.py           Entrypoint
-tests/           pytest (risk + alerts + notify + mock + activity)
+tests/           pytest (risk + alerts + notify + mock + activity + cameras)
 ```
 
 ## Docs
 
+- [Phase 5 — live / multi-camera ingest](docs/PHASE5.md)
 - [Phase 4 — alert system](docs/PHASE4.md)
 - [Phase 3 — activity recognition](docs/PHASE3.md)
 - [Architecture](docs/ARCHITECTURE.md)

@@ -25,6 +25,7 @@
       <a href="{{ url_for('main.dashboard') }}">Alerts</a>
       <a href="{{ url_for('main.run_pipeline') }}">Run Pipeline</a>
       {% if session.get('role') in ['admin', 'operator'] %}
+      <a href="{{ url_for('main.cameras') }}">Cameras</a>
       <a href="{{ url_for('main.recipients') }}">Recipients</a>
       {% endif %}
       <span class="user">{{ session.user }}{% if session.get('role') %} · {{ session.role }}{% endif %}</span>
@@ -47,7 +48,7 @@
   </main>
 
   <footer class="footer">
-    <p>{{ company_name }} · Phase 4 Prototype · Human-in-the-loop review required</p>
+    <p>{{ company_name }} · Phase 5 Prototype · Human-in-the-loop review required</p>
   </footer>
 </body>
 </html>

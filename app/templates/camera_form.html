@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}{% if camera %}Edit camera{% else %}Add camera{% endif %} · {{ product_name }}{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('main.cameras') }}">&larr; Back to cameras</a></p>
+<section class="card">
+  <h1>{% if camera %}Edit camera{% else %}Register authorized camera{% endif %}</h1>
+  <p class="muted">Only authorized file paths, RTSP URLs, or a local lab webcam. Leave the URI blank on edit to keep the stored value (so a masked password is not written back).</p>
+
+  <form method="post" class="form">
+    <label>Name
+      <input type="text" name="name" required value="{{ camera.name if camera else '' }}" placeholder="Lobby west">
+    </label>
+    <label>Location label
+      <input type="text" name="location_label" value="{{ camera.location_label if camera else '' }}" placeholder="Main entrance">
+    </label>
+    <label>Source type
+      <select name="source_type">
+        <option value="file" {% if not camera or camera.source_type == 'file' %}selected{% endif %}>file</option>
+        <option value="rtsp" {% if camera and camera.source_type == 'rtsp' %}selected{% endif %}>rtsp</option>
+        <option value="webcam" {% if camera and camera.source_type == 'webcam' %}selected{% endif %}>webcam (ALLOW_WEBCAM required)</option>
+      </select>
+    </label>
+    <label>URI / path / env secret
+      <input type="text" name="uri" value="" placeholder="{% if camera %}{{ masked_uri }} — leave blank to keep{% else %}MOCK, sample_data/demo.mp4, env:RTSP_DEMO_URI, or rtsp://…{% endif %}" autocomplete="off">
+    </label>
+    {% if camera and masked_uri %}
+    <p class="fineprint">Stored URI (masked): <code>{{ masked_uri }}</code></p>
+    {% endif %}
+    <label>Sample FPS
+      <input type="number" name="sample_fps" min="0.1" max="30" step="0.1" value="{{ camera.sample_fps if camera else 2 }}">
+    </label>
+    <label>Sample interval (seconds, optional — overrides FPS when set)
+      <input type="number" name="sample_interval" min="0" step="0.1" value="{{ camera.sample_interval if camera and camera.sample_interval else '' }}" placeholder="e.g. 0.5">
+    </label>
+    <label class="radio">
+      <input type="checkbox" name="enabled" value="1" {% if not camera or camera.enabled %}checked{% endif %}>
+      Enabled
+    </label>
+    <label>Notes
+      <textarea name="notes" rows="3" placeholder="Authorization scope, site SOP, secret name…">{{ camera.notes if camera else '' }}</textarea>
+    </label>
+    <div class="btn-row">
+      <button class="btn btn-primary" type="submit">Save camera</button>
+      <a class="btn btn-ghost" href="{{ url_for('main.cameras') }}">Cancel</a>
+    </div>
+  </form>
+  <p class="fineprint">Webcam is {{ "allowed" if allow_webcam else "refused unless ALLOW_WEBCAM=1" }}. This form does not create enforcement hooks.</p>
+</section>
+{% endblock %}
