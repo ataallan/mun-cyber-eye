@@ -1,10 +1,17 @@
 {% extends "base.html" %}
 {% block title %}Sign in · {{ product_name }}{% endblock %}
 {% block content %}
-<section class="card login-card">
+<section class="card auth-card">
+  <div class="auth-brand">
+    <img class="auth-logo" src="{{ url_for('static', filename='img/mun-cyber-eye-logo.png') }}" alt="Mun Cyber Eye logo">
+    <p class="auth-product">{{ product_name }}</p>
+  </div>
   <h1>Operator sign-in</h1>
-  <p class="muted">Minimal session auth for authorized reviewers. Demo credentials are in <code>.env.example</code>.</p>
+  <p class="muted">Review alerts from authorized cameras. AI detects and alerts. Humans verify and decide.</p>
   <form method="post" class="form">
+    {% if next %}
+    <input type="hidden" name="next" value="{{ next }}">
+    {% endif %}
     <label>Username
       <input type="text" name="username" autocomplete="username" required>
     </label>
@@ -13,6 +20,10 @@
     </label>
     <button class="btn btn-primary" type="submit">Sign in</button>
   </form>
-  <p class="fineprint">AI detects and alerts. Humans verify and decide.</p>
+  <p class="auth-links">
+    <a href="{{ url_for('main.forgot_password') }}">Forgot password?</a>
+    <span>Don't have an account? <a href="{{ url_for('main.register') }}">Create account</a></span>
+  </p>
+  <p class="fineprint">Authorized use only. This console does not enforce or act on its own.</p>
 </section>
 {% endblock %}

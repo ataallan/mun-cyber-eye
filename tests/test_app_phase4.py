@@ -38,6 +38,7 @@ def app(tmp_path):
             "OPERATOR_USERNAME": "reviewer",
             "OPERATOR_PASSWORD": "review",
             "ALERT_DB_PATH": str(tmp_path / "app.db"),
+            "AUTH_DB_PATH": str(tmp_path / "auth.db"),
             "SNAPSHOT_DIR": str(tmp_path / "snaps"),
             "VISION_BACKEND": "mock",
             "ALERT_NOTIFY_ON_CREATE": False,
@@ -183,6 +184,7 @@ def test_relative_snapshot_dir_resolves_and_serves(tmp_path, monkeypatch):
             "ADMIN_USERNAME": "operator",
             "ADMIN_PASSWORD": "changeme",
             "ALERT_DB_PATH": str(tmp_path / "app.db"),
+            "AUTH_DB_PATH": str(tmp_path / "auth.db"),
             "SNAPSHOT_DIR": "data/snapshots",
         }
     )

@@ -49,7 +49,14 @@ body {
   top: 0;
   z-index: 10;
 }
-.brand { display: flex; gap: 0.75rem; align-items: center; }
+.brand {
+  display: flex; gap: 0.75rem; align-items: center;
+  color: inherit; text-decoration: none;
+}
+.brand-logo {
+  height: 42px; width: auto; max-width: 88px;
+  display: block; object-fit: contain;
+}
 .brand-mark {
   width: 42px; height: 42px; border-radius: 10px;
   display: grid; place-items: center;
@@ -72,7 +79,44 @@ body {
   border-radius: var(--radius);
   padding: 1.25rem 1.4rem;
 }
-.login-card { max-width: 420px; margin: 2rem auto; }
+.login-card,
+.auth-card { max-width: 440px; margin: 2rem auto; text-align: center; }
+.auth-brand { margin-bottom: 0.35rem; }
+.auth-logo {
+  display: block;
+  width: min(280px, 78%);
+  height: auto;
+  margin: 0.15rem auto 0.65rem;
+  filter: drop-shadow(0 0 18px rgba(59, 160, 255, 0.22));
+}
+@media (max-width: 640px) {
+  .auth-logo {
+    width: min(200px, 64%);
+    margin-bottom: 0.4rem;
+  }
+  .auth-card { margin: 1rem auto; padding: 1rem 1.1rem; }
+  .auth-card h1 { font-size: 1.45rem; }
+}
+.auth-product {
+  margin: 0;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 0.78rem;
+  color: var(--accent);
+}
+.auth-card h1 { margin: 0.35rem 0 0.4rem; }
+.auth-card .form { text-align: left; }
+.auth-links {
+  display: grid;
+  gap: 0.45rem;
+  margin: 1.1rem 0 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+.auth-links a { color: var(--accent); text-decoration: none; }
+.auth-links a:hover { text-decoration: underline; }
+.demo-reset { text-align: left; word-break: break-all; }
 .hero h1 { margin: 0 0 0.35rem; }
 .muted { color: var(--muted); }
 .fineprint { color: var(--muted); font-size: 0.85rem; }
@@ -82,6 +126,7 @@ body {
 .form label { display: grid; gap: 0.35rem; font-size: 0.9rem; color: var(--muted); }
 .form input[type="text"],
 .form input[type="password"],
+.form input[type="email"],
 .form input[type="file"],
 .form select {
   background: var(--bg);

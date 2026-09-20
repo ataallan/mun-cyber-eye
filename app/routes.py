@@ -20,22 +20,22 @@ from flask import (
 )
 from werkzeug.utils import secure_filename
 
-from alerts.notify import parse_env_recipients
+from alerts.notify import parse_env_recipients, send_resend_email
 from alerts.schema import structured_payload
+
+from .auth import (
+    guest_only,
+    login_required,
+    safe_next_url,
+    start_session,
+    validate_email,
+    validate_password,
+    validate_username,
+)
 
 bp = Blueprint("main", __name__)
 
 MANAGE_ROLES = {"admin", "operator"}
-
-
-def login_required(view):
-    @wraps(view)
-    def wrapped(*args, **kwargs):
-        if not session.get("user"):
-            return redirect(url_for("main.login", next=request.path))
-        return view(*args, **kwargs)
-
-    return wrapped
 
 
 def operator_required(view):
@@ -61,33 +61,179 @@ def _notifier():
     return current_app.extensions["notifier"]
 
 
-def _auth_users() -> dict[str, tuple[str, str]]:
-    users: dict[str, tuple[str, str]] = {}
-    admin_user = current_app.config["ADMIN_USERNAME"]
-    admin_pass = current_app.config["ADMIN_PASSWORD"]
-    admin_role = current_app.config.get("ADMIN_ROLE") or "admin"
-    users[admin_user] = (admin_pass, admin_role)
-    op_user = (current_app.config.get("OPERATOR_USERNAME") or "").strip()
-    op_pass = current_app.config.get("OPERATOR_PASSWORD") or ""
-    if op_user and op_pass:
-        users[op_user] = (op_pass, "operator")
-    return users
+def _users():
+    return current_app.extensions["user_store"]
+
+
+def _reset_url(token: str) -> str:
+    public = (current_app.config.get("PUBLIC_BASE_URL") or "").rstrip("/")
+    path = url_for("main.reset_password", token=token)
+    if public:
+        return f"{public}{path}"
+    return url_for("main.reset_password", token=token, _external=True)
+
+
+def _password_reset_email(username: str, reset_url: str, minutes: int) -> tuple[str, str]:
+    text = (
+        f"Mun Cyber Eye password reset\n\n"
+        f"Hello {username},\n\n"
+        f"A password reset was requested for your operator account. "
+        f"This link expires in {minutes} minutes:\n\n{reset_url}\n\n"
+        "If you did not request this, you can ignore this message.\n"
+        "AI detects and alerts. Humans verify and decide.\n"
+    )
+    html = (
+        f"<p>Hello {username},</p>"
+        f"<p>A password reset was requested for your Mun Cyber Eye operator account. "
+        f"This link expires in {minutes} minutes.</p>"
+        f'<p><a href="{reset_url}">Choose a new password</a></p>'
+        f"<p>If you did not request this, you can ignore this message.</p>"
+        f"<p>AI detects and alerts. Humans verify and decide.</p>"
+    )
+    return html, text
 
 
 @bp.route("/login", methods=["GET", "POST"])
+@guest_only
 def login():
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
-        users = _auth_users()
-        if username in users and password == users[username][0]:
-            session["user"] = username
-            session["role"] = users[username][1]
+        user = _users().authenticate(username, password)
+        if user:
+            start_session(user)
             flash("Signed in. Alerts require human verification.", "ok")
-            nxt = request.args.get("next") or url_for("main.dashboard")
-            return redirect(nxt)
+            return redirect(safe_next_url())
         flash("Invalid credentials.", "error")
-    return render_template("login.html")
+    return render_template("login.html", next=request.args.get("next", ""))
+
+
+@bp.route("/register", methods=["GET", "POST"])
+@bp.route("/create-account", methods=["GET", "POST"])
+@guest_only
+def register():
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        email = request.form.get("email", "").strip()
+        password = request.form.get("password", "")
+        confirm = request.form.get("confirm_password", "")
+        err = (
+            validate_username(username)
+            or validate_email(email)
+            or validate_password(password, confirm)
+        )
+        if err:
+            flash(err, "error")
+            return render_template("register.html")
+        try:
+            _users().create_user(
+                username=username,
+                email=email,
+                password=password,
+                role="operator",
+            )
+        except ValueError as exc:
+            flash(str(exc), "error")
+            return render_template("register.html")
+        flash("Account created. Sign in with your new operator credentials.", "ok")
+        return redirect(url_for("main.login"))
+    return render_template("register.html")
+
+
+@bp.route("/forgot-password", methods=["GET", "POST"])
+@guest_only
+def forgot_password():
+    demo_reset_url = None
+    if request.method == "POST":
+        identifier = request.form.get("identifier", "").strip()
+        store = _users()
+        user = store.find_by_username_or_email(identifier) if identifier else None
+        token = None
+        reset_url = None
+        if user and user.active:
+            minutes = int(current_app.config.get("RESET_TOKEN_MINUTES", 45))
+            token = store.create_reset_token(user.id, ttl_minutes=minutes)
+            reset_url = _reset_url(token)
+            current_app.logger.info(
+                "Password reset URL for %s (local demo / logs only): %s",
+                user.username,
+                reset_url,
+            )
+
+        notify = current_app.extensions["notify_config"]
+        if notify.resend_configured:
+            if user and user.active and reset_url:
+                minutes = int(current_app.config.get("RESET_TOKEN_MINUTES", 45))
+                html, text = _password_reset_email(user.username, reset_url, minutes)
+                ok, detail = send_resend_email(
+                    api_key=notify.resend_api_key,
+                    from_addr=notify.resend_from,
+                    to=user.email,
+                    subject="Reset your Mun Cyber Eye password",
+                    html=html,
+                    text=text,
+                    user_agent=notify.user_agent,
+                )
+                if not ok:
+                    current_app.logger.error("Password reset email failed: %s", detail)
+                    flash(
+                        "Email delivery failed. A reset email was not sent. "
+                        f"{detail}",
+                        "error",
+                    )
+                    return render_template("forgot_password.html")
+            flash(
+                "If an account exists for that username or email, password reset "
+                "instructions will arrive shortly.",
+                "ok",
+            )
+        else:
+            flash(
+                "Email delivery is not configured (RESEND_API_KEY). "
+                "A reset email was not sent.",
+                "error",
+            )
+            show_demo = current_app.config.get("AUTH_SHOW_RESET_URL") or current_app.testing
+            if show_demo and reset_url:
+                demo_reset_url = reset_url
+                flash(
+                    "Local demo: a one-time reset URL is shown below and written to the console log.",
+                    "ok",
+                )
+            elif reset_url:
+                flash(
+                    "If this is a local demo, check the application console log for a one-time reset URL.",
+                    "ok",
+                )
+    return render_template("forgot_password.html", demo_reset_url=demo_reset_url)
+
+
+@bp.route("/reset-password", methods=["GET", "POST"])
+@guest_only
+def reset_password():
+    token = (request.values.get("token") or "").strip()
+    store = _users()
+    user = store.get_by_reset_token(token) if token else None
+    if user is None:
+        flash("Reset link is invalid or has expired.", "error")
+        return redirect(url_for("main.forgot_password"))
+
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        confirm = request.form.get("confirm_password", "")
+        err = validate_password(password, confirm)
+        if err:
+            flash(err, "error")
+            return render_template("reset_password.html", token=token, username=user.username)
+        try:
+            store.consume_reset_token(token, password)
+        except ValueError as exc:
+            flash(str(exc), "error")
+            return redirect(url_for("main.forgot_password"))
+        flash("Password updated. Sign in with your new password.", "ok")
+        return redirect(url_for("main.login"))
+
+    return render_template("reset_password.html", token=token, username=user.username)
 
 
 @bp.route("/logout")

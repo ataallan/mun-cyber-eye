@@ -10,6 +10,7 @@ build/
 venv/
 .env.local
 data/alerts.db
+data/auth.db
 data/snapshots/
 data/uploads/
 data/activity/train/

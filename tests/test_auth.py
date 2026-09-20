@@ -1,0 +1,250 @@
+"""Console registration, login, and password reset."""
+
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
+
+import pytest
+
+from alerts.notify import DEFAULT_USER_AGENT, send_resend_email
+from app.factory import create_app
+from app.auth import UserStore
+
+
+@pytest.fixture
+def app(tmp_path):
+    return create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test-secret",
+            "ADMIN_USERNAME": "operator",
+            "ADMIN_PASSWORD": "changeme",
+            "ADMIN_EMAIL": "operator@localhost",
+            "ADMIN_SYNC_PASSWORD": True,
+            "ADMIN_ROLE": "admin",
+            "ALERT_DB_PATH": str(tmp_path / "alerts.db"),
+            "AUTH_DB_PATH": str(tmp_path / "auth.db"),
+            "SNAPSHOT_DIR": str(tmp_path / "snapshots"),
+            "RESEND_API_KEY": "",
+            "RESEND_FROM": "",
+            "AUTH_SHOW_RESET_URL": True,
+        }
+    )
+
+
+@pytest.fixture
+def client(app):
+    return app.test_client()
+
+
+def _register(client, username="alice", email="alice@example.com", password="secret123"):
+    return client.post(
+        "/register",
+        data={
+            "username": username,
+            "email": email,
+            "password": password,
+            "confirm_password": password,
+        },
+        follow_redirects=True,
+    )
+
+
+def test_login_page_has_logo_and_create_account(client):
+    rv = client.get("/login")
+    assert rv.status_code == 200
+    body = rv.get_data(as_text=True)
+    assert "mun-cyber-eye-logo.png" in body
+    assert "Don't have an account?" in body
+    assert "Create account" in body
+    assert "Forgot password?" in body
+
+
+def test_register_then_login(client):
+    rv = _register(client)
+    assert rv.status_code == 200
+    assert "Account created" in rv.get_data(as_text=True)
+
+    bad = client.post(
+        "/login",
+        data={"username": "alice", "password": "wrong-password"},
+    )
+    assert bad.status_code == 200
+    assert "Invalid credentials" in bad.get_data(as_text=True)
+
+    ok = client.post(
+        "/login",
+        data={"username": "alice", "password": "secret123"},
+        follow_redirects=True,
+    )
+    assert ok.status_code == 200
+    assert "Alert console" in ok.get_data(as_text=True)
+    assert "alice" in ok.get_data(as_text=True)
+
+
+def test_bad_password_for_env_admin(client):
+    rv = client.post(
+        "/login",
+        data={"username": "operator", "password": "not-the-password"},
+    )
+    assert rv.status_code == 200
+    assert "Invalid credentials" in rv.get_data(as_text=True)
+
+
+def test_env_admin_still_logs_in_after_migration(client):
+    rv = client.post(
+        "/login",
+        data={"username": "operator", "password": "changeme"},
+        follow_redirects=True,
+    )
+    assert rv.status_code == 200
+    text = rv.get_data(as_text=True)
+    assert "Alert console" in text
+    assert "operator" in text
+    assert "admin" in text
+
+
+def test_register_validation(client):
+    rv = client.post(
+        "/register",
+        data={
+            "username": "ab",
+            "email": "not-an-email",
+            "password": "short",
+            "confirm_password": "different",
+        },
+    )
+    assert rv.status_code == 200
+    assert "Username must be" in rv.get_data(as_text=True)
+
+    _register(client, username="bob", email="bob@example.com")
+    again = client.post(
+        "/register",
+        data={
+            "username": "bob",
+            "email": "other@example.com",
+            "password": "secret123",
+            "confirm_password": "secret123",
+        },
+    )
+    assert "already taken" in again.get_data(as_text=True)
+
+
+def test_forgot_password_token_reset(client, app):
+    _register(client, username="casey", email="casey@example.com", password="oldpass12")
+    rv = client.post(
+        "/forgot-password",
+        data={"identifier": "casey@example.com"},
+        follow_redirects=True,
+    )
+    body = rv.get_data(as_text=True)
+    assert "Email delivery is not configured" in body
+    assert "email sent" not in body.lower()
+    assert "reset-password?token=" in body
+
+    with app.app_context():
+        user = app.extensions["user_store"].get_by_username("casey")
+        assert user is not None
+        token = user.reset_token
+        assert token
+
+    reset = client.post(
+        "/reset-password",
+        data={
+            "token": token,
+            "password": "newpass99",
+            "confirm_password": "newpass99",
+        },
+        follow_redirects=True,
+    )
+    assert "Password updated" in reset.get_data(as_text=True)
+
+    still_old = client.post(
+        "/login",
+        data={"username": "casey", "password": "oldpass12"},
+    )
+    assert "Invalid credentials" in still_old.get_data(as_text=True)
+
+    ok = client.post(
+        "/login",
+        data={"username": "casey", "password": "newpass99"},
+        follow_redirects=True,
+    )
+    assert "Alert console" in ok.get_data(as_text=True)
+
+
+def test_forgot_password_unknown_identity_does_not_reveal(client):
+    rv = client.post(
+        "/forgot-password",
+        data={"identifier": "nobody@example.com"},
+        follow_redirects=True,
+    )
+    body = rv.get_data(as_text=True)
+    assert "Email delivery is not configured" in body
+    assert "email sent" not in body.lower()
+    assert "reset-password?token=" not in body
+
+
+def test_expired_reset_token_rejected(app, client):
+    store: UserStore = app.extensions["user_store"]
+    user = store.create_user(
+        username="dana",
+        email="dana@example.com",
+        password="secret123",
+    )
+    token = store.create_reset_token(user.id, ttl_minutes=45)
+    expired = (datetime.now(timezone.utc) - timedelta(minutes=5)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    with store._conn() as conn:
+        conn.execute(
+            "UPDATE users SET reset_expires = ? WHERE id = ?",
+            (expired, user.id),
+        )
+
+    rv = client.get(f"/reset-password?token={token}", follow_redirects=True)
+    assert "invalid or has expired" in rv.get_data(as_text=True)
+
+
+def test_send_resend_sets_user_agent_and_reports_failure():
+    class FakeResp:
+        status = 200
+
+        def read(self):
+            return b'{"id":"re_test"}'
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    captured = {}
+
+    def fake_urlopen(req, timeout=20):
+        headers = {k.lower(): v for k, v in req.header_items()}
+        captured["ua"] = headers.get("user-agent")
+        captured["url"] = req.full_url
+        return FakeResp()
+
+    with patch("alerts.notify.urllib.request.urlopen", fake_urlopen):
+        ok, detail = send_resend_email(
+            api_key="re_test",
+            from_addr="Mun Cyber Eye <ops@example.com>",
+            to="alice@example.com",
+            subject="Reset",
+            html="<p>reset</p>",
+        )
+    assert ok is True
+    assert detail == "re_test"
+    assert captured["ua"] == DEFAULT_USER_AGENT
+
+    missing_key = send_resend_email(
+        api_key="",
+        from_addr="ops@example.com",
+        to="alice@example.com",
+        subject="Reset",
+        html="<p>x</p>",
+    )
+    assert missing_key == (False, "RESEND_API_KEY is not configured")
