@@ -58,3 +58,39 @@ def test_empty_detections_ordinary():
     result = engine.assess([])
     assert result.category == ActivityCategory.ORDINARY
     assert result.should_alert is False
+
+
+def test_phase3_activity_label_fight():
+    engine = RiskEngine()
+    result = engine.assess(
+        [
+            Detection(
+                "potential_fight",
+                0.81,
+                extras={"scores": {"potential_fight": 0.81, "ordinary": 0.1}},
+            )
+        ]
+    )
+    assert result.category == ActivityCategory.POTENTIAL_FIGHT
+    assert result.should_alert is True
+    assert result.risk_level in {RiskLevel.ELEVATED, RiskLevel.HIGH}
+    assert "phase 3" in result.rationale.lower()
+
+
+def test_phase3_activity_label_ordinary_no_alert():
+    engine = RiskEngine()
+    result = engine.assess([Detection("ordinary", 0.9)])
+    assert result.category == ActivityCategory.ORDINARY
+    assert result.should_alert is False
+
+
+def test_phase3_activity_label_overrides_heuristics():
+    engine = RiskEngine()
+    result = engine.assess(
+        [
+            Detection("ordinary", 0.88),
+            Detection("knife", 0.91),
+        ]
+    )
+    assert result.category == ActivityCategory.ORDINARY
+    assert result.should_alert is False

@@ -27,6 +27,10 @@ def create_app(test_config: dict | None = None) -> Flask:
         ALERT_DB_PATH=os.getenv("ALERT_DB_PATH", str(root / "data" / "alerts.db")),
         SNAPSHOT_DIR=os.getenv("SNAPSHOT_DIR", str(root / "data" / "snapshots")),
         VISION_BACKEND=os.getenv("VISION_BACKEND", "auto"),
+        ACTIVITY_CHECKPOINT=os.getenv(
+            "ACTIVITY_CHECKPOINT",
+            str(root / "data" / "checkpoints" / "activity_demo.joblib"),
+        ),
         SAMPLE_FPS=float(os.getenv("SAMPLE_FPS", "2")),
         MAX_FRAMES_PER_RUN=int(os.getenv("MAX_FRAMES_PER_RUN", "120")),
         DEFAULT_CAMERA_LABEL=os.getenv(
@@ -48,11 +52,13 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     @app.context_processor
     def inject_globals():
+        ckpt = Path(app.config.get("ACTIVITY_CHECKPOINT", ""))
         return {
             "safety_banner": "AI detects and alerts. Humans verify and decide.",
             "product_name": "Mun Cyber Eye",
             "company_name": "Mun Cyber Technologies",
             "tagline": "See danger earlier. Alert faster. Protect people.",
+            "activity_checkpoint_ready": ckpt.is_file(),
         }
 
     return app

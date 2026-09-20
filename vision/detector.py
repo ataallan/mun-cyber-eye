@@ -1,7 +1,7 @@
-"""Pluggable vision adapters: ultralytics YOLO when available, else MOCK.
+"""Pluggable vision adapters: Phase 3 activity, YOLO, or honest MOCK.
 
-MOCK mode is intentional and honest — it synthesizes detections so the
-pipeline, risk engine, and console remain fully demoable without ML deps.
+MOCK mode is intentional — it synthesizes detections so the pipeline, risk
+engine, and console remain fully demoable without a checkpoint or GPU.
 """
 
 from __future__ import annotations
@@ -148,10 +148,23 @@ class YoloVisionAdapter(VisionAdapter):
         return detections
 
 
+def _try_activity_adapter() -> Optional[VisionAdapter]:
+    """Load Phase 3 activity checkpoint when present; never raise to caller."""
+    try:
+        from vision.activity import try_load_activity_adapter
+
+        return try_load_activity_adapter()
+    except Exception as exc:
+        logger.info("Activity model not loaded (%s)", exc)
+        return None
+
+
 def create_adapter(backend: Optional[str] = None) -> VisionAdapter:
     """Create a vision adapter.
 
-    backend: auto | yolo | mock (default from VISION_BACKEND env or auto)
+    backend: auto | activity | yolo | mock (default from VISION_BACKEND env or auto)
+
+    ``auto`` prefers a Phase 3 activity checkpoint, then YOLO, then honest MOCK.
     """
     choice = (backend or os.getenv("VISION_BACKEND", "auto")).strip().lower()
 
@@ -159,7 +172,22 @@ def create_adapter(backend: Optional[str] = None) -> VisionAdapter:
         logger.info("Vision backend: MOCK (explicit)")
         return MockVisionAdapter()
 
+    if choice == "activity":
+        adapter = _try_activity_adapter()
+        if adapter is not None:
+            logger.info("Vision backend: activity (Phase 3)")
+            return adapter
+        logger.warning(
+            "Activity backend requested but checkpoint unavailable; falling back to MOCK"
+        )
+        return MockVisionAdapter()
+
     if choice in {"yolo", "auto"}:
+        if choice == "auto":
+            adapter = _try_activity_adapter()
+            if adapter is not None:
+                logger.info("Vision backend: activity (Phase 3 checkpoint found)")
+                return adapter
         try:
             adapter = YoloVisionAdapter()
             logger.info("Vision backend: YOLO")

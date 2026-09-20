@@ -11,6 +11,11 @@ venv/
 .env.local
 data/alerts.db
 data/snapshots/
+data/uploads/
+data/activity/train/
+data/activity/val/
+data/activity/test/
+data/checkpoints/*.json
 *.mp4
 *.avi
 *.mov
@@ -24,3 +29,5 @@ ultralytics/
 runs/
 *.pt
 *.onnx
+*.joblib
+!data/checkpoints/activity_demo.joblib
