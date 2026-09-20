@@ -273,7 +273,9 @@ def demo_synthetic_run(
                 source_label="Authorized Camera — Synthetic Demo",
             )
         )
-    return pipeline.run_frames(synthetic)
+    return pipeline.run_frames(
+        synthetic, source_label="Authorized Camera — Synthetic Demo"
+    )
 
 
 def demo_activity_run(

@@ -13,6 +13,7 @@ def test_synthetic_demo_creates_alerts(tmp_path):
     store = AlertStore(tmp_path / "alerts.db")
     result = demo_synthetic_run(store, frames=16)
     assert result.backend == "mock"
+    assert result.source_label == "Authorized Camera — Synthetic Demo"
     assert result.frames_processed == 16
     assert len(result.alerts_created) >= 1
     open_alerts = store.list_alerts(status="open")
