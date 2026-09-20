@@ -458,8 +458,9 @@ def _flash_run_outcome(summary: dict) -> None:
         )
     elif filename:
         flash(
-            f"Ran authorized video file upload ({filename}) via {backend}: "
-            f"processed {frames} frames; {alerts} alert(s) queued for human review.",
+            f"Ran authorized video file upload ({filename}). "
+            f"Vision backend: {backend}. "
+            f"Processed {frames} frames; {alerts} alert(s) queued for human review.",
             "ok",
         )
     else:

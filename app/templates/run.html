@@ -42,7 +42,7 @@
     <label>Video file (optional)
       <input type="file" name="video" id="video-file" accept="video/*,.mp4,.avi,.mov,.mkv">
     </label>
-    <p class="fineprint">Choosing a file selects <strong>Authorized video file upload</strong> (the server also treats any attached filename as upload, so Synthetic MOCK cannot run silently).</p>
+    <p class="fineprint" id="upload-hint">Choosing a file selects <strong>Authorized video file upload</strong> (the server also treats any attached filename as upload, so Synthetic MOCK cannot run silently).</p>
     <button class="btn btn-primary" type="submit">Run</button>
   </form>
 
@@ -104,13 +104,21 @@
   var fileInput = document.getElementById("video-file");
   var uploadRadio = document.getElementById("mode-upload");
   var form = document.getElementById("run-form");
+  var hint = document.getElementById("upload-hint");
   function selectUploadIfFile() {
     if (fileInput && uploadRadio && fileInput.files && fileInput.files.length) {
       uploadRadio.checked = true;
+      if (hint) {
+        hint.textContent =
+          "Attached file will run as Authorized video file upload: " +
+          fileInput.files[0].name +
+          " (Synthetic MOCK is not used).";
+      }
     }
   }
   if (fileInput) {
     fileInput.addEventListener("change", selectUploadIfFile);
+    fileInput.addEventListener("input", selectUploadIfFile);
   }
   if (form) {
     form.addEventListener("submit", selectUploadIfFile);

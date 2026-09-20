@@ -160,6 +160,7 @@ def test_run_page_lists_registry(client):
     assert "Authorized video file upload" in body
     assert "video-file" in body
     assert "mode-upload" in body
+    assert "upload-hint" in body
 
 
 def _tiny_video(path: Path, frames: int = 40) -> Path:
