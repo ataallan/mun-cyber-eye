@@ -138,6 +138,11 @@ def create_app(test_config: dict | None = None) -> Flask:
         PUBLIC_BASE_URL=os.getenv("PUBLIC_BASE_URL", "").rstrip("/"),
         RESET_TOKEN_MINUTES=int(os.getenv("RESET_TOKEN_MINUTES", "45")),
         AUTH_SHOW_RESET_URL=_env_flag("AUTH_SHOW_RESET_URL", "0"),
+        AUTH_SHOW_LOGIN_CODE=_env_flag("AUTH_SHOW_LOGIN_CODE", "0"),
+        CUSTOMER_2FA_REQUIRED=_env_flag("CUSTOMER_2FA_REQUIRED", "1"),
+        DEVELOPER_2FA_REQUIRED=_env_flag("DEVELOPER_2FA_REQUIRED", "0"),
+        LOGIN_CODE_MINUTES=int(os.getenv("LOGIN_CODE_MINUTES", "10")),
+        LOGIN_CODE_RESEND_SECONDS=int(os.getenv("LOGIN_CODE_RESEND_SECONDS", "45")),
         ENABLE_FACE_AGGRESSION=_env_flag("ENABLE_FACE_AGGRESSION", "0"),
         ENABLE_GUNSHOT_AUDIO=_env_flag("ENABLE_GUNSHOT_AUDIO", "0"),
         ALERT_ON_INTENSE_SPORT=_env_flag("ALERT_ON_INTENSE_SPORT", "0"),
@@ -161,6 +166,11 @@ def create_app(test_config: dict | None = None) -> Flask:
             app.config["DANGEROUS_DATA_ROOT"] = str(
                 Path(app.config["ACTIVITY_DATA_ROOT"]).parent / "dangerous"
             )
+        # Existing login tests expect password → console. Opt in per test for email 2FA.
+        if "CUSTOMER_2FA_REQUIRED" not in test_overrides:
+            app.config["CUSTOMER_2FA_REQUIRED"] = False
+        if "DEVELOPER_2FA_REQUIRED" not in test_overrides:
+            app.config["DEVELOPER_2FA_REQUIRED"] = False
 
     def _abs(path_value: str) -> str:
         path = Path(path_value)
@@ -205,6 +215,18 @@ def create_app(test_config: dict | None = None) -> Flask:
         )
     except (TypeError, ValueError):
         app.config["RTSP_CONNECT_TIMEOUT_SEC"] = 8.0
+    try:
+        app.config["LOGIN_CODE_MINUTES"] = int(
+            app.config.get("LOGIN_CODE_MINUTES", 10) or 10
+        )
+    except (TypeError, ValueError):
+        app.config["LOGIN_CODE_MINUTES"] = 10
+    try:
+        app.config["LOGIN_CODE_RESEND_SECONDS"] = int(
+            app.config.get("LOGIN_CODE_RESEND_SECONDS", 45) or 45
+        )
+    except (TypeError, ValueError):
+        app.config["LOGIN_CODE_RESEND_SECONDS"] = 45
 
     Path(app.config["ALERT_DB_PATH"]).parent.mkdir(parents=True, exist_ok=True)
     Path(app.config["AUTH_DB_PATH"]).parent.mkdir(parents=True, exist_ok=True)

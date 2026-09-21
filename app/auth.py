@@ -38,6 +38,17 @@ PENDING_LOGIN_MESSAGE = (
 INACTIVE_LOGIN_MESSAGE = (
     "This account is inactive. Contact a site admin if you need access restored."
 )
+PENDING_2FA_SESSION_KEY = "pending_2fa_user"
+PENDING_2FA_NEXT_KEY = "pending_2fa_next"
+LOGIN_CODE_DIGITS = 6
+LOGIN_CODE_MINUTES_DEFAULT = 10
+LOGIN_CODE_RESEND_SECONDS_DEFAULT = 45
+LOGIN_CODE_MAX_ATTEMPTS = 5
+# Sign-in codes go to users.email (Create account / env seed), not security_email.
+LOGIN_CODE_EMAIL_NOTE = (
+    "Sign-in codes are sent to the login email on the account — the address "
+    "used at registration — not the optional security email used for alerts."
+)
 
 
 def _utc_now() -> datetime:
@@ -87,6 +98,15 @@ def _row_bool(row: sqlite3.Row, key: str, default: bool = False) -> bool:
     return bool(row[key])
 
 
+def _row_int(row: sqlite3.Row, key: str, default: int = 0) -> int:
+    if key not in row.keys() or row[key] is None:
+        return default
+    try:
+        return int(row[key])
+    except (TypeError, ValueError):
+        return default
+
+
 def validate_username(username: str) -> Optional[str]:
     if not USERNAME_RE.match(username):
         return "Username must be 3–32 characters: letters, numbers, dot, underscore, or hyphen."
@@ -114,6 +134,25 @@ def validate_password(password: str, confirm: str | None = None) -> Optional[str
     return None
 
 
+class LoginCodeCooldown(ValueError):
+    """Raised when a new sign-in code is requested too soon."""
+
+    def __init__(self, seconds: int) -> None:
+        self.seconds = max(1, int(seconds))
+        super().__init__(
+            f"Wait {self.seconds} seconds before requesting a new sign-in code."
+        )
+
+
+def normalize_login_code(value: str) -> str:
+    return "".join(ch for ch in (value or "") if ch.isdigit())
+
+
+def generate_login_code(digits: int = LOGIN_CODE_DIGITS) -> str:
+    span = 10 ** int(digits)
+    return f"{secrets.randbelow(span):0{int(digits)}d}"
+
+
 @dataclass
 class User:
     id: str
@@ -129,6 +168,10 @@ class User:
     approved: bool = True
     approved_at: Optional[str] = None
     approved_by: str = ""
+    login_code_hash: Optional[str] = None
+    login_code_expires: Optional[str] = None
+    login_code_created_at: Optional[str] = None
+    login_code_attempts: int = 0
 
     def notify_address(self) -> str:
         """Prefer security_email for alerts; otherwise the login email."""
@@ -187,7 +230,11 @@ class UserStore:
                     security_email TEXT NOT NULL DEFAULT '',
                     approved INTEGER NOT NULL DEFAULT 0,
                     approved_at TEXT,
-                    approved_by TEXT NOT NULL DEFAULT ''
+                    approved_by TEXT NOT NULL DEFAULT '',
+                    login_code_hash TEXT,
+                    login_code_expires TEXT,
+                    login_code_created_at TEXT,
+                    login_code_attempts INTEGER NOT NULL DEFAULT 0
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_users_reset_token ON users(reset_token);
@@ -208,6 +255,17 @@ class UserStore:
             if "approved_by" not in cols:
                 conn.execute(
                     "ALTER TABLE users ADD COLUMN approved_by TEXT NOT NULL DEFAULT ''"
+                )
+            if "login_code_hash" not in cols:
+                conn.execute("ALTER TABLE users ADD COLUMN login_code_hash TEXT")
+            if "login_code_expires" not in cols:
+                conn.execute("ALTER TABLE users ADD COLUMN login_code_expires TEXT")
+            if "login_code_created_at" not in cols:
+                conn.execute("ALTER TABLE users ADD COLUMN login_code_created_at TEXT")
+            if "login_code_attempts" not in cols:
+                conn.execute(
+                    "ALTER TABLE users ADD COLUMN login_code_attempts "
+                    "INTEGER NOT NULL DEFAULT 0"
                 )
             conn.execute(
                 """
@@ -247,19 +305,29 @@ class UserStore:
                 security_email TEXT NOT NULL DEFAULT '',
                 approved INTEGER NOT NULL DEFAULT 0,
                 approved_at TEXT,
-                approved_by TEXT NOT NULL DEFAULT ''
+                approved_by TEXT NOT NULL DEFAULT '',
+                login_code_hash TEXT,
+                login_code_expires TEXT,
+                login_code_created_at TEXT,
+                login_code_attempts INTEGER NOT NULL DEFAULT 0
             );
             INSERT INTO users_role_mig (
                 id, username, email, password_hash, role, active,
                 created_at, reset_token, reset_expires, security_email,
-                approved, approved_at, approved_by
+                approved, approved_at, approved_by,
+                login_code_hash, login_code_expires, login_code_created_at,
+                login_code_attempts
             )
             SELECT id, username, email, password_hash, role, active,
                    created_at, reset_token, reset_expires,
                    COALESCE(security_email, ''),
                    COALESCE(approved, 1),
                    approved_at,
-                   COALESCE(approved_by, '')
+                   COALESCE(approved_by, ''),
+                   login_code_hash,
+                   login_code_expires,
+                   login_code_created_at,
+                   COALESCE(login_code_attempts, 0)
             FROM users;
             DROP TABLE users;
             ALTER TABLE users_role_mig RENAME TO users;
@@ -505,7 +573,9 @@ class UserStore:
                 """
                 UPDATE users
                 SET approved = 1, active = 1, approved_at = ?, approved_by = ?,
-                    reset_token = NULL, reset_expires = NULL
+                    reset_token = NULL, reset_expires = NULL,
+                    login_code_hash = NULL, login_code_expires = NULL,
+                    login_code_created_at = NULL, login_code_attempts = 0
                 WHERE id = ?
                 """,
                 (stamp, actor, user.id),
@@ -523,7 +593,9 @@ class UserStore:
                 """
                 UPDATE users
                 SET approved = 0, active = 0, approved_by = ?,
-                    reset_token = NULL, reset_expires = NULL
+                    reset_token = NULL, reset_expires = NULL,
+                    login_code_hash = NULL, login_code_expires = NULL,
+                    login_code_created_at = NULL, login_code_attempts = 0
                 WHERE id = ?
                 """,
                 (actor, user.id),
@@ -540,7 +612,9 @@ class UserStore:
             conn.execute(
                 """
                 UPDATE users
-                SET active = ?, reset_token = NULL, reset_expires = NULL
+                SET active = ?, reset_token = NULL, reset_expires = NULL,
+                    login_code_hash = NULL, login_code_expires = NULL,
+                    login_code_created_at = NULL, login_code_attempts = 0
                 WHERE id = ?
                 """,
                 (1 if active else 0, user.id),
@@ -576,7 +650,9 @@ class UserStore:
             conn.execute(
                 """
                 UPDATE users
-                SET password_hash = ?, reset_token = NULL, reset_expires = NULL
+                SET password_hash = ?, reset_token = NULL, reset_expires = NULL,
+                    login_code_hash = NULL, login_code_expires = NULL,
+                    login_code_created_at = NULL, login_code_attempts = 0
                 WHERE id = ?
                 """,
                 (generate_password_hash(password), user_id),
@@ -621,6 +697,115 @@ class UserStore:
         assert refreshed is not None
         return refreshed
 
+    def login_code_resend_wait_seconds(
+        self, user: User, min_seconds: int
+    ) -> int:
+        if not user.login_code_hash or not user.login_code_created_at:
+            return 0
+        if user.login_code_expires:
+            try:
+                if _parse_utc(user.login_code_expires) < _utc_now():
+                    return 0
+            except ValueError:
+                return 0
+        try:
+            created = _parse_utc(user.login_code_created_at)
+        except ValueError:
+            return 0
+        remain = int(min_seconds - (_utc_now() - created).total_seconds())
+        return remain if remain > 0 else 0
+
+    def create_login_code(
+        self,
+        user_id: str,
+        *,
+        ttl_minutes: int = LOGIN_CODE_MINUTES_DEFAULT,
+        min_resend_seconds: int = LOGIN_CODE_RESEND_SECONDS_DEFAULT,
+        force: bool = False,
+    ) -> str:
+        """Issue a single-use email sign-in code. Never for pending accounts."""
+        user = self._require_user(user_id)
+        if not user.can_access_console():
+            raise ValueError(
+                "Sign-in codes are only issued after the account is approved."
+            )
+        if not (user.email or "").strip():
+            raise ValueError("This account has no login email for a sign-in code.")
+        if not force:
+            wait = self.login_code_resend_wait_seconds(user, int(min_resend_seconds))
+            if wait > 0:
+                raise LoginCodeCooldown(wait)
+        code = generate_login_code()
+        expires = _utc_stamp(_utc_now() + timedelta(minutes=int(ttl_minutes)))
+        created = _utc_stamp()
+        with self._conn() as conn:
+            conn.execute(
+                """
+                UPDATE users
+                SET login_code_hash = ?, login_code_expires = ?,
+                    login_code_created_at = ?, login_code_attempts = 0
+                WHERE id = ?
+                """,
+                (generate_password_hash(code), expires, created, user.id),
+            )
+        return code
+
+    def clear_login_code(self, user_id: str) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                """
+                UPDATE users
+                SET login_code_hash = NULL, login_code_expires = NULL,
+                    login_code_created_at = NULL, login_code_attempts = 0
+                WHERE id = ?
+                """,
+                (user_id,),
+            )
+
+    def verify_login_code(self, user_id: str, code: str) -> User:
+        user = self._require_user(user_id)
+        if not user.can_access_console():
+            self.clear_login_code(user.id)
+            raise ValueError(
+                "Sign-in codes are only accepted after the account is approved."
+            )
+        code = normalize_login_code(code)
+        if (
+            not user.login_code_hash
+            or not user.login_code_expires
+            or len(code) != LOGIN_CODE_DIGITS
+        ):
+            raise ValueError("Sign-in code is invalid or has expired.")
+        try:
+            expired = _parse_utc(user.login_code_expires) < _utc_now()
+        except ValueError:
+            expired = True
+        if expired:
+            self.clear_login_code(user.id)
+            raise ValueError("Sign-in code is invalid or has expired.")
+        if user.login_code_attempts >= LOGIN_CODE_MAX_ATTEMPTS:
+            self.clear_login_code(user.id)
+            raise ValueError(
+                "Too many incorrect codes. Sign in again to request a new one."
+            )
+        if not check_password_hash(user.login_code_hash, code):
+            attempts = user.login_code_attempts + 1
+            if attempts >= LOGIN_CODE_MAX_ATTEMPTS:
+                self.clear_login_code(user.id)
+                raise ValueError(
+                    "Too many incorrect codes. Sign in again to request a new one."
+                )
+            with self._conn() as conn:
+                conn.execute(
+                    "UPDATE users SET login_code_attempts = ? WHERE id = ?",
+                    (attempts, user.id),
+                )
+            raise ValueError("That sign-in code is incorrect.")
+        self.clear_login_code(user.id)
+        refreshed = self.get_by_id(user.id)
+        assert refreshed is not None
+        return refreshed
+
     @staticmethod
     def _row_to_user(row: sqlite3.Row) -> User:
         return User(
@@ -637,7 +822,55 @@ class UserStore:
             approved=_row_bool(row, "approved", default=True),
             approved_at=_row_text(row, "approved_at") or None,
             approved_by=_row_text(row, "approved_by"),
+            login_code_hash=_row_text(row, "login_code_hash") or None,
+            login_code_expires=_row_text(row, "login_code_expires") or None,
+            login_code_created_at=_row_text(row, "login_code_created_at") or None,
+            login_code_attempts=_row_int(row, "login_code_attempts", 0),
         )
+
+
+def two_factor_required_for(user: Optional[User]) -> bool:
+    """Email sign-in code after approval. Pending never. Developer off by default."""
+    from flask import current_app
+
+    if user is None or not user.can_access_console():
+        return False
+    role = (user.role or "").strip().lower()
+    if role in CUSTOMER_ROLES:
+        return bool(current_app.config.get("CUSTOMER_2FA_REQUIRED", True))
+    if role == DEVELOPER_ROLE:
+        return bool(current_app.config.get("DEVELOPER_2FA_REQUIRED", False))
+    return False
+
+
+def pending_login_code_username() -> str:
+    return (session.get(PENDING_2FA_SESSION_KEY) or "").strip()
+
+
+def begin_login_code_challenge(user: User, next_url: str = "") -> None:
+    session.pop("user", None)
+    session.pop("role", None)
+    session[PENDING_2FA_SESSION_KEY] = user.username
+    if next_url:
+        session[PENDING_2FA_NEXT_KEY] = next_url
+    else:
+        session.pop(PENDING_2FA_NEXT_KEY, None)
+
+
+def clear_login_code_challenge() -> None:
+    session.pop(PENDING_2FA_SESSION_KEY, None)
+    session.pop(PENDING_2FA_NEXT_KEY, None)
+    session.pop("_demo_login_code", None)
+
+
+def consume_demo_login_code() -> str:
+    value = session.pop("_demo_login_code", None)
+    return str(value) if value else ""
+
+
+def stash_demo_login_code(code: str) -> None:
+    if code:
+        session["_demo_login_code"] = code
 
 
 def console_session_guard():
@@ -646,6 +879,8 @@ def console_session_guard():
 
     username = session.get("user")
     if not username:
+        if pending_login_code_username():
+            return redirect(url_for("main.login_code"))
         return redirect(url_for("main.login", next=request.path))
     store = current_app.extensions.get("user_store")
     if store is None:
@@ -756,6 +991,7 @@ def guest_only(view):
 
 
 def start_session(user: User) -> None:
+    clear_login_code_challenge()
     session["user"] = user.username
     session["role"] = user.role
 

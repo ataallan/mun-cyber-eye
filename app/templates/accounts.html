@@ -3,7 +3,7 @@
 {% block content %}
 <section class="card">
   <h1>Accounts</h1>
-  <p class="muted">New public registrations stay <strong>pending</strong> until a site admin or Mun Cyber developer approves them. Unapproved accounts cannot sign in, run cameras, or receive alert mail. This is notify-only — humans verify and decide.</p>
+  <p class="muted">New public registrations stay <strong>pending</strong> until a site admin or Mun Cyber developer approves them. Unapproved accounts cannot sign in, run cameras, or receive alert mail — and they are never sent a sign-in code. After approval, customer admin and operator accounts must enter a one-time code sent to their <strong>login email</strong> before the console opens. This is notify-only — humans verify and decide.</p>
   <p class="fineprint">Your own assignments: <a href="{{ url_for('main.my_cameras') }}">My cameras</a>. Operators can review alerts after approval; they cannot approve accounts or train models.</p>
 
   <h2>Pending approval</h2>

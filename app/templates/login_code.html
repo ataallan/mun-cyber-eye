@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Sign-in code · {{ product_name }}{% endblock %}
+{% block content %}
+<section class="card auth-card">
+  <div class="auth-brand">
+    <img class="auth-logo" src="{{ url_for('static', filename='img/mun-cyber-eye-logo.png') }}" alt="Mun Cyber Eye logo">
+    <p class="auth-product">{{ product_name }}</p>
+  </div>
+  <h1>Enter sign-in code</h1>
+  <p class="muted">Password accepted for <strong>{{ username }}</strong>. Enter the one-time code sent to the login email on this account{% if login_email %} (<span class="mono">{{ login_email }}</span>){% endif %}. Codes expire in {{ minutes }} minutes and can be used once.</p>
+  <form method="post" action="{{ url_for('main.login_code') }}" class="form">
+    <label>6-digit code
+      <input class="auth-code-input" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,8}" maxlength="8" required autofocus>
+    </label>
+    <button class="btn btn-primary" type="submit">Verify and open console</button>
+  </form>
+  <div class="auth-links">
+    <form method="post" action="{{ url_for('main.resend_login_code') }}">
+      <button class="btn btn-ghost" type="submit">Send a new code</button>
+    </form>
+    <form method="post" action="{{ url_for('main.cancel_login_code') }}">
+      <button class="btn btn-ghost" type="submit">Use a different account</button>
+    </form>
+  </div>
+  {% if demo_login_code %}
+  <div class="result-box demo-reset">
+    <p class="muted">Local demo sign-in code (email is not configured, or AUTH_SHOW_LOGIN_CODE=1):</p>
+    <p class="mono auth-code-demo">{{ demo_login_code }}</p>
+  </div>
+  {% endif %}
+  <p class="fineprint">{{ email_note }} Pending (unapproved) accounts never receive a sign-in code. Email is sent only when Resend is configured — this page will not claim a message was sent otherwise. AI detects and alerts. Humans verify and decide.</p>
+</section>
+{% endblock %}
