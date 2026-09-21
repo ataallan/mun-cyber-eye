@@ -21,7 +21,7 @@
       <dl class="kv">
         <dt>Severity</dt><dd>{{ payload.severity }}</dd>
         <dt>Risk level</dt><dd>{{ alert.risk_level }}</dd>
-        <dt>Category</dt><dd>{{ alert.category }}</dd>
+        <dt>Category</dt><dd>{{ alert.category|category_label }} <span class="mono muted">({{ alert.category }})</span></dd>
         <dt>Confidence</dt><dd>{{ '%.1f'|format(alert.confidence * 100) }}%</dd>
         <dt>Location</dt><dd>{{ alert.location_label or '—' }}</dd>
         <dt>Camera ID</dt><dd>{{ alert.camera_id or '—' }}</dd>

@@ -83,7 +83,7 @@ Lightweight **OpenCV features + scikit-learn** (no GPU). A demo checkpoint ships
 
 ```bash
 # Train (synthetic demo set if you have no labeled frames)
-python -m vision.train_activity --generate-demo \
+python -m vision.train_activity --generate-demo --overwrite-demo \
   --output data/checkpoints/activity_demo.joblib
 
 # Evaluate: accuracy + per-class precision / recall / F1
@@ -129,10 +129,16 @@ If YOLO is missing and no activity checkpoint loads, the app uses honest **MOCK*
 
 ### Activity categories
 
-- `ordinary`
-- `potential_fight`
-- `potential_fall`
-- `potential_weapon_object`
+| Canonical label | Plain language | Default alert? |
+|-----------------|----------------|----------------|
+| `ordinary` | ordinary | No (log / predict only) |
+| `game_or_play` | game or play | No (sports / play, not a fight) |
+| `dance` | dance | No (choreographed movement) |
+| `potential_fight` | potential confrontation | Yes — human review |
+| `potential_fall` | potential fall | Yes — human review |
+| `potential_weapon_object` | potential weapon-like object | Yes — human review |
+
+Aliases `confrontation`, `fight`, and `altercation` map to `potential_fight`. Set `ALERT_ON_GAME_OR_DANCE=1` only if operators should also be paged for game/dance predictions. The bundled demo model is synthetic and will not generalize to real CCTV until retrained on labeled site video; game vs fight is hard even for humans.
 
 ### Risk levels
 
@@ -151,7 +157,7 @@ app/             Flask console (templates, static, auth)
 data/activity/   Labeled frames (train/val/test/<category>)
 data/checkpoints/activity_demo.joblib
 data/uploads/    Operator-supplied authorized clips (gitignored)
-docs/            ARCHITECTURE.md, ETHICS_AND_SAFETY.md, PHASE3.md, PHASE4.md, PHASE5.md
+docs/            ARCHITECTURE.md, ETHICS_AND_SAFETY.md, PHASE3.md, PHASE3b.md, PHASE4.md, PHASE5.md
 pipeline.py      End-to-end orchestration
 run.py           Entrypoint
 tests/           pytest (risk + alerts + notify + mock + activity + cameras)
@@ -162,6 +168,7 @@ tests/           pytest (risk + alerts + notify + mock + activity + cameras)
 - [Phase 5 — live / multi-camera ingest](docs/PHASE5.md)
 - [Phase 4 — alert system](docs/PHASE4.md)
 - [Phase 3 — activity recognition](docs/PHASE3.md)
+- [Phase 3b — game, dance, confrontation](docs/PHASE3b.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Authentication](docs/AUTH.md)
 - [Ethics and safety](docs/ETHICS_AND_SAFETY.md)

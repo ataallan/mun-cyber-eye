@@ -30,6 +30,13 @@ def test_synthetic_demo_creates_alerts(tmp_path):
     assert first.delivery_status == "pending"
     ids = {a.correlation_id for a in result.alerts_created}
     assert len(ids) == 1
+    predicted = {a.category for a in result.assessments}
+    assert "game_or_play" in predicted
+    assert "dance" in predicted
+    assert "potential_fight" in predicted
+    non_alerts = {a.category for a in result.assessments if not a.should_alert}
+    assert "game_or_play" in non_alerts
+    assert "dance" in non_alerts
 
 
 def test_synthetic_demo_offline_notify_does_not_invent_success(tmp_path):

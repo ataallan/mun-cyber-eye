@@ -108,6 +108,10 @@ def test_run_registered_file_camera_creates_stamped_alerts(app, client):
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert "alert(s) queued for human review" in body
+    assert "Category summary" in body
+    assert "game or play" in body
+    assert "dance" in body
+    assert "potential confrontation" in body
     store = app.extensions["alert_store"]
     alerts = store.list_alerts()
     assert alerts
@@ -148,6 +152,21 @@ def test_dashboard_shows_camera_health(client):
     assert "Camera health" in body
     assert "Demo Lab File" in body
     assert "Cameras" in body
+
+
+def test_run_synthetic_shows_game_dance_without_threat_alerts(app, client):
+    _login(client)
+    resp = client.post("/run", data={"mode": "synthetic"}, follow_redirects=True)
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "Category summary" in body
+    assert "game or play" in body
+    assert "dance" in body
+    assert "potential confrontation" in body
+    categories = {a.category for a in app.extensions["alert_store"].list_alerts()}
+    assert "game_or_play" not in categories
+    assert "dance" not in categories
+    assert "potential_fight" in categories
 
 
 def test_run_page_lists_registry(client):

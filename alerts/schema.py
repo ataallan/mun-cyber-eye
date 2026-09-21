@@ -19,6 +19,15 @@ SEVERITY_FROM_RISK = {
     "low": "info",
 }
 
+CATEGORY_DISPLAY_NAMES = {
+    "ordinary": "ordinary",
+    "game_or_play": "game or play",
+    "dance": "dance",
+    "potential_fight": "potential confrontation",
+    "potential_fall": "potential fall",
+    "potential_weapon_object": "potential weapon-like object",
+}
+
 ADVISORY_ACTIONS = {
     "potential_fight": (
         "Advisory only: review the authorized feed now. If a physical "
@@ -41,6 +50,17 @@ ADVISORY_ACTIONS = {
         "Advisory only: no elevated response recommended. Continue normal "
         "monitoring."
     ),
+    "game_or_play": (
+        "Advisory only: the model thinks this is game or play, not a fight. "
+        "No threat response is recommended by default. Continue normal "
+        "monitoring; a human may still review the feed if unsure."
+    ),
+    "dance": (
+        "Advisory only: the model thinks this is dance or choreographed "
+        "movement, not a confrontation. No threat response is recommended "
+        "by default. Continue normal monitoring; a human may still review "
+        "the feed if unsure."
+    ),
 }
 
 DEFAULT_ADVISORY = (
@@ -61,6 +81,14 @@ _DELIVERY_STATUSES = (
 
 def severity_from_risk(risk_level: str) -> str:
     return SEVERITY_FROM_RISK.get((risk_level or "").lower(), "info")
+
+
+def category_display_name(category: str) -> str:
+    """Plain-language label for console / email (slug stays on the payload)."""
+    key = (category or "").strip().lower()
+    if key in CATEGORY_DISPLAY_NAMES:
+        return CATEGORY_DISPLAY_NAMES[key]
+    return (category or "").replace("_", " ").strip() or "unknown"
 
 
 def recommended_human_action(category: str) -> str:
@@ -102,6 +130,7 @@ def structured_payload(alert: Any) -> dict[str, Any]:
         "severity": data.get("severity") or severity_from_risk(data.get("risk_level", "")),
         "risk_level": data.get("risk_level"),
         "category": data.get("category"),
+        "category_label": category_display_name(data.get("category") or ""),
         "confidence": data.get("confidence"),
         "location_label": data.get("location_label") or "",
         "camera_id": data.get("camera_id") or "",

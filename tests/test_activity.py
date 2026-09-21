@@ -3,8 +3,10 @@
 import numpy as np
 import pytest
 
+from risk.engine import ActivityCategory
 from vision.dataset import (
     ACTIVITY_CATEGORIES,
+    canonicalize_category,
     generate_demo_dataset,
     render_demo_frame,
 )
@@ -12,6 +14,24 @@ from vision.detector import create_adapter
 from vision.features import FEATURE_DIM, extract_frame_features, extract_stack_features
 from vision.metrics import compute_classification_metrics, format_metrics_report
 from vision.train_activity import train_activity_model
+
+
+def test_canonical_categories_include_game_dance_confrontation():
+    assert ACTIVITY_CATEGORIES == (
+        "ordinary",
+        "game_or_play",
+        "dance",
+        "potential_fight",
+        "potential_fall",
+        "potential_weapon_object",
+    )
+    assert set(ACTIVITY_CATEGORIES) == {c.value for c in ActivityCategory}
+    assert canonicalize_category("confrontation") == "potential_fight"
+    assert canonicalize_category("fight") == "potential_fight"
+    assert canonicalize_category("altercation") == "potential_fight"
+    assert canonicalize_category("play") == "game_or_play"
+    assert canonicalize_category("sports") == "game_or_play"
+    assert canonicalize_category("dancing") == "dance"
 
 
 def test_feature_vector_is_finite_and_fixed():
@@ -81,7 +101,7 @@ def test_adapter_predicts_demo_classes(tmp_path):
     ckpt, _, _ = _train_tiny(tmp_path)
     adapter = ActivityVisionAdapter(ckpt)
     assert adapter.name == "activity"
-    for cat in ("potential_fight", "potential_fall", "potential_weapon_object", "ordinary"):
+    for cat in ACTIVITY_CATEGORIES:
         dets = adapter.detect(render_demo_frame(cat, seed=21), frame_index=0)
         labels = {d.label for d in dets}
         assert cat in labels

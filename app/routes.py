@@ -22,7 +22,8 @@ from flask import (
 from werkzeug.utils import secure_filename
 
 from alerts.notify import parse_env_recipients, send_resend_email
-from alerts.schema import structured_payload
+from alerts.schema import category_display_name, structured_payload
+from vision.dataset import ACTIVITY_CATEGORIES
 from ingest.cameras import camera_from_form, mask_uri
 
 from .auth import (
@@ -417,8 +418,35 @@ def _pipeline_result_summary(results, *, mode: str = "", filename: str = "") -> 
     backends = sorted({r.backend for r in rows if r.backend})
     errors = [r for r in rows if getattr(r, "error", None)]
     counts: Counter[str] = Counter()
-    for row in rows:
-        counts.update(getattr(row, "category_counts", None) or {})
+    detailed: dict[str, dict] = {}
+    for result in rows:
+        counts.update(getattr(result, "category_counts", None) or {})
+        for assessment in getattr(result, "assessments", []) or []:
+            key = assessment.category
+            entry = detailed.setdefault(
+                key,
+                {
+                    "category": key,
+                    "label": category_display_name(key),
+                    "frames": 0,
+                    "alerts": 0,
+                },
+            )
+            entry["frames"] += 1
+            if assessment.should_alert:
+                entry["alerts"] += 1
+    if not detailed:
+        for key, n in counts.items():
+            detailed[key] = {
+                "category": key,
+                "label": category_display_name(key),
+                "frames": n,
+                "alerts": 0,
+            }
+    ordered = [detailed[cat] for cat in ACTIVITY_CATEGORIES if cat in detailed]
+    ordered.extend(
+        entry for key, entry in detailed.items() if key not in ACTIVITY_CATEGORIES
+    )
     return {
         "frames": frames,
         "alerts": alerts,
@@ -428,6 +456,7 @@ def _pipeline_result_summary(results, *, mode: str = "", filename: str = "") -> 
         "filename": filename,
         "quiet": frames > 0 and alerts == 0,
         "categories": sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])),
+        "category_rows": ordered,
         "cameras": [
             {
                 "id": r.camera_id,

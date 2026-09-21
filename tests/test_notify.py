@@ -217,4 +217,4 @@ def test_email_subject_includes_severity(store):
     payload = _payload(store)
     subject = email_subject(payload)
     assert "WARNING" in subject or payload["severity"].upper() in subject
-    assert "potential_fall" in subject
+    assert "potential fall" in subject or "potential_fall" in subject

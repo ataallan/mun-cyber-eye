@@ -157,9 +157,15 @@ def create_app(test_config: dict | None = None) -> Flask:
         camera_store.seed_demo_cameras(root)
     app.extensions["camera_store"] = camera_store
 
+    from alerts.schema import category_display_name
+
     from . import routes
 
     app.register_blueprint(routes.bp)
+
+    @app.template_filter("category_label")
+    def _category_label_filter(value):
+        return category_display_name(value)
 
     @app.context_processor
     def inject_globals():

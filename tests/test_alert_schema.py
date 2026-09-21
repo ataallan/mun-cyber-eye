@@ -5,6 +5,7 @@ import sqlite3
 import pytest
 
 from alerts.schema import (
+    category_display_name,
     format_frame_time,
     recommended_human_action,
     severity_from_risk,
@@ -34,6 +35,12 @@ def _create(store, **kwargs):
     )
     defaults.update(kwargs)
     return store.create_alert(**defaults)
+
+
+def test_category_display_names():
+    assert category_display_name("game_or_play") == "game or play"
+    assert category_display_name("dance") == "dance"
+    assert category_display_name("potential_fight") == "potential confrontation"
 
 
 def test_severity_mapping():
@@ -90,6 +97,8 @@ def test_structured_payload_contains_responder_fields(store):
     ):
         assert key in payload
     assert payload["source"] == "Authorized Camera — Test"
+    assert payload["category"] == "potential_fight"
+    assert payload["category_label"] == "potential confrontation"
     assert payload["safety"].startswith("AI detects")
     assert "no autonomous enforcement" in payload["enforcement"]
 
@@ -98,6 +107,15 @@ def test_advisory_action_is_not_enforcement():
     text = recommended_human_action("potential_weapon_object")
     assert "Advisory only" in text
     assert "not proof" in text.lower() or "not" in text.lower()
+
+
+def test_advisory_action_game_and_dance_are_not_fights():
+    play = recommended_human_action("game_or_play")
+    dance = recommended_human_action("dance")
+    assert "not a fight" in play.lower()
+    assert "not a confrontation" in dance.lower()
+    assert "Advisory only" in play
+    assert "Advisory only" in dance
 
 
 def test_legacy_db_gains_new_columns(tmp_path):

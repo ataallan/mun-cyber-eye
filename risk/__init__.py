@@ -1,5 +1,17 @@
 """Risk classification engine."""
 
-from .engine import RiskEngine, RiskResult, ActivityCategory, RiskLevel
+from .engine import (
+    ActivityCategory,
+    RiskEngine,
+    RiskLevel,
+    RiskResult,
+    parse_activity_category,
+)
 
-__all__ = ["RiskEngine", "RiskResult", "ActivityCategory", "RiskLevel"]
+__all__ = [
+    "RiskEngine",
+    "RiskResult",
+    "ActivityCategory",
+    "RiskLevel",
+    "parse_activity_category",
+]

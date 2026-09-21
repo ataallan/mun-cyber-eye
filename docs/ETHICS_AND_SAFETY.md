@@ -32,7 +32,7 @@ Mun Cyber Eye is an **assistance** system for authorized security personnel. It 
 ## Accuracy and fairness
 
 - Computer vision can produce false positives and false negatives.
-- Heuristics in Phase 2 and the Phase 3 demo checkpoint are provisional; evaluate across lighting, angles, ages, clothing, and environments before pilots.
+- Heuristics in Phase 2 and the Phase 3 demo checkpoint are provisional; evaluate across lighting, angles, ages, clothing, and environments before pilots. Distinguishing game or play and dance from a real confrontation is difficult even for humans — do not treat a `potential_fight` label as proof.
 - The bundled activity model is trained on synthetic scenes. Retrain on authorized labeled video and publish per-class precision / recall / F1 before any field trial.
 - Measure reviewer agreement with AI alerts (see proposal evaluation metrics).
 - A higher F1 score does not authorize skipping human review.

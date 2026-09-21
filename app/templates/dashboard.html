@@ -81,7 +81,7 @@
     <tr>
       <td class="mono">{{ a.created_at }}</td>
       <td><span class="badge risk-{{ a.risk_level }}">{{ a.severity or a.risk_level }}</span></td>
-      <td>{{ a.category }}</td>
+      <td>{{ a.category|category_label }}</td>
       <td>{{ '%.0f'|format(a.confidence * 100) }}%</td>
       <td>{{ a.source_label }}</td>
       <td><span class="badge status-{{ a.status }}">{{ a.status }}</span></td>

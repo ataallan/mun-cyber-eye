@@ -7,16 +7,20 @@ Expected tree (under ``data/activity`` by default)::
       val/<category>/*.jpg
       test/<category>/*.jpg
 
-Canonical categories match the proposal:
+Canonical categories:
 
     ordinary
+    game_or_play
+    dance
     potential_fight
     potential_fall
     potential_weapon_object
 
-Related folder names (fight, fall, weapon, …) are accepted as aliases when
-loading. ``--generate-demo`` paints simple geometric scenes so CI and laptops
-can train without real CCTV — it is **not** a substitute for authorized video.
+Related folder names (fight, confrontation, altercation, play, dance, fall,
+weapon, …) are accepted as aliases when loading. ``--generate-demo`` paints
+simple geometric scenes so CI and laptops can train without real CCTV — it is
+**not** a substitute for authorized video. Game vs fight is hard even for
+humans; these painters are honest synthetic proxies, not real activity.
 """
 
 from __future__ import annotations
@@ -34,6 +38,8 @@ logger = logging.getLogger(__name__)
 
 ACTIVITY_CATEGORIES: Tuple[str, ...] = (
     "ordinary",
+    "game_or_play",
+    "dance",
     "potential_fight",
     "potential_fall",
     "potential_weapon_object",
@@ -44,10 +50,23 @@ CATEGORY_ALIASES = {
     "ordinary": "ordinary",
     "normal": "ordinary",
     "ok": "ordinary",
+    "game_or_play": "game_or_play",
+    "game": "game_or_play",
+    "play": "game_or_play",
+    "sports": "game_or_play",
+    "sport": "game_or_play",
+    "roughhousing": "game_or_play",
+    "playful": "game_or_play",
+    "recreation": "game_or_play",
+    "dance": "dance",
+    "dancing": "dance",
+    "choreography": "dance",
+    "choreographed": "dance",
     "potential_fight": "potential_fight",
     "fight": "potential_fight",
     "assault": "potential_fight",
     "confrontation": "potential_fight",
+    "altercation": "potential_fight",
     "potential_fall": "potential_fall",
     "fall": "potential_fall",
     "person_down": "potential_fall",
@@ -135,14 +154,15 @@ def render_demo_frame(
     category = canonicalize_category(category)
     rng = np.random.default_rng(int(seed))
     img = np.zeros((height, width, 3), dtype=np.uint8)
-    if category == "ordinary":
-        _paint_ordinary(img, rng)
-    elif category == "potential_fight":
-        _paint_fight(img, rng)
-    elif category == "potential_fall":
-        _paint_fall(img, rng)
-    else:
-        _paint_weapon(img, rng)
+    painters = {
+        "ordinary": _paint_ordinary,
+        "game_or_play": _paint_game,
+        "dance": _paint_dance,
+        "potential_fight": _paint_fight,
+        "potential_fall": _paint_fall,
+        "potential_weapon_object": _paint_weapon,
+    }
+    painters.get(category, _paint_ordinary)(img, rng)
     _add_noise(img, rng, sigma=6)
     return img
 
@@ -184,6 +204,53 @@ def _add_noise(img: np.ndarray, rng: np.random.Generator, sigma: float) -> None:
     noise = rng.normal(0, sigma, img.shape)
     np.clip(img.astype(np.float32) + noise, 0, 255, out=noise)
     img[:] = noise.astype(np.uint8)
+
+
+def _paint_game(img: np.ndarray, rng: np.random.Generator) -> None:
+    """Sports / play: green field, spaced figures, a ball — not a fight scene."""
+    h, w = img.shape[:2]
+    img[:] = (
+        int(rng.integers(25, 55)),
+        int(rng.integers(140, 190)),
+        int(rng.integers(15, 45)),
+    )
+    cv2.line(img, (0, h // 2), (w - 1, h // 2), (220, 230, 240), 2)
+    cv2.rectangle(img, (6, 6), (w - 7, h - 7), (210, 220, 230), 1)
+    # Players stand apart (playful spacing, unlike overlapping fight poses)
+    _draw_person(img, int(w * 0.16), standing=True, color=(30, 90, 220), rng=rng)
+    _draw_person(img, int(w * 0.70), standing=True, color=(20, 200, 240), rng=rng)
+    cx = int(rng.integers(max(12, w // 2 - 12), min(w - 12, w // 2 + 12)))
+    cy = int(rng.integers(int(h * 0.42), int(h * 0.68)))
+    cv2.circle(img, (cx, cy), 8, (40, 220, 240), -1)
+
+
+def _paint_dance(img: np.ndarray, rng: np.random.Generator) -> None:
+    """Dance: magenta stage, choreographed arcs — distinct from fight streaks."""
+    h, w = img.shape[:2]
+    img[:] = (
+        int(rng.integers(140, 185)),
+        int(rng.integers(20, 55)),
+        int(rng.integers(130, 185)),
+    )
+    center = (w // 2, int(h * 0.62))
+    for radius in (16, 26, 36):
+        cv2.ellipse(
+            img,
+            center,
+            (radius, max(6, radius // 2)),
+            0,
+            200,
+            340,
+            (240, 180, 240),
+            2,
+        )
+    for i in range(8):
+        ang = (i / 8.0) * 2 * np.pi
+        px = int(np.clip(w * 0.5 + np.cos(ang) * w * 0.28, 4, w - 5))
+        py = int(np.clip(h * 0.45 + np.sin(ang) * h * 0.22, 4, h - 5))
+        cv2.circle(img, (px, py), 3, (250, 230, 250), -1)
+    _draw_person(img, int(w * 0.26), standing=True, color=(220, 80, 220), rng=rng)
+    _draw_person(img, int(w * 0.54), standing=True, color=(240, 140, 80), rng=rng)
 
 
 def _paint_ordinary(img: np.ndarray, rng: np.random.Generator) -> None:
