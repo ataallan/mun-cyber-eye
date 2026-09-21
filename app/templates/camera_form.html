@@ -13,16 +13,24 @@
     <label>Location / venue label
       <input type="text" name="location_label" value="{{ camera.location_label if camera else '' }}" placeholder="North corridor">
     </label>
-    <p class="fineprint">Free-text site label only (for example “North corridor”). Do not invent a famous arena name. Place type below is the catalog setting.</p>
+    <p class="fineprint">Free-text site label only (for example “North corridor”). Do not invent a famous arena name. Place type below is the catalog setting, or type any custom place.</p>
+    {% set selected_place = camera.place_type if camera else '' %}
+    {% set known_ids = place_types | map(attribute='id') | list %}
+    {% set place_is_custom = selected_place and selected_place not in known_ids %}
     <label>Place type (optional)
-      <select name="place_type">
+      <select name="place_type" class="place-type-select">
         <option value="">unset — infer from folders / heuristic</option>
         {% for place in place_types %}
-        <option value="{{ place.id }}" {% if camera and camera.place_type == place.id %}selected{% endif %}>{{ place.display_name }} ({{ place.id }})</option>
+        <option value="{{ place.id }}" {% if selected_place == place.id and not place_is_custom %}selected{% endif %}>{{ place.display_name }} ({{ place.id }}){% if place.group == 'custom' %} · custom{% endif %}</option>
         {% endfor %}
+        <option value="__custom__" {% if place_is_custom %}selected{% endif %}>Other / custom…</option>
       </select>
     </label>
-    <p class="fineprint">Catalog setting (court, street, corridor, house, compound, roam / patrol, …). The pipeline stamps this when set. Assistive only — not full scene understanding, not identity. Detected home/community objects may add a small place lean when this is unset; they do not replace this stamp.</p>    <label>Source type
+    <label class="place-type-custom-wrap"{% if not place_is_custom %} style="display:none"{% endif %}>Other / custom place
+      <input type="text" name="place_type_custom" value="{{ selected_place if place_is_custom else '' }}" placeholder="rooftop café, warehouse bay 3" autocomplete="off">
+    </label>
+    <p class="fineprint">Catalog or any operator-typed setting (slugified on save). Custom places have no synthetic painter and are circulation-leaning — not a sports-venue soften. Detected home/community objects may add a small place lean when this is unset; they do not replace this stamp.</p>
+    <label>Source type
       <select name="source_type">
         <option value="file" {% if not camera or camera.source_type == 'file' %}selected{% endif %}>file</option>
         <option value="rtsp" {% if camera and camera.source_type == 'rtsp' %}selected{% endif %}>rtsp</option>
@@ -55,4 +63,17 @@
   </form>
   <p class="fineprint">Webcam is {{ "allowed" if allow_webcam else "refused unless ALLOW_WEBCAM=1" }}. This form does not create enforcement hooks.</p>
 </section>
+<script>
+(function () {
+  document.querySelectorAll(".place-type-select").forEach(function (sel) {
+    function sync() {
+      var form = sel.closest("form");
+      var wrap = form ? form.querySelector(".place-type-custom-wrap") : null;
+      if (wrap) wrap.style.display = sel.value === "__custom__" ? "" : "none";
+    }
+    sel.addEventListener("change", sync);
+    sync();
+  });
+})();
+</script>
 {% endblock %}

@@ -8,8 +8,8 @@ Operators want setting to help tell **game / play** from a **real confrontation*
 
 | Capability | What exists today | What it is not |
 |------------|-------------------|----------------|
-| Place / venue type | A catalog of ~27 generic settings (`basketball_court`, `street`, `corridor_hallway`, `house_interior`, `compound_courtyard`, `roam`, …) | Recognition of a named arena (never “Madison Square Garden”), address, or private property owner |
-| How place is chosen | 1) operator `place_type` on a camera 2) labeled `scene__*` / sport folders 3) synthetic OpenCV color/geometry proxies | Full scene understanding or a map of every court on earth |
+| Place / venue type | A catalog of ~27 generic settings (`basketball_court`, `street`, `corridor_hallway`, `house_interior`, `compound_courtyard`, `roam`, …) plus **operator-typed custom** places | Recognition of a named arena (never “Madison Square Garden”), address, or private property owner |
+| How place is chosen | 1) operator `place_type` on a camera (catalog **or** any typed string) 2) labeled `scene__*` / sport folders 3) synthetic OpenCV color/geometry proxies | Full scene understanding or a map of every court on earth |
 | Uniform / kit | Similar clothing-color clusters across people; saturated jersey-like blocks | Who the person is, demographics, team identity, or “gang” / guilt labeling |
 | Risk use | Setting + `sport_context` + body-aggression together | Proof of play, assault, or trespass |
 
@@ -30,6 +30,17 @@ Stable ids live in `vision/scene_context.py`. Display names are generic.
 Aliases (`hallway` → `corridor_hallway`, `compound` → `compound_courtyard`, `home` → `house_interior`, `pitch` → `sports_field`, `roaming` / `patrol` / `mobile_camera` → `roam`) resolve through the catalog. The pipeline never invents a specific arena or venue brand.
 
 `roam` is a mobile / patrol / multi-area coverage tag. It is a **circulation** setting (same family as street and corridor), not a sports venue. When body-aggression is high and there is no named sport, roam uses the same stronger confrontation lean as street / corridor — it does not soften toward `game_or_play`.
+
+### Custom / free-form places
+
+Operators may type any place when adding a camera or uploading training frames (for example “rooftop café”, “warehouse bay 3”). The value is **slugified** (`rooftop_cafe`, `warehouse_bay_3`) and stored as `place_type`. Catalog aliases still win (`hallway` → `corridor_hallway`).
+
+Custom ids are remembered in a `custom_places` table so they appear in the next dropdown. They:
+
+- Are **not** sports venues (no play soften)
+- Lean like **circulation** (sidewalk / lobby family), not the strong street / corridor / house / compound / roam set
+- Do **not** get synthetic OpenCV painters — only an operator stamp or a labeled `scene__<custom>` folder
+- Must never be treated as a famous arena name invented by the pipeline
 
 ## How place is inferred
 
@@ -70,7 +81,7 @@ Absence of matching kits **does not** prove a fight. Matching kits **slightly** 
 Documented policy (tests cover the combinations):
 
 1. **Strong sports venue** + `sport_context` → stronger soften toward `game_or_play` (even if sport confidence is only modest).
-2. **Street / corridor / house / compound / roam** + high body-aggression + **no** `sport_context` → stronger lean `potential_fight` (alert; risk may be `high`). Roam is circulation / patrol coverage, not a sports-venue soften.
+2. **Street / corridor / house / compound / roam** + high body-aggression + **no** `sport_context` → stronger lean `potential_fight` (alert; risk may be `high`). Roam is circulation / patrol coverage, not a sports-venue soften. Custom places are circulation-leaning (not sports soften) but not this strong family.
 3. **Street** + `sport_context` (street soccer, …) → still `game_or_play` unless aggression is **extreme**; rationale notes *“street play — verify.”*
 4. Kit similarity boosts play confidence slightly; missing kits do not create a fight.
 5. Weapon-object and fall paths are unchanged.
@@ -80,7 +91,7 @@ See [SPORTS_AND_AGGRESSION.md](SPORTS_AND_AGGRESSION.md).
 
 ## Console
 
-- **Cameras** — optional Place type dropdown + location/venue notes (includes `roam`). Demo Lab File is stamped `gymnasium`; the RTSP stub is `street`. Additional authorized stubs: Corridor North (`corridor_hallway`), House interior demo (`house_interior`), Compound courtyard (`compound_courtyard`), Roam / patrol cam (`roam`). Existing DBs with empty `place_type` on the original demo ids are backfilled on list/seed. Object inventory is pipeline metadata, not a camera field.
+- **Cameras** — Place type catalog dropdown plus **Other / custom** text. Includes `roam`. Demo Lab File is stamped `gymnasium`; the RTSP stub is `street`. Additional authorized stubs: Corridor North (`corridor_hallway`), House interior demo (`house_interior`), Compound courtyard (`compound_courtyard`), Roam / patrol cam (`roam`). Existing DBs with empty `place_type` on the original demo ids are backfilled on list/seed. Custom places are remembered for the next dropdown. Object inventory is pipeline metadata, not a camera field.
 - **Run Pipeline → Last run** — `place_type`, kit cues, `sport_context`, object/structure counts, aggression, fall manner, gunshot proxy, aimed-firearm, and thrown-object cues together.
 - **Alert detail** — scene place, kit metadata, nearby objects, fall manner, gunshot proxy, weapon use / aimed-at-person, and thrown-object cue when present.
 - **Admin train** — place dropdown and `scene__*` zip paths; inventory lists place-folder counts; **Extract frames from video** for activity, sport, place, or object class.

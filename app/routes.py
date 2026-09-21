@@ -28,9 +28,9 @@ from vision.face_aggression import face_aggression_enabled
 from vision.gunshot_assist import gunshot_audio_enabled
 from vision.dangerous_objects import all_dangerous_objects, dangerous_display_name
 from vision.objects_catalog import all_objects, object_display_name
-from vision.scene_context import all_places, place_display_name
+from vision.scene_context import all_places, place_display_name, validate_place_type
 from vision.sports_catalog import all_sports, sport_display_name
-from ingest.cameras import camera_from_form, mask_uri
+from ingest.cameras import camera_from_form, mask_uri, place_type_from_form
 
 from .auth import (
     admin_required,
@@ -754,7 +754,7 @@ def camera_new():
         camera=None,
         masked_uri="",
         allow_webcam=bool(current_app.config.get("ALLOW_WEBCAM")),
-        place_types=all_places(),
+        place_types=_cameras().list_place_choices(),
     )
 
 
@@ -780,7 +780,7 @@ def camera_edit(camera_id: str):
         camera=camera,
         masked_uri=mask_uri(camera.uri),
         allow_webcam=bool(current_app.config.get("ALLOW_WEBCAM")),
-        place_types=all_places(),
+        place_types=_cameras().list_place_choices(),
     )
 
 
@@ -910,7 +910,7 @@ def _train_page_context(extra: dict | None = None) -> dict:
         "dataset": training_ops.dataset_inventory(current_app.config),
         "categories": list(ACTIVITY_CATEGORIES),
         "sports": all_sports(),
-        "places": all_places(),
+        "places": _cameras().list_place_choices(),
         "objects": all_objects(),
         "dangerous_objects": all_dangerous_objects(),
         "object_groups": {
@@ -1058,7 +1058,7 @@ def admin_train_upload():
     category = request.form.get("category") or ""
     split = request.form.get("split") or "train"
     sport_context = (request.form.get("sport_context") or "").strip()
-    place_type = (request.form.get("place_type") or "").strip()
+    place_type = place_type_from_form(request.form)
     zip_file = request.files.get("zipfile")
     images = request.files.getlist("images")
     try:
@@ -1088,6 +1088,9 @@ def admin_train_upload():
     except ValueError as exc:
         flash(str(exc), "error")
         return redirect(url_for("main.admin_train"))
+    slug = validate_place_type(place_type)
+    if slug:
+        _cameras().remember_custom_place(slug, place_type)
     _store().record_system_audit(
         "upload_labels",
         actor,
@@ -1108,6 +1111,7 @@ def admin_train_extract_video():
     try:
         fps = float(request.form.get("sample_fps") or current_app.config.get("SAMPLE_FPS") or 2)
         max_frames = int(request.form.get("max_frames") or 60)
+        extract_place = place_type_from_form(request.form)
         result = training_ops.extract_video_frames(
             current_app.config,
             video,
@@ -1115,7 +1119,7 @@ def admin_train_extract_video():
             split=(request.form.get("split") or "train").strip().lower(),
             category=request.form.get("category") or "",
             sport_context=(request.form.get("sport_context") or "").strip(),
-            place_type=(request.form.get("place_type") or "").strip(),
+            place_type=extract_place,
             object_id=(
                 request.form.get("object_id") or request.form.get("dangerous_id") or ""
             ).strip(),
@@ -1125,6 +1129,9 @@ def admin_train_extract_video():
     except (ValueError, TypeError) as exc:
         flash(str(exc), "error")
         return redirect(url_for("main.admin_train"))
+    slug = validate_place_type(extract_place)
+    if slug:
+        _cameras().remember_custom_place(slug, extract_place)
     _store().record_system_audit(
         "extract_video_frames",
         actor,

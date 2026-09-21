@@ -10,6 +10,8 @@ from clothing.
 from __future__ import annotations
 
 import logging
+import re
+import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Optional, Sequence
@@ -151,6 +153,10 @@ DEMO_PLACE_SCENES: tuple[str, ...] = (
 )
 
 
+CUSTOM_PLACE_SENTINEL = "__custom__"
+_SLUG_MAX = 80
+
+
 def _norm(name: str) -> str:
     return (
         (name or "")
@@ -160,6 +166,21 @@ def _norm(name: str) -> str:
         .replace("-", "_")
         .replace("/", "_")
     )
+
+
+def slugify_place(name: str) -> str:
+    """Light slug for operator-typed places: lowercase, spaces → underscores.
+
+    Accents are folded (café → cafe). Catalog aliases still resolve first via
+    ``validate_place_type``. Custom places do not get synthetic painters.
+    """
+    text = unicodedata.normalize("NFKD", name or "")
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = text.strip().lower()
+    text = text.replace(" ", "_").replace("-", "_").replace("/", "_")
+    text = re.sub(r"[^a-z0-9_]+", "_", text)
+    text = re.sub(r"_+", "_", text).strip("_")
+    return text[:_SLUG_MAX]
 
 
 def all_places() -> tuple[PlaceEntry, ...]:
@@ -208,17 +229,44 @@ def place_display_name(place_id: str) -> str:
     return entry.display_name
 
 
+def place_label_from_input(raw: str, slug: str) -> str:
+    """Keep operator wording when it differs from the slug."""
+    cleaned = (raw or "").strip()
+    if cleaned and slugify_place(cleaned) == slug and cleaned != slug:
+        return cleaned
+    return place_display_name(slug)
+
+
+def is_catalog_place(place_id: Optional[str]) -> bool:
+    return resolve_place(place_id or "") is not None
+
+
+def is_custom_place(place_id: Optional[str]) -> bool:
+    slug = slugify_place(place_id or "")
+    if not slug or slug == "unknown":
+        return False
+    return not is_catalog_place(slug)
+
+
 def validate_place_type(place_id: str) -> str:
-    """Return a canonical id or '' if unset. Reject unknown tokens."""
+    """Return a catalog id, a custom slug, or '' if unset.
+
+    Catalog aliases still resolve to the stable id. Any other non-empty
+    string is accepted after light slugify. ``__custom__`` is a form
+    sentinel and is treated as unset.
+    """
     cleaned = (place_id or "").strip()
-    if not cleaned:
+    if not cleaned or cleaned == CUSTOM_PLACE_SENTINEL:
         return ""
     entry = resolve_place(cleaned)
-    if entry is None:
-        raise ValueError(
-            f"Unknown place type '{place_id}'. Use a catalog id from vision/scene_context.py."
-        )
-    return entry.id
+    if entry is not None:
+        return entry.id
+    slug = slugify_place(cleaned)
+    if not slug or slug == CUSTOM_PLACE_SENTINEL:
+        return ""
+    if slug in {".", ".."} or slug.startswith("."):
+        raise ValueError("Place type is not a valid setting id.")
+    return slug
 
 
 def default_place_for_sport(sport_id: str) -> Optional[str]:
@@ -239,7 +287,16 @@ def is_sports_venue(place_id: Optional[str]) -> bool:
 
 
 def is_confrontation_setting(place_id: Optional[str]) -> bool:
-    return bool(place_id) and _norm(place_id) in CONFRONTATION_SETTING_IDS
+    """Catalog confrontation ids, plus custom places (circulation-leaning).
+
+    Custom / free-form places are not sports venues and do not soften toward
+    play. They lean like circulation (sidewalk / lobby), not the strong
+    street / corridor / house / compound / roam family.
+    """
+    entry = resolve_place(place_id or "")
+    if entry is not None:
+        return entry.id in CONFRONTATION_SETTING_IDS
+    return is_custom_place(place_id)
 
 
 def is_strong_confrontation_setting(place_id: Optional[str]) -> bool:
@@ -511,12 +568,11 @@ def place_from_folder_name(name: str) -> Optional[str]:
     while i < len(tokens):
         tok = tokens[i]
         if tok == "scene" and i + 1 < len(tokens):
-            entry = resolve_place(tokens[i + 1])
-            return entry.id if entry is not None else None
+            return validate_place_type(tokens[i + 1]) or None
         if tok.startswith("scene_"):
-            entry = resolve_place(tok[6:])
-            if entry is not None:
-                return entry.id
+            place_id = validate_place_type(tok[6:])
+            if place_id:
+                return place_id
         i += 1
     for tok in reversed(tokens):
         sport = resolve_sport(tok)
@@ -705,8 +761,8 @@ def infer_scene_place(
     specific arena name.
     """
     note_generic = (
-        "Place type is a catalog setting — not a named arena or address, "
-        "and not a determination of what happened."
+        "Place type is a catalog or operator-typed setting — not a named arena "
+        "or address, and not a determination of what happened."
     )
     stamped = (camera_place_type or "").strip()
     if stamped:
@@ -715,12 +771,19 @@ def infer_scene_place(
         except ValueError:
             place_id = ""
         if place_id:
+            custom = is_custom_place(place_id)
             return PlaceAssessment(
                 place_type=place_id,
                 confidence=0.95,
                 display=place_display_name(place_id),
                 source="camera",
-                note="Operator-set camera place_type. " + note_generic,
+                note=(
+                    "Operator-set custom place_type (no synthetic painter; "
+                    "circulation-leaning, not a sports-venue soften). "
+                    if custom
+                    else "Operator-set camera place_type. "
+                )
+                + note_generic,
             )
 
     if data_root:

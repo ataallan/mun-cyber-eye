@@ -31,6 +31,7 @@ from vision.scene_context import (
     kit_sport_confidence_boost,
     place_display_name,
     resolve_place,
+    validate_place_type,
 )
 from vision.sports_catalog import resolve_sport, sport_display_name
 
@@ -176,7 +177,9 @@ def collect_scene_context(detections: Sequence[Detection]) -> SceneContext:
         raw_place = extras.get("place_type") or (scene.get("place_type") if isinstance(scene, dict) else None)
         if raw_place:
             entry = resolve_place(str(raw_place))
-            place_id = entry.id if entry is not None else str(raw_place).strip().lower()
+            place_id = (
+                entry.id if entry is not None else validate_place_type(str(raw_place))
+            )
             try:
                 pconf = float(
                     extras.get("place_confidence")

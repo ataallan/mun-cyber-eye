@@ -314,6 +314,31 @@ def test_admin_zip_accepts_scene_folder(client, tmp_path):
     ).is_file()
 
 
+def test_admin_upload_custom_place_folder(client, app, tmp_path):
+    _login(client)
+    page = client.get("/admin/train")
+    assert "Other / custom" in page.get_data(as_text=True)
+    resp = client.post(
+        "/admin/train/upload",
+        data={
+            "category": "ordinary",
+            "place_type": "__custom__",
+            "place_type_custom": "rooftop café",
+            "split": "train",
+            "images": (io.BytesIO(_tiny_jpeg_bytes(8)), "roof.jpg"),
+        },
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    dest = tmp_path / "activity" / "train" / "scene__rooftop_cafe" / "roof.jpg"
+    assert dest.is_file()
+    choices = {p.id for p in app.extensions["camera_store"].list_place_choices()}
+    assert "rooftop_cafe" in choices
+    again = client.get("/admin/train")
+    assert "rooftop_cafe" in again.get_data(as_text=True)
+
+
 def test_admin_zip_accepts_catalog_sport_folder(client, tmp_path):
     _login(client)
     buf = io.BytesIO()

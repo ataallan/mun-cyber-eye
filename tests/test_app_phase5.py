@@ -224,6 +224,42 @@ def test_camera_form_has_place_type_dropdown(client):
     assert created.status_code == 200
     assert "Hall cam" in created.get_data(as_text=True)
     assert "corridor_hallway" in created.get_data(as_text=True)
+    assert "Other / custom" in body
+
+
+def test_camera_form_custom_place_round_trip(app, client):
+    _login(client)
+    created = client.post(
+        "/cameras/new",
+        data={
+            "name": "Roof café cam",
+            "location_label": "Roof terrace",
+            "source_type": "file",
+            "uri": "MOCK",
+            "sample_fps": "2",
+            "enabled": "1",
+            "place_type": "__custom__",
+            "place_type_custom": "rooftop café",
+            "notes": "Authorized rooftop",
+        },
+        follow_redirects=True,
+    )
+    assert created.status_code == 200
+    listing = created.get_data(as_text=True)
+    assert "Roof café cam" in listing
+    assert "rooftop_cafe" in listing
+    stored = [
+        c
+        for c in app.extensions["camera_store"].list_cameras()
+        if c.name == "Roof café cam"
+    ]
+    assert stored
+    assert stored[0].place_type == "rooftop_cafe"
+    edit = client.get(f"/cameras/{stored[0].id}/edit")
+    edit_body = edit.get_data(as_text=True)
+    assert edit.status_code == 200
+    assert "rooftop_cafe" in edit_body
+    assert "Other / custom" in edit_body
 
 
 def test_run_page_lists_registry(client):

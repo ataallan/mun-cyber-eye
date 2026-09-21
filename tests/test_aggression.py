@@ -253,6 +253,27 @@ def test_house_and_corridor_high_aggression_no_sport_alert():
         assert result.risk_level == RiskLevel.HIGH
 
 
+def test_custom_place_high_aggression_is_not_sports_soften():
+    engine = RiskEngine()
+    result = engine.assess(
+        [
+            Detection(
+                "ordinary",
+                0.66,
+                extras={
+                    "place_type": "rooftop_cafe",
+                    "place_confidence": 0.9,
+                    "aggression": {"score": 0.8, "cues": ["aggressive_motion"]},
+                },
+            )
+        ]
+    )
+    assert result.category == ActivityCategory.POTENTIAL_FIGHT
+    assert result.should_alert is True
+    assert result.place_type == "rooftop_cafe"
+    assert "sports venue" not in result.rationale.lower()
+
+
 def test_street_plus_sport_stays_play_unless_extreme():
     engine = RiskEngine()
     play = engine.assess(
