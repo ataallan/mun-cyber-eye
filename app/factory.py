@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from datetime import timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -17,6 +18,17 @@ from .auth import CUSTOMER_ROLES, UserStore, can_approve_accounts, can_train
 
 def _env_flag(name: str, default: str = "0") -> bool:
     return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _session_hours(value) -> float:
+    """Console session cap. Non-positive or junk values fall back to 8 hours."""
+    try:
+        hours = float(value)
+    except (TypeError, ValueError):
+        hours = 8.0
+    if hours <= 0:
+        return 8.0
+    return hours
 
 
 def _customer_bootstrap_role(value: str | None) -> str:
@@ -143,6 +155,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         DEVELOPER_2FA_REQUIRED=_env_flag("DEVELOPER_2FA_REQUIRED", "0"),
         LOGIN_CODE_MINUTES=int(os.getenv("LOGIN_CODE_MINUTES", "10")),
         LOGIN_CODE_RESEND_SECONDS=int(os.getenv("LOGIN_CODE_RESEND_SECONDS", "45")),
+        SESSION_HOURS=_session_hours(os.getenv("SESSION_HOURS", "8")),
         ENABLE_FACE_AGGRESSION=_env_flag("ENABLE_FACE_AGGRESSION", "0"),
         ENABLE_GUNSHOT_AUDIO=_env_flag("ENABLE_GUNSHOT_AUDIO", "0"),
         ALERT_ON_INTENSE_SPORT=_env_flag("ALERT_ON_INTENSE_SPORT", "0"),
@@ -229,6 +242,12 @@ def create_app(test_config: dict | None = None) -> Flask:
         app.config["LOGIN_CODE_RESEND_SECONDS"] = int(resend_s)
     except (TypeError, ValueError):
         app.config["LOGIN_CODE_RESEND_SECONDS"] = 45
+
+    session_hours = _session_hours(app.config.get("SESSION_HOURS", 8))
+    app.config["SESSION_HOURS"] = session_hours
+    # Applies only if a session is marked permanent. Sign-in keeps cookies
+    # non-permanent; console_session_guard also enforces this cap.
+    app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=session_hours)
 
     Path(app.config["ALERT_DB_PATH"]).parent.mkdir(parents=True, exist_ok=True)
     Path(app.config["AUTH_DB_PATH"]).parent.mkdir(parents=True, exist_ok=True)

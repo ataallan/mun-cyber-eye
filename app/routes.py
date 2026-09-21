@@ -38,6 +38,7 @@ from ingest.cameras import (
 from .auth import (
     CUSTOMER_ROLES,
     INACTIVE_LOGIN_MESSAGE,
+    LOGIN_CODE_DIGITS,
     LOGIN_CODE_EMAIL_NOTE,
     LOGIN_CODE_MINUTES_DEFAULT,
     LOGIN_CODE_RESEND_SECONDS_DEFAULT,
@@ -188,6 +189,9 @@ def _login_code_resend_seconds() -> int:
 def _challenge_user_or_redirect():
     username = pending_login_code_username()
     if session.get("user"):
+        blocked = console_session_guard()
+        if blocked is not None:
+            return None, blocked
         return None, redirect(url_for("main.dashboard"))
     if not username:
         flash("Sign in with your password first.", "error")
@@ -288,9 +292,9 @@ def _issue_login_code(user, *, resend: bool = False) -> str:
     return "ok"
 
 
-def _complete_console_login(user):
+def _complete_console_login(user, *, email_2fa_verified: bool = False):
     nxt = session.get(PENDING_2FA_NEXT_KEY) or ""
-    start_session(user)
+    start_session(user, email_2fa_verified=email_2fa_verified)
     flash("Signed in. Alerts require human verification.", "ok")
     if nxt.startswith("/") and not nxt.startswith("//"):
         return redirect(nxt)
@@ -520,6 +524,7 @@ def _render_login_code(user, *, demo_login_code: str = ""):
         minutes=minutes,
         demo_login_code=demo_login_code,
         email_note=LOGIN_CODE_EMAIL_NOTE,
+        login_code_digits=LOGIN_CODE_DIGITS,
     )
 
 
@@ -541,7 +546,7 @@ def login_code():
                 clear_login_code_challenge()
                 return redirect(url_for("main.login"))
             return _render_login_code(user, demo_login_code=peek_demo_login_code())
-        return _complete_console_login(user)
+        return _complete_console_login(user, email_2fa_verified=True)
 
     return _render_login_code(user, demo_login_code=peek_demo_login_code())
 

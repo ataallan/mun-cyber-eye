@@ -12,15 +12,15 @@
   {% else %}
   <p class="muted">Review alerts from authorized cameras. After approval, customer accounts confirm a one-time code sent to their login email. AI detects and alerts. Humans verify and decide.</p>
   {% endif %}
-  <form method="post" class="form">
+  <form method="post" class="form" autocomplete="off">
     {% if next %}
     <input type="hidden" name="next" value="{{ next }}">
     {% endif %}
     <label>Username
-      <input type="text" name="username" autocomplete="username" required>
+      <input type="text" name="username" autocomplete="off" required readonly onfocus="this.removeAttribute('readonly')">
     </label>
     <label>Password
-      <input type="password" name="password" autocomplete="current-password" required>
+      <input type="password" name="password" autocomplete="off" required readonly onfocus="this.removeAttribute('readonly')">
     </label>
     <button class="btn btn-primary" type="submit">Sign in</button>
   </form>
@@ -28,6 +28,6 @@
     <a href="{{ url_for('main.forgot_password') }}">Forgot password?</a>
     <span>Don't have an account? <a href="{{ url_for('main.register') }}">Create account</a></span>
   </p>
-  <p class="fineprint">Authorized use only. This console does not enforce or act on its own. Detection runs from registered cameras — not from uploading incident clips.</p>
+  <p class="fineprint">Username and password start empty. Sign out ends the console session. A browser may still fill a saved password for this site until you remove it. Authorized use only. This console does not enforce or act on its own. Detection runs from registered cameras — not from uploading incident clips.</p>
 </section>
 {% endblock %}

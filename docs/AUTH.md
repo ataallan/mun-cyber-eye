@@ -8,20 +8,20 @@ Local operator accounts for the Flask console. **AI detects and alerts. Humans v
 2. **Optional customer env bootstrap** only if you set **both** `ADMIN_USERNAME` and `ADMIN_PASSWORD` in `.env` (plus optional `ADMIN_EMAIL`). If either is empty, nothing is seeded. Seeded `ADMIN_*` / `OPERATOR_*` rows are **active and approved**. `ADMIN_ROLE` may be `admin` (default) or `operator` — it cannot create a developer. Optional `OPERATOR_USERNAME` / `OPERATOR_PASSWORD` / `OPERATOR_EMAIL` is seeded the same way as an `operator` when both username and password are set. Alert notify prefers each user’s optional `security_email`, then login email.
 3. **Developer (Mun Cyber / lab) env seed** only if you set **both** `DEVELOPER_USERNAME` and `DEVELOPER_PASSWORD` (optional `DEVELOPER_EMAIL`). Leave these **empty on customer installs**. Mun Cyber staff set them on lab machines only. Seeded developer rows are **active and approved**. There is no published default password — never `operator` / `changeme`.
 
-Login checks the hashed password in the `users` table **and** that the account is approved and active. Pending accounts see a clear “awaiting admin approval” message (wrong passwords still show “Invalid credentials”). Password reset is not issued for pending or inactive accounts and cannot grant console access while pending. After any optional seed, the database is the source of truth. Session keys remain `user` (username) and `role`.
+Login checks the hashed password in the `users` table **and** that the account is approved and active. Pending accounts see a clear “awaiting admin approval” message (wrong passwords still show “Invalid credentials”). Password reset is not issued for pending or inactive accounts and cannot grant console access while pending. After any optional seed, the database is the source of truth. Session keys are `user` (username), `role`, and — only after a successful email code — `email_2fa_ok` plus `email_2fa_at`.
 
-**Second gate (customers only):** after password + approval succeed, customer `admin` / `operator` accounts must enter a **one-time email code** before cameras, alerts, or Run Pipeline. Pending users are never sent a code. Mun Cyber `developer` lab accounts skip this step unless `DEVELOPER_2FA_REQUIRED=1`.
+**Second gate (customers only):** after password + approval succeed, customer `admin` / `operator` accounts must enter a **one-time email code** before cameras, alerts, or Run Pipeline. Site admin and approved operators use the same gate. Pending users are never sent a code. Mun Cyber `developer` lab accounts skip this step unless `DEVELOPER_2FA_REQUIRED=1`. A cookie that never completed the code (including one saved before email codes were required) cannot open the console while `CUSTOMER_2FA_REQUIRED=1`.
 
 ## Pages
 
 | Path | Purpose |
 |------|---------|
 | `/login` | Username / password, forgot-password and create-account links. Empty user table points at first site-admin setup. Approved customers then enter an email code (`CUSTOMER_2FA_REQUIRED=1`). |
-| `/login-code` | One-time sign-in code after password + approval. Not shown to pending users. |
+| `/login-code` | One-time sign-in code after password + approval. Not shown to pending users. Submits when all 6 digits are entered; the verify button remains as a fallback. |
 | `/register` | Username, email, password, confirm password. First account is site admin (not developer) and is auto-approved. Later accounts wait for approval. |
 | `/forgot-password` | Request a time-limited reset (45 minutes by default). Pending accounts are treated like unknown identities. |
 | `/reset-password?token=…` | Set a new password (approved, active accounts only) |
-| `/logout` | Clear the session |
+| `/logout` | **Sign out.** Clears the session cookie, including any email-code stamp, so the next sign-in starts at the password form |
 | `/accounts` | Admin dashboard: pending queue with **Approve** / **Reject**, deactivate / reactivate. Site `admin` and `developer` only — not `operator`. |
 | `/admin/train` (`/train`) | Model training — **developer only**; customers do not see the nav or the page |
 
@@ -53,6 +53,16 @@ Delivery uses the same Resend helper as password reset (`alerts/notify.py`):
 - Set `CUSTOMER_2FA_REQUIRED=0` to skip the email-code step for local demos that only need password + approval.
 
 Codes are stored as Werkzeug password hashes (`login_code_hash`), not plaintext. Failed attempts are limited; requesting a new code is throttled (`LOGIN_CODE_RESEND_SECONDS`, default 45).
+
+The verify page keeps a **Verify and open console** button. With JavaScript, the form also submits once the field holds `LOGIN_CODE_DIGITS` (6) digits — including paste and mobile one-time-code autofill (`inputmode="numeric"`, `autocomplete="one-time-code"`, `maxlength="6"`). A wrong code is rejected on the server, the field is shown empty again, and the person can enter another code. The page does not resubmit a failed code by itself.
+
+## Session, Sign out, and saved browser passwords
+
+Site `admin` and approved `operator` accounts share the email-code gate. Completing `/login-code` sets `email_2fa_ok` and a timestamp. Password-only sign-in (developer skip, or `CUSTOMER_2FA_REQUIRED=0`) does **not** set that stamp. While customer email codes are required, `login_required` rejects a session that lacks it: the cookie is cleared and the next request is the login form. That closes the hole where a session started before email codes were live, or created with password alone, skipped `/login-code` until someone signed out.
+
+**Sign out** (`/logout`, labeled Sign out in the header) ends that held session immediately. Cookies are browser session cookies (not a “remember me” permanent cookie). `SESSION_HOURS` (default 8) also rejects a cookie that stays open longer than that, and `PERMANENT_SESSION_LIFETIME` uses the same cap if a session is ever marked permanent.
+
+The login form renders username and password **empty**. It sets `autocomplete="off"` on the form and both fields, and the fields stay read-only until focused, so they are not pre-filled from the server and browsers are asked not to drop a saved password into them. Chrome and other password managers can still refill a saved login for this site (for example `http://127.0.0.1:5055`) until the user removes that saved password. The server never writes the password into the HTML.
 
 ## Approval
 
