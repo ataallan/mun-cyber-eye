@@ -415,6 +415,9 @@ def test_last_run_and_alert_detail_show_safety_cues(app, client):
     assert "thrown_projectile" in body
     assert "Fall manner" in body
     assert "Gunshot video proxy" in body
+    assert "Dangerous objects" in body
+    assert "max use intensity" in body
+    assert "indicator only" in body.lower()
     assert "Safety cues" in body
 
     store = app.extensions["alert_store"]
@@ -450,6 +453,22 @@ def test_last_run_and_alert_detail_show_safety_cues(app, client):
     if aimed is not None:
         aimed_html = client.get(f"/alerts/{aimed.id}").get_data(as_text=True)
         assert "firearm_aimed_at_person" in aimed_html
+        assert "Dangerous object" in aimed_html or "Weapon use" in aimed_html
+    weapon = next(
+        (
+            a
+            for a in store.list_alerts()
+            if (a.to_dict().get("metadata") or {}).get("weapon", {}).get("weapon_id")
+            or (a.to_dict().get("metadata") or {}).get("weapon", {}).get(
+                "use_intensity_label"
+            )
+        ),
+        aimed,
+    )
+    if weapon is not None:
+        weapon_html = client.get(f"/alerts/{weapon.id}").get_data(as_text=True)
+        assert "Weapon use" in weapon_html
+        assert "indicator only" in weapon_html.lower()
     if fall is not None:
         fall_html = client.get(f"/alerts/{fall.id}").get_data(as_text=True)
         assert "fall" in fall_html.lower()
