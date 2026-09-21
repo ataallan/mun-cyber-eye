@@ -36,7 +36,7 @@ def app(tmp_path):
             "ADMIN_PASSWORD": "test-pass-12",
             "ADMIN_ROLE": "admin",
             "OPERATOR_USERNAME": "reviewer",
-            "OPERATOR_PASSWORD": "review",
+            "OPERATOR_PASSWORD": "review-pass-12",
             "ALERT_DB_PATH": str(tmp_path / "app.db"),
             "AUTH_DB_PATH": str(tmp_path / "auth.db"),
             "SNAPSHOT_DIR": str(tmp_path / "snaps"),

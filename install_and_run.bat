@@ -11,7 +11,8 @@ echo   2. Install Python packages from requirements.txt into that .venv
 echo   3. Start the console at http://127.0.0.1:5055
 echo   4. Open your browser to the login / create-account page
 echo.
-echo There is no default password. Create the first admin yourself.
+echo There is no default password. Create the first admin yourself (12+ characters, letter and digit).
+echo 2FA is not enforced on this Capstone console.
 echo Detection runs from registered cameras. Video uploads are for training only.
 echo.
 set /p CONFIRM=Continue and install from requirements.txt? [Y/n] 

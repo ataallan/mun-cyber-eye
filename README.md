@@ -26,7 +26,7 @@ python run.py
 
 Open **http://127.0.0.1:5055**
 
-There is **no default password**. On a fresh install, use **Create account** — the first account becomes site admin (choose a strong password) and is auto-approved. Later accounts are operators and stay pending until a site admin or developer approves them on **Accounts**. Unapproved users cannot sign in to cameras or alerts. Site admin runs cameras and review; **Train models** is Mun Cyber developer-only (empty `DEVELOPER_*` on customer installs).
+There is **no default password**. On a fresh install, use **Create account** — the first account becomes site admin (choose a strong password: **12+ characters, letter and digit**) and is auto-approved. Later accounts are operators and stay pending until a site admin or developer approves them on **Accounts**. Unapproved users cannot sign in to cameras or alerts. **2FA is not enforced** on this Capstone console. Site admin runs cameras and review; **Train models** is Mun Cyber developer-only (empty `DEVELOPER_*` on customer installs).
 
 1. Create account / sign in  
 2. **Cameras** → confirm the seeded Demo Lab File camera, or add an authorized file / RTSP source  

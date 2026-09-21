@@ -29,7 +29,82 @@ DEVELOPER_ROLE = "developer"
 VALID_ROLES = CUSTOMER_ROLES | {DEVELOPER_ROLE}
 APPROVER_ROLES = frozenset({"admin", DEVELOPER_ROLE})
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_.-]{3,32}$")
-MIN_PASSWORD_LEN = 8
+MIN_PASSWORD_LEN = 12
+# Customer-friendly policy: length + letter + digit. Symbols are allowed,
+# not required. Common / sequential passwords are rejected.
+PASSWORD_POLICY_HELP = (
+    f"Passwords must be at least {MIN_PASSWORD_LEN} characters and include at "
+    "least one letter and one digit. Do not use common or default passwords "
+    "(for example changeme, password, admin, operator, or sequences like "
+    "123456). Symbols are allowed. Two-factor authentication is not available "
+    "on this console — sign-in is a password plus admin approval only."
+)
+LEGACY_OPERATOR_USERNAME = "operator"
+LEGACY_OPERATOR_PASSWORD = "changeme"
+LEGACY_OPERATOR_EMAIL = "operator@localhost"
+COMMON_WEAK_PASSWORDS = frozenset(
+    {
+        "changeme",
+        "changeme1",
+        "changeme12",
+        "changeme123",
+        "changeme1234",
+        "password",
+        "password1",
+        "password12",
+        "password123",
+        "password1234",
+        "passw0rd",
+        "admin",
+        "admin1",
+        "admin12",
+        "admin123",
+        "admin1234",
+        "administrator",
+        "operator",
+        "operator1",
+        "operator12",
+        "operator123",
+        "letmein",
+        "welcome",
+        "welcome123",
+        "qwerty",
+        "qwerty123",
+        "qwertyuiop",
+        "iloveyou",
+        "12345678",
+        "123456789",
+        "1234567890",
+        "123456789012",
+        "00000000",
+        "11111111",
+        "abc123",
+        "abcd1234",
+        "pass1234",
+        "default",
+        "default123",
+    }
+)
+WEAK_LETTER_CORES = frozenset(
+    {
+        "changeme",
+        "password",
+        "admin",
+        "operator",
+        "qwerty",
+        "letmein",
+        "welcome",
+        "administrator",
+        "default",
+    }
+)
+_KEYBOARD_ROWS = (
+    "0123456789",
+    "abcdefghijklmnopqrstuvwxyz",
+    "qwertyuiop",
+    "asdfghjkl",
+    "zxcvbnm",
+)
 _USERS_ROLE_CHECK = "role IN ('admin', 'operator', 'developer')"
 PENDING_LOGIN_MESSAGE = (
     "Your account is awaiting admin approval. You cannot sign in to the "
@@ -106,11 +181,98 @@ def validate_email(email: str) -> Optional[str]:
     return None
 
 
+def _password_alnum(password: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", password.lower())
+
+
+def _password_letters(password: str) -> str:
+    return re.sub(r"[^a-z]", "", password.lower())
+
+
+def _has_letter_and_digit(password: str) -> bool:
+    has_letter = any(ch.isalpha() for ch in password)
+    has_digit = any(ch.isdigit() for ch in password)
+    return has_letter and has_digit
+
+
+def _has_weak_sequence(password: str) -> bool:
+    """True for obvious runs like 123456, abcdef, or qwerty."""
+    lowered = password.lower()
+    compact = _password_alnum(password)
+    for source in (lowered, compact):
+        if len(source) < 5:
+            continue
+        for i in range(len(source) - 4):
+            chunk = source[i : i + 5]
+            if not chunk.isalnum():
+                continue
+            for row in _KEYBOARD_ROWS:
+                if chunk in row or chunk in row[::-1]:
+                    return True
+    return False
+
+
+def _too_repetitive(password: str) -> bool:
+    compact = _password_alnum(password)
+    return bool(compact) and len(set(compact)) < 4
+
+
+def is_forbidden_legacy_login(username: str, password: str) -> bool:
+    """Published Capstone demo pair — always invalid, regardless of hash."""
+    return (
+        normalize_username(username).casefold() == LEGACY_OPERATOR_USERNAME
+        and (password or "").lower() == LEGACY_OPERATOR_PASSWORD
+    )
+
+
+def _hash_matches(password_hash: str, password: str) -> bool:
+    if not password_hash or not password:
+        return False
+    try:
+        return check_password_hash(password_hash, password)
+    except (TypeError, ValueError, AttributeError):
+        return False
+
+
+def is_legacy_operator_seed(user: User) -> bool:
+    """True when username operator still looks like the Capstone demo seed.
+
+    Does **not** match a customer who chose username ``operator`` with a
+    strong password and a non-legacy email.
+    """
+    if normalize_username(user.username).casefold() != LEGACY_OPERATOR_USERNAME:
+        return False
+    if normalize_email(user.email) == LEGACY_OPERATOR_EMAIL:
+        return True
+    return _hash_matches(user.password_hash, LEGACY_OPERATOR_PASSWORD)
+
+
 def validate_password(password: str, confirm: str | None = None) -> Optional[str]:
-    if len(password) < MIN_PASSWORD_LEN:
-        return f"Password must be at least {MIN_PASSWORD_LEN} characters."
+    if not password:
+        return "Password is required."
     if confirm is not None and password != confirm:
         return "Passwords do not match."
+    if len(password) < MIN_PASSWORD_LEN:
+        return f"Password must be at least {MIN_PASSWORD_LEN} characters."
+    if not _has_letter_and_digit(password):
+        return "Password must include at least one letter and one digit."
+    lowered = password.lower().strip()
+    compact = _password_alnum(password)
+    letters_only = _password_letters(password)
+    if (
+        lowered in COMMON_WEAK_PASSWORDS
+        or compact in COMMON_WEAK_PASSWORDS
+        or letters_only in WEAK_LETTER_CORES
+    ):
+        return (
+            "That password is too common or too easy to guess. "
+            "Choose a stronger password."
+        )
+    if _has_weak_sequence(password) or _too_repetitive(password):
+        return (
+            "That password is too common or too easy to guess. "
+            "Choose a stronger password."
+        )
     return None
 
 
@@ -341,8 +503,11 @@ class UserStore:
         err = validate_username(username) or validate_email(email)
         if err:
             raise ValueError(err)
-        if not password:
-            raise ValueError("Password is required.")
+        if is_forbidden_legacy_login(username, password):
+            raise ValueError("Published demo credentials are not allowed.")
+        err = validate_password(password)
+        if err:
+            raise ValueError(err)
         created = _utc_stamp()
         is_approved = bool(approved)
         actor = (approved_by or "").strip()
@@ -471,6 +636,8 @@ class UserStore:
 
     def attempt_login(self, username: str, password: str) -> tuple[Optional[User], str]:
         """Return (user, status) where status is ok, invalid, pending, or inactive."""
+        if is_forbidden_legacy_login(username, password):
+            return None, "invalid"
         user = self.get_by_username(username)
         if user is None or not check_password_hash(user.password_hash, password):
             return None, "invalid"
@@ -570,8 +737,9 @@ class UserStore:
         return refreshed
 
     def set_password(self, user_id: str, password: str) -> None:
-        if not password:
-            raise ValueError("Password is required.")
+        err = validate_password(password)
+        if err:
+            raise ValueError(err)
         with self._conn() as conn:
             conn.execute(
                 """
@@ -638,6 +806,54 @@ class UserStore:
             approved_at=_row_text(row, "approved_at") or None,
             approved_by=_row_text(row, "approved_by"),
         )
+
+
+def disable_legacy_operator(store: UserStore) -> dict:
+    """Deactivate the Capstone demo ``operator`` row when it is still a seed.
+
+    Safe for customers who chose username ``operator`` with a strong password
+    and an email other than ``operator@localhost``. Always pair with
+    ``is_forbidden_legacy_login`` so ``operator`` / ``changeme`` cannot sign in.
+    """
+    user = store.get_by_username(LEGACY_OPERATOR_USERNAME)
+    if user is None:
+        return {"status": "absent", "note": "No operator account found."}
+    if not is_legacy_operator_seed(user):
+        return {
+            "status": "skipped",
+            "user_id": user.id,
+            "note": (
+                "Username operator is present but does not look like the "
+                "Capstone demo seed (password is not changeme and email is "
+                "not operator@localhost). Left active."
+            ),
+        }
+    if not user.active:
+        return {
+            "status": "already_inactive",
+            "user_id": user.id,
+            "note": "Legacy operator account is already inactive.",
+        }
+    with store._conn() as conn:
+        conn.execute(
+            """
+            UPDATE users
+            SET active = 0, reset_token = NULL, reset_expires = NULL
+            WHERE id = ?
+            """,
+            (user.id,),
+        )
+    return {
+        "status": "deactivated",
+        "user_id": user.id,
+        "note": (
+            "Deactivated legacy operator account "
+            f"(email={user.email}, role={user.role}). "
+            "Published demo password changeme is not allowed. "
+            "If this was the only admin, seed a new site admin with "
+            "ADMIN_USERNAME and ADMIN_PASSWORD (a strong password you choose)."
+        ),
+    }
 
 
 def console_session_guard():

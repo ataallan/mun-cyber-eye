@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
@@ -12,7 +13,19 @@ from alerts.notify import NotificationService, NotifyConfig
 from alerts.store import AlertStore
 from ingest.cameras import CameraStore
 
-from .auth import CUSTOMER_ROLES, UserStore, can_approve_accounts, can_train
+from .auth import (
+    CUSTOMER_ROLES,
+    PASSWORD_POLICY_HELP,
+    MIN_PASSWORD_LEN,
+    UserStore,
+    can_approve_accounts,
+    can_train,
+    disable_legacy_operator,
+    is_forbidden_legacy_login,
+    validate_password,
+)
+
+log = logging.getLogger(__name__)
 
 
 def _env_flag(name: str, default: str = "0") -> bool:
@@ -25,41 +38,78 @@ def _customer_bootstrap_role(value: str | None) -> str:
     return role if role in CUSTOMER_ROLES else "admin"
 
 
+def _seedable_credentials(username: str, password: str) -> str | None:
+    """Return an error if env bootstrap credentials must not be stored."""
+    if is_forbidden_legacy_login(username, password):
+        return "published demo credentials operator/changeme are not allowed"
+    return validate_password(password)
+
+
+def _seed_one(
+    user_store: UserStore,
+    *,
+    username: str,
+    password: str,
+    email: str,
+    role: str,
+    sync_password: bool,
+) -> None:
+    err = _seedable_credentials(username, password)
+    if err:
+        log.error("Not seeding user %r: %s", username, err)
+        return
+    try:
+        user_store.ensure_env_user(
+            username,
+            password,
+            email,
+            role=role,
+            sync_password=sync_password,
+        )
+    except ValueError as exc:
+        log.error("Not seeding user %r: %s", username, exc)
+
+
 def _seed_env_users(user_store: UserStore, config: dict) -> None:
     """Optional env bootstrap only when both username and password are set.
 
     Fresh installs ship with empty ADMIN_* and DEVELOPER_* values. There is no
     default password. The first Create account becomes customer site admin and
     cannot train. Developer (Mun Cyber lab) is seeded only via DEVELOPER_*.
+    Weak or published demo passwords are refused so operator/changeme cannot
+    return through seeding.
     """
     sync = bool(config.get("ADMIN_SYNC_PASSWORD", True))
     admin_username = (config.get("ADMIN_USERNAME") or "").strip()
     admin_password = config.get("ADMIN_PASSWORD") or ""
     if admin_username and admin_password:
-        user_store.ensure_bootstrap_admin(
-            admin_username,
-            admin_password,
-            config.get("ADMIN_EMAIL") or f"{admin_username}@localhost",
-            sync_password=sync,
+        _seed_one(
+            user_store,
+            username=admin_username,
+            password=admin_password,
+            email=config.get("ADMIN_EMAIL") or f"{admin_username}@localhost",
             role=_customer_bootstrap_role(config.get("ADMIN_ROLE")),
+            sync_password=sync,
         )
     op_user = (config.get("OPERATOR_USERNAME") or "").strip()
     op_pass = config.get("OPERATOR_PASSWORD") or ""
     if op_user and op_pass:
-        user_store.ensure_env_user(
-            op_user,
-            op_pass,
-            config.get("OPERATOR_EMAIL") or f"{op_user}@localhost",
+        _seed_one(
+            user_store,
+            username=op_user,
+            password=op_pass,
+            email=config.get("OPERATOR_EMAIL") or f"{op_user}@localhost",
             role="operator",
             sync_password=sync,
         )
     dev_user = (config.get("DEVELOPER_USERNAME") or "").strip()
     dev_pass = config.get("DEVELOPER_PASSWORD") or ""
     if dev_user and dev_pass:
-        user_store.ensure_env_user(
-            dev_user,
-            dev_pass,
-            config.get("DEVELOPER_EMAIL") or f"{dev_user}@localhost",
+        _seed_one(
+            user_store,
+            username=dev_user,
+            password=dev_pass,
+            email=config.get("DEVELOPER_EMAIL") or f"{dev_user}@localhost",
             role="developer",
             sync_password=sync,
         )
@@ -138,6 +188,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         PUBLIC_BASE_URL=os.getenv("PUBLIC_BASE_URL", "").rstrip("/"),
         RESET_TOKEN_MINUTES=int(os.getenv("RESET_TOKEN_MINUTES", "45")),
         AUTH_SHOW_RESET_URL=_env_flag("AUTH_SHOW_RESET_URL", "0"),
+        DISABLE_LEGACY_OPERATOR=_env_flag("DISABLE_LEGACY_OPERATOR", "1"),
         ENABLE_FACE_AGGRESSION=_env_flag("ENABLE_FACE_AGGRESSION", "0"),
         ENABLE_GUNSHOT_AUDIO=_env_flag("ENABLE_GUNSHOT_AUDIO", "0"),
         ALERT_ON_INTENSE_SPORT=_env_flag("ALERT_ON_INTENSE_SPORT", "0"),
@@ -233,6 +284,18 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     user_store = UserStore(app.config["AUTH_DB_PATH"])
     _seed_env_users(user_store, app.config)
+    if app.config.get("DISABLE_LEGACY_OPERATOR", True):
+        result = disable_legacy_operator(user_store)
+        if result.get("status") == "deactivated":
+            note = result.get("note") or "Deactivated legacy operator demo account."
+            store.record_system_audit(
+                "disable_legacy_operator",
+                "startup",
+                note,
+            )
+            app.logger.warning("%s", note)
+        elif result.get("status") == "skipped":
+            app.logger.info("%s", result.get("note") or "Legacy operator check skipped.")
     app.extensions["user_store"] = user_store
 
     camera_store = CameraStore(app.config["CAMERA_DB_PATH"])
@@ -273,6 +336,8 @@ def create_app(test_config: dict | None = None) -> Flask:
             "face_aggression_enabled": _env_flag("ENABLE_FACE_AGGRESSION", "0"),
             "can_train": can_train(session.get("role")),
             "can_approve_accounts": can_approve_accounts(session.get("role")),
+            "password_policy_help": PASSWORD_POLICY_HELP,
+            "min_password_len": MIN_PASSWORD_LEN,
         }
 
     return app

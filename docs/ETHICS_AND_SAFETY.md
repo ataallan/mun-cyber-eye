@@ -25,7 +25,7 @@ Mun Cyber Eye is an **assistance** system for authorized security personnel. It 
 
 ## Privacy and security (prototype expectations)
 
-- Local operator accounts on the console (hashed passwords; optional Resend reset email). Fresh installs create the first site admin via Create account — no known default password is shipped. That account cannot train models.
+- Local operator accounts on the console (hashed passwords; optional Resend reset email). Fresh installs create the first site admin via Create account — no known default password is shipped. Passwords must be at least 12 characters with a letter and a digit; `operator` / `changeme` cannot sign in. **2FA is not enforced** on this Capstone console. That account cannot train models.
 - Prefer least-privilege access to video and alert data.
 - Plan for encryption, retention limits, and access audits before any pilot.
 - Do not scrape or reuse biometric identity databases in this prototype.

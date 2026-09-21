@@ -74,13 +74,13 @@ def test_deliver_includes_all_linked_account_emails(tmp_path):
     owner = users.create_user(
         username="camowner",
         email="owner@example.com",
-        password="secret123",
+        password="test-pass-12",
     )
     users.set_security_email(owner.id, "security@example.com")
     extra = users.create_user(
         username="reviewer",
         email="reviewer@example.com",
-        password="secret123",
+        password="test-pass-12",
     )
     cameras.create(
         camera_id="cam-owned",
@@ -117,7 +117,7 @@ def test_one_account_covers_many_cameras(tmp_path):
     owner = users.create_user(
         username="siteops",
         email="ops@example.com",
-        password="secret123",
+        password="test-pass-12",
     )
     users.set_security_email(owner.id, "security@example.com")
     cameras.create(camera_id="cam-a", name="A", source_type="file", uri="MOCK")
@@ -163,7 +163,7 @@ def test_security_fallback_only_when_no_account_and_no_session(tmp_path):
     owner = users.create_user(
         username="linked",
         email="linked@example.com",
-        password="secret123",
+        password="test-pass-12",
     )
     cameras.set_accounts_for_camera("cam-owned", [(owner.id, owner.username)])
     seen2 = {}
@@ -186,7 +186,7 @@ def test_owner_without_email_skipped_with_honest_note(tmp_path):
     owner = users.create_user(
         username="noemail",
         email="placeholder@example.com",
-        password="secret123",
+        password="test-pass-12",
     )
     with users._conn() as conn:
         conn.execute("UPDATE users SET email = '', security_email = '' WHERE id = ?", (owner.id,))
@@ -240,7 +240,7 @@ def test_signed_in_extra_recipient_from_route(tmp_path):
     owner = users.create_user(
         username="siteowner",
         email="owner@example.com",
-        password="secret123",
+        password="test-pass-12",
     )
     cameras.create(
         camera_id="cam-route",
@@ -420,7 +420,7 @@ def test_missing_resend_key_with_linked_account_stays_queued(tmp_path):
     owner = users.create_user(
         username="camowner",
         email="owner@example.com",
-        password="secret123",
+        password="test-pass-12",
     )
     cameras.create(
         camera_id="cam-owned",

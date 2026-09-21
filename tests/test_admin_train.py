@@ -29,10 +29,10 @@ def app(tmp_path):
             "ADMIN_SYNC_PASSWORD": True,
             "ADMIN_ROLE": "admin",
             "OPERATOR_USERNAME": "reviewer",
-            "OPERATOR_PASSWORD": "reviewpass",
+            "OPERATOR_PASSWORD": "review-pass-12",
             "OPERATOR_EMAIL": "reviewer@localhost",
             "DEVELOPER_USERNAME": "labdev",
-            "DEVELOPER_PASSWORD": "dev-pass-99",
+            "DEVELOPER_PASSWORD": "lab-secret-99",
             "DEVELOPER_EMAIL": "labdev@localhost",
             "ALERT_DB_PATH": str(tmp_path / "alerts.db"),
             "AUTH_DB_PATH": str(tmp_path / "auth.db"),
@@ -54,7 +54,7 @@ def client(app):
     return app.test_client()
 
 
-def _login(client, username="labdev", password="dev-pass-99"):
+def _login(client, username="labdev", password="lab-secret-99"):
     return client.post(
         "/login",
         data={"username": username, "password": password},
@@ -77,7 +77,7 @@ def test_train_page_requires_login(client):
 
 
 def test_operator_forbidden_from_train_actions(client, tmp_path):
-    _login(client, "reviewer", "reviewpass")
+    _login(client, "reviewer", "review-pass-12")
     page = client.get("/admin/train", follow_redirects=True)
     assert page.status_code == 200
     body = page.get_data(as_text=True)
@@ -427,8 +427,8 @@ def test_first_register_site_admin_cannot_train(tmp_path):
         data={
             "username": "founder",
             "email": "founder@example.com",
-            "password": "secret123",
-            "confirm_password": "secret123",
+            "password": "test-pass-12",
+            "confirm_password": "test-pass-12",
         },
         follow_redirects=True,
     )
@@ -438,7 +438,7 @@ def test_first_register_site_admin_cannot_train(tmp_path):
     assert founder.role == "admin"
     client.post(
         "/login",
-        data={"username": "founder", "password": "secret123"},
+        data={"username": "founder", "password": "test-pass-12"},
         follow_redirects=True,
     )
     dash = client.get("/")
