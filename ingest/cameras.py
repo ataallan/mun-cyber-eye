@@ -17,7 +17,14 @@ from pathlib import Path
 from typing import Any, Iterator, List, Optional
 from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
-from vision.scene_context import validate_place_type
+from vision.scene_context import (
+    CUSTOM_PLACE_SENTINEL,
+    PlaceEntry,
+    all_places,
+    is_catalog_place,
+    place_label_from_input,
+    validate_place_type,
+)
 
 # Canonical demo-camera place stamps. Used for seed + empty-place backfill.
 DEMO_PLACE_BACKFILL: dict[str, str] = {
@@ -175,6 +182,12 @@ class CameraStore:
 
                 CREATE INDEX IF NOT EXISTS idx_cameras_enabled ON cameras(enabled);
                 CREATE INDEX IF NOT EXISTS idx_cameras_updated ON cameras(updated_at DESC);
+
+                CREATE TABLE IF NOT EXISTS custom_places (
+                    id TEXT PRIMARY KEY,
+                    display_name TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL
+                );
                 """
             )
             self._ensure_column(conn, "cameras", "place_type", "TEXT NOT NULL DEFAULT ''")
@@ -238,6 +251,7 @@ class CameraStore:
             updated_at=_utc_now(),
             place_type=validate_place_type(place_type),
         )
+        self.remember_custom_place(camera.place_type, place_type)
         with self._conn() as conn:
             conn.execute(
                 """
@@ -322,6 +336,8 @@ class CameraStore:
                 else validate_place_type(place_type)
             ),
         )
+        if place_type is not None:
+            self.remember_custom_place(updated.place_type, place_type)
         with self._conn() as conn:
             conn.execute(
                 """
@@ -422,6 +438,63 @@ class CameraStore:
     def _list_rows(self) -> list[sqlite3.Row]:
         with self._conn() as conn:
             return list(conn.execute("SELECT id FROM cameras").fetchall())
+
+    def remember_custom_place(self, place_id: str, raw_label: str = "") -> Optional[PlaceEntry]:
+        """Persist an operator-typed place so it appears in the next dropdown."""
+        slug = validate_place_type(place_id or raw_label)
+        if not slug or is_catalog_place(slug):
+            return None
+        display = place_label_from_input(raw_label or place_id, slug)
+        now = _utc_now()
+        with self._conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO custom_places (id, display_name, created_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    display_name = CASE
+                        WHEN excluded.display_name != '' THEN excluded.display_name
+                        ELSE custom_places.display_name
+                    END
+                """,
+                (slug, display, now),
+            )
+        return PlaceEntry(slug, display, "custom")
+
+    def list_custom_places(self) -> list[PlaceEntry]:
+        self._harvest_camera_places()
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT id, display_name FROM custom_places ORDER BY id COLLATE NOCASE ASC"
+            ).fetchall()
+        out: list[PlaceEntry] = []
+        for row in rows:
+            slug = row["id"]
+            if not slug or is_catalog_place(slug):
+                continue
+            display = (row["display_name"] or "").strip() or place_label_from_input("", slug)
+            out.append(PlaceEntry(slug, display, "custom"))
+        return out
+
+    def list_place_choices(self) -> list[PlaceEntry]:
+        """Catalog places plus remembered custom ids (catalog first)."""
+        seen = {p.id for p in all_places()}
+        choices = list(all_places())
+        for entry in self.list_custom_places():
+            if entry.id not in seen:
+                seen.add(entry.id)
+                choices.append(entry)
+        return choices
+
+    def _harvest_camera_places(self) -> None:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT place_type FROM cameras WHERE TRIM(place_type) != ''"
+            ).fetchall()
+        for row in rows:
+            slug = validate_place_type(row["place_type"] or "")
+            if slug and not is_catalog_place(slug):
+                self.remember_custom_place(slug, row["place_type"])
 
     @staticmethod
     def _row_to_camera(row: sqlite3.Row) -> Camera:
@@ -571,6 +644,17 @@ def _validate_interval(sample_interval: Optional[float]) -> Optional[float]:
     return value
 
 
+def place_type_from_form(form: Any) -> str:
+    """Read catalog select + optional custom text. Any non-empty value is allowed."""
+    custom = (form.get("place_type_custom") or "").strip()
+    choice = (form.get("place_type") or "").strip()
+    if choice == CUSTOM_PLACE_SENTINEL:
+        return custom
+    if custom and not choice:
+        return custom
+    return choice
+
+
 def camera_from_form(form: Any, *, existing: Optional[Camera] = None) -> dict[str, Any]:
     """Parse a Flask form into CameraStore create/update kwargs (no raw dump)."""
     payload: dict[str, Any] = {
@@ -579,7 +663,7 @@ def camera_from_form(form: Any, *, existing: Optional[Camera] = None) -> dict[st
         "source_type": (form.get("source_type") or "file").strip().lower(),
         "notes": (form.get("notes") or "").strip(),
         "enabled": (form.get("enabled") or "0") == "1",
-        "place_type": (form.get("place_type") or "").strip(),
+        "place_type": place_type_from_form(form),
     }
     fps_raw = (form.get("sample_fps") or "").strip()
     if fps_raw:

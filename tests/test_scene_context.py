@@ -19,10 +19,12 @@ from vision.scene_context import (
     infer_place_heuristic,
     infer_scene_place,
     is_confrontation_setting,
+    is_custom_place,
     is_sports_venue,
     is_strong_confrontation_setting,
     place_display_name,
     resolve_place,
+    slugify_place,
     validate_place_type,
 )
 
@@ -69,6 +71,10 @@ def test_place_catalog_is_a_solid_known_set():
     assert "Basketball court" == place_display_name("basketball_court")
     assert validate_place_type("") == ""
     assert validate_place_type("Street") == "street"
+    assert validate_place_type("rooftop café") == "rooftop_cafe"
+    assert validate_place_type("warehouse bay 3") == "warehouse_bay_3"
+    assert validate_place_type("__custom__") == ""
+    assert slugify_place("Rooftop Café") == "rooftop_cafe"
 
 
 def test_roam_is_circulation_confrontation_not_sports():
@@ -82,6 +88,21 @@ def test_roam_is_circulation_confrontation_not_sports():
     assert is_strong_confrontation_setting("roam") is True
     assert is_strong_confrontation_setting("street") is True
     assert is_strong_confrontation_setting("gymnasium") is False
+
+
+def test_custom_place_is_circulation_leaning_not_sports():
+    assert validate_place_type("rooftop café") == "rooftop_cafe"
+    assert is_custom_place("rooftop_cafe") is True
+    assert is_custom_place("street") is False
+    assert is_sports_venue("rooftop_cafe") is False
+    assert is_confrontation_setting("rooftop_cafe") is True
+    assert is_strong_confrontation_setting("rooftop_cafe") is False
+    img = np.zeros((80, 100, 3), dtype=np.uint8)
+    assessment = infer_scene_place(img, camera_place_type="rooftop café")
+    assert assessment.place_type == "rooftop_cafe"
+    assert assessment.source == "camera"
+    assert "custom" in assessment.note.lower()
+    assert "painter" in assessment.note.lower()
 
 
 def test_scene_folder_tags():
@@ -99,6 +120,9 @@ def test_scene_folder_tags():
     implied = parse_folder_tags("game_or_play__basketball")
     assert implied.place_type == "basketball_court"
     assert parse_folder_label("confrontation") == ("potential_fight", None)
+    custom = parse_folder_tags("scene__rooftop_cafe")
+    assert custom.place_type == "rooftop_cafe"
+    assert custom.category == "ordinary"
 
 
 def test_never_emits_a_famous_arena_name():

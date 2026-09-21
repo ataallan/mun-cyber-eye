@@ -347,14 +347,18 @@
       </select>
     </label>
     <label>Optional place type (writes <code>scene__&lt;place&gt;</code>)
-      <select name="place_type">
+      <select name="place_type" class="place-type-select">
         <option value="">none</option>
         {% for place in places %}
-        <option value="{{ place.id }}">{{ place.display_name }}</option>
+        <option value="{{ place.id }}">{{ place.display_name }} ({{ place.id }}){% if place.group == 'custom' %} · custom{% endif %}</option>
         {% endfor %}
+        <option value="__custom__">Other / custom…</option>
       </select>
     </label>
-    <p class="fineprint">Place tags help the scene-context assist. They are not a claim the model understands every sports arena. Uniforms are not labeled as identity or guilt.</p>
+    <label class="place-type-custom-wrap" style="display:none">Other / custom place
+      <input type="text" name="place_type_custom" placeholder="rooftop café, warehouse bay 3" autocomplete="off">
+    </label>
+    <p class="fineprint">Place tags help the scene-context assist. Catalog or any typed setting (slugified). Custom places have no synthetic painter. They are not a claim the model understands every sports arena. Uniforms are not labeled as identity or guilt.</p>
     <label>Split
       <select name="split">
         <option value="train" selected>train</option>
@@ -401,12 +405,16 @@
       </select>
     </label>
     <label id="extract-place-wrap">Place type
-      <select name="place_type">
+      <select name="place_type" class="place-type-select">
         <option value="">choose a place</option>
         {% for place in places %}
-        <option value="{{ place.id }}">{{ place.display_name }}</option>
+        <option value="{{ place.id }}">{{ place.display_name }} ({{ place.id }}){% if place.group == 'custom' %} · custom{% endif %}</option>
         {% endfor %}
+        <option value="__custom__">Other / custom…</option>
       </select>
+      <span class="place-type-custom-wrap" style="display:none">
+        <input type="text" name="place_type_custom" placeholder="rooftop café, warehouse bay 3" autocomplete="off">
+      </span>
     </label>
     <label id="extract-object-wrap">Object class
       <select name="object_id">
@@ -464,6 +472,15 @@
     kind.addEventListener("change", sync);
     sync();
   }
+  document.querySelectorAll(".place-type-select").forEach(function (sel) {
+    function placeSync() {
+      var form = sel.closest("form");
+      var wrap = form ? form.querySelector(".place-type-custom-wrap") : null;
+      if (wrap) wrap.style.display = sel.value === "__custom__" ? "" : "none";
+    }
+    sel.addEventListener("change", placeSync);
+    placeSync();
+  });
 })();
 </script>
 {% else %}

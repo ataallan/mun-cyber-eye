@@ -92,8 +92,34 @@ def test_place_type_round_trip_and_reject_unknown(store):
     assert store.get(cam.id).place_type == "corridor_hallway"
     updated = store.update(cam.id, place_type="house_interior")
     assert updated.place_type == "house_interior"
-    with pytest.raises(ValueError):
-        store.create(name="Arena", source_type="file", uri="MOCK", place_type="madison_square_garden")
+    custom = store.create(
+        name="Arena cam",
+        source_type="file",
+        uri="MOCK",
+        place_type="madison_square_garden",
+    )
+    assert custom.place_type == "madison_square_garden"
+
+
+def test_custom_place_rooftop_cafe_round_trip(store):
+    cam = store.create(
+        name="Roof cam",
+        location_label="Level 4",
+        source_type="file",
+        uri="MOCK",
+        notes="Authorized rooftop",
+        place_type="rooftop café",
+    )
+    assert cam.place_type == "rooftop_cafe"
+    assert store.get(cam.id).place_type == "rooftop_cafe"
+    listed = store.list_cameras()
+    assert any(c.place_type == "rooftop_cafe" for c in listed)
+    ids = {p.id for p in store.list_place_choices()}
+    assert "rooftop_cafe" in ids
+    assert "roam" in ids
+    updated = store.update(cam.id, place_type="warehouse bay 3")
+    assert updated.place_type == "warehouse_bay_3"
+    assert any(p.id == "warehouse_bay_3" for p in store.list_custom_places())
 
 
 def test_mask_and_resolve_uri(monkeypatch):
@@ -237,6 +263,23 @@ def test_camera_from_form_blank_uri_keeps_existing(store):
     )
     assert "uri" not in payload
     assert payload["place_type"] == "street"
+    custom_payload = camera_from_form(
+        Form(
+            {
+                "name": "Keep",
+                "location_label": "Dock",
+                "source_type": "rtsp",
+                "uri": "",
+                "sample_fps": "2",
+                "enabled": "1",
+                "notes": "",
+                "place_type": "__custom__",
+                "place_type_custom": "rooftop café",
+            }
+        ),
+        existing=cam,
+    )
+    assert custom_payload["place_type"] == "rooftop café"
     updated = store.update(cam.id, **payload)
     assert updated.uri == "rtsp://u:p@h/s"
     assert updated.location_label == "Dock"

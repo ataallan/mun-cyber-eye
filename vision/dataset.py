@@ -51,6 +51,7 @@ from vision.scene_context import (
     default_place_for_sport,
     place_display_name,
     resolve_place,
+    validate_place_type,
 )
 from vision.sports_catalog import (
     DEMO_DATASET_SPORTS,
@@ -139,13 +140,13 @@ def parse_folder_tags(name: str) -> FolderTags:
                     f"Folder '{name}' has 'scene' without a place type. "
                     "Use scene__street, scene__basketball_court, …"
                 )
-            place = resolve_place(tokens[i + 1])
-            if place is None:
+            place_id = validate_place_type(tokens[i + 1])
+            if not place_id:
                 raise ValueError(
                     f"Unknown place type '{tokens[i + 1]}' in folder '{name}'. "
                     "See docs/SCENE_CONTEXT.md."
                 )
-            place_ctx = place.id
+            place_ctx = place_id
             i += 2
             continue
         leftovers.append(tok)
