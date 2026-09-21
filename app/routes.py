@@ -36,10 +36,13 @@ from ingest.cameras import (
 )
 
 from .auth import (
+    CUSTOMER_ROLES,
     account_notify_email,
     admin_required,
+    developer_required,
     guest_only,
     login_required,
+    public_register_role,
     safe_next_url,
     start_session,
     validate_email,
@@ -50,7 +53,7 @@ from . import training as training_ops
 
 bp = Blueprint("main", __name__)
 
-MANAGE_ROLES = {"admin", "operator"}
+MANAGE_ROLES = {"admin", "operator", "developer"}
 
 
 def operator_required(view):
@@ -61,7 +64,7 @@ def operator_required(view):
         if not session.get("user"):
             return redirect(url_for("main.login", next=request.path))
         if session.get("role") not in MANAGE_ROLES:
-            flash("Only admin or operator roles can manage alert delivery.", "error")
+            flash("Only admin, operator, or developer roles can manage alert delivery.", "error")
             return redirect(url_for("main.dashboard"))
         return view(*args, **kwargs)
 
@@ -186,11 +189,14 @@ def register():
             )
         try:
             is_first = _users().count() == 0
+            role = public_register_role(is_first=is_first)
+            if role not in CUSTOMER_ROLES:
+                raise ValueError("Create account cannot grant developer.")
             user = _users().create_user(
                 username=username,
                 email=email,
                 password=password,
-                role="admin" if is_first else "operator",
+                role=role,
             )
             if security_email:
                 _users().set_security_email(user.id, security_email)
@@ -202,7 +208,8 @@ def register():
         if user.role == "admin":
             flash(
                 "First account created as site admin. Sign in with the password you chose. "
-                "No default password is shipped.",
+                "No default password is shipped. Site admin runs cameras and review — "
+                "not model training.",
                 "ok",
             )
         else:
@@ -1030,7 +1037,6 @@ def _train_page_context(extra: dict | None = None) -> dict:
         "splits": list(SPLITS),
         "checkpoints": training_ops.list_checkpoint_files(current_app.config),
         "audit": _store().list_system_audit(limit=20),
-        "is_admin": session.get("role") == "admin",
         "last_metrics": None,
         "last_eval": None,
         "metric_reports": {},
@@ -1041,20 +1047,20 @@ def _train_page_context(extra: dict | None = None) -> dict:
 
 
 @bp.route("/train")
-@login_required
+@developer_required
 def train_redirect():
     return redirect(url_for("main.admin_train"))
 
 
 @bp.route("/admin/train", methods=["GET"])
-@login_required
+@developer_required
 def admin_train():
-    """Admins train/activate; operators may view status only."""
+    """Mun Cyber developer only — customers do not see this page."""
     return render_template("train.html", **_train_page_context())
 
 
 @bp.route("/admin/train/run", methods=["POST"])
-@admin_required
+@developer_required
 def admin_train_run():
     actor = session.get("user", "unknown")
     try:
@@ -1106,7 +1112,7 @@ def admin_train_run():
 
 
 @bp.route("/admin/train/activate", methods=["POST"])
-@admin_required
+@developer_required
 def admin_train_activate():
     actor = session.get("user", "unknown")
     chosen = (request.form.get("checkpoint_path") or "").strip()
@@ -1128,7 +1134,7 @@ def admin_train_activate():
 
 
 @bp.route("/admin/train/evaluate", methods=["POST"])
-@admin_required
+@developer_required
 def admin_train_evaluate():
     actor = session.get("user", "unknown")
     split = (request.form.get("split") or "test").strip().lower()
@@ -1160,7 +1166,7 @@ def admin_train_evaluate():
 
 
 @bp.route("/admin/train/upload", methods=["POST"])
-@admin_required
+@developer_required
 def admin_train_upload():
     actor = session.get("user", "unknown")
     category = request.form.get("category") or ""
@@ -1212,7 +1218,7 @@ def admin_train_upload():
 
 
 @bp.route("/admin/train/extract-video", methods=["POST"])
-@admin_required
+@developer_required
 def admin_train_extract_video():
     actor = session.get("user", "unknown")
     video = request.files.get("video")
@@ -1258,7 +1264,7 @@ def admin_train_extract_video():
 
 
 @bp.route("/admin/train/objects", methods=["POST"])
-@admin_required
+@developer_required
 def admin_train_objects():
     actor = session.get("user", "unknown")
     try:

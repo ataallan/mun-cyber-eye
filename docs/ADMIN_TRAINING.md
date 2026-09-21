@@ -1,25 +1,28 @@
-# Admin model training — Mun Cyber Eye
+# Developer model training — Mun Cyber Eye
 
-Admins can train and activate the Phase 3 activity model from the Flask console. This is the same CPU sklearn path as `python -m vision.train_activity` — a thin wrapper, not a second trainer.
+Mun Cyber **developer** accounts can train and activate the Phase 3 activity model from the Flask console. This is the same CPU sklearn path as `python -m vision.train_activity` — a thin wrapper, not a second trainer.
+
+Customer **site admin** and **operator** accounts run detection and review on **shipped checkpoints**. They do not see **Train models** and cannot call train / activate / upload / extract APIs.
 
 **AI detects and alerts. Humans verify and decide.** Training improves assistive detection only. The system does not enforce, detain, or lock anything.
 
 ## Who can train
 
-| Account | Role | Train / activate / upload |
-|---------|------|---------------------------|
-| Seeded `ADMIN_USERNAME` only when **both** username and password are set in `.env` (no published default) | `admin` (via `ADMIN_ROLE`) | Yes |
-| First `/register` account on a fresh install | `admin` | Yes |
-| Later `/register` accounts | `operator` | No (status page is readable if they know the URL) |
+| Account | Role | Train / activate / upload / extract |
+|---------|------|--------------------------------------|
+| `DEVELOPER_USERNAME` only when **both** username and password are set in `.env` (lab machines; no published default) | `developer` | Yes |
+| First `/register` account on a fresh install | `admin` (site ops) | No |
+| Optional `ADMIN_USERNAME` when username **and** password are set | `admin` (or `operator` if `ADMIN_ROLE=operator`) | No |
+| Later `/register` accounts | `operator` | No |
 | Optional `OPERATOR_USERNAME` when username **and** password are set | `operator` | No |
 
-There is no promote UI in this prototype. To grant training, set `users.role = 'admin'` in `AUTH_DB_PATH` (default `data/auth.db`) for that username, or sign in as the first-created admin.
+Create account **never** grants `developer`. Customer `.env.example` leaves `DEVELOPER_*` empty. Mun Cyber staff set those variables on lab machines only — never `operator` / `changeme`.
 
-The **Train models** nav link is shown only when `session.role == admin`.
+The **Train models** nav link and `/admin/train` (GET and mutating POST) are shown / allowed only when `session.role == developer`.
 
 ## Console
 
-1. Sign in as admin.
+1. Sign in as the env-seeded developer on a lab machine.
 2. Open **Train models** (`/admin/train`, also `/train`).
 3. Review the active checkpoint path, whether it loads, the categories it knows, and last-known val/test metrics stored in the joblib.
 4. Review dataset counts under `data/activity/{train,val,test}/<category>/` (the six canonical classes, including `game_or_play` / `dance` / `potential_fight`) and any sport-context or `scene__<place>` folder totals. Object-class counts (sibling `data/objects/{train,val,test}/<object_id>/`) are listed separately and do not feed the activity trainer.
@@ -27,8 +30,8 @@ The **Train models** nav link is shown only when `session.role == admin`.
 6. After train, the page shows accuracy and per-class precision / recall / F1. Those numbers are written into the checkpoint the same way the CLI does.
 7. **Activate checkpoint** writes the chosen file to `data/active_checkpoint.json`. Subsequent **Run Pipeline** camera runs use that model.
 8. Optional **Evaluate** runs `vision.eval_activity` on val or test.
-9. **Upload labeled frames** — multi-file into a chosen category (optional sport context writes `game_or_play__<sport>`; optional place type writes `scene__<place>`), or a zip of `train/<category>/*.jpg` including catalog sport folders and `train/scene__street/*.jpg`. Unknown category names and `..` paths are rejected. Sport-context, scene-place, and body-aggression assists stay in the pipeline; training does not replace them. See [SCENE_CONTEXT.md](SCENE_CONTEXT.md).
-10. **Extract frames from video** — **training only**, not live detection. Admin picks kind (activity / game_or_play+sport / scene place / **object class** / **dangerous / weapon-like class**), uploads an authorized mp4 / avi / mov / mkv, and sets sample FPS / max frames. `FrameSampler` writes JPEGs into `data/activity/train/...`, `data/objects/train/<object_id>/`, or `data/dangerous/train/<id>/`. Activity class `potential_weapon_object` remains a six-class trainer folder. **Videos are sampled to frames; the sklearn activity trainer still learns from images.** After extract, use **Train from labeled data** for activity classes. Optional **Train object model** fits a small CPU classifier when enough object images exist; runtime inventory still prefers YOLO and will not invent a refrigerator when the detector is missing. See [OBJECTS_AND_STRUCTURES.md](OBJECTS_AND_STRUCTURES.md) and [DANGEROUS_OBJECTS.md](DANGEROUS_OBJECTS.md).
+9. **Upload labeled frames** — multi-file into a chosen category (optional sport context writes `game_or_play__<sport>`; optional place type writes `scene__<place>`), or a zip of `train/<category>/*.jpg` including catalog sport folders and `train/scene__street/*.jpg`. Unknown category names and `..` paths are rejected. Sport-context, scene-place, and body-aggression assists stay in the pipeline; training does not replace them. See [SCENE_CONTEXT.md](SCENE_CONTEXT.md). Uploads remain **training-only and developer-only**.
+10. **Extract frames from video** — **training only**, not live detection. Developer picks kind (activity / game_or_play+sport / scene place / **object class** / **dangerous / weapon-like class**), uploads an authorized mp4 / avi / mov / mkv, and sets sample FPS / max frames. `FrameSampler` writes JPEGs into `data/activity/train/...`, `data/objects/train/<object_id>/`, or `data/dangerous/train/<id>/`. Activity class `potential_weapon_object` remains a six-class trainer folder. **Videos are sampled to frames; the sklearn activity trainer still learns from images.** After extract, use **Train from labeled data** for activity classes. Optional **Train object model** fits a small CPU classifier when enough object images exist; runtime inventory still prefers YOLO and will not invent a refrigerator when the detector is missing. See [OBJECTS_AND_STRUCTURES.md](OBJECTS_AND_STRUCTURES.md) and [DANGEROUS_OBJECTS.md](DANGEROUS_OBJECTS.md).
 
 Training is in-request (seconds on CPU). If a future model exceeds ~60s, switch that job to a background thread and a status file; do not silently hang the worker.
 
@@ -40,7 +43,7 @@ Training is in-request (seconds on CPU). If a future model exceeds ~60s, switch 
 {
   "path": "/abs/or/relative/data/checkpoints/activity_custom.joblib",
   "activated_at": "2026-09-21T00:00:00Z",
-  "activated_by": "siteadmin",
+  "activated_by": "labdev",
   "source": "console"
 }
 ```
@@ -74,6 +77,8 @@ Paths:
 - Fall / gunshot / aimed-firearm / thrown-object / dangerous-object intensity assists are pipeline extras, not extra sklearn classes. `potential_gunshot` is a risk enum only. See [GUNSHOTS_AND_FALLS.md](GUNSHOTS_AND_FALLS.md) and [DANGEROUS_OBJECTS.md](DANGEROUS_OBJECTS.md).
 
 ## CLI (unchanged)
+
+Lab / developer machines can still train from the CLI:
 
 ```bash
 python -m vision.train_activity --generate-demo --output data/checkpoints/activity_demo.joblib

@@ -338,7 +338,8 @@ def test_run_page_lists_registry(client):
     assert "Authorized video file upload" not in body
     assert "mode-upload" not in body
     assert "video-file" not in body
-    assert "Train models" in body
+    assert ">Train models</a>" not in body
+    assert "shipped checkpoints" in body
 
 
 def _tiny_video(path: Path, frames: int = 40) -> Path:

@@ -17,7 +17,7 @@ Mun Cyber Eye is an **assistance** system for authorized security personnel. It 
 
 - Every alert is provisional and requires human review.
 - Console actions are **acknowledge / dismiss / escalate / reopen** only, and are audited. There is no UI that wipes an alert row. Cameras are enable / disable and detach-from-account only — no permanent camera delete. There is no video library delete UI. See [PRODUCT_OPS.md](PRODUCT_OPS.md).
-- Admin train / activate / labeled uploads are written to `system_audit`.
+- Developer train / activate / labeled uploads are written to `system_audit`.
 - Confidence scores and rationales support judgment; they do not replace it.
 - Weapon-related detections are **indicators**, not proof of possession or intent.
 - Outbound email and webhooks notify **authorized personnel only**. They do not close a review, lock doors, or dispatch force.
@@ -25,7 +25,7 @@ Mun Cyber Eye is an **assistance** system for authorized security personnel. It 
 
 ## Privacy and security (prototype expectations)
 
-- Local operator accounts on the console (hashed passwords; optional Resend reset email). Fresh installs create the first admin via Create account — no known default password is shipped.
+- Local operator accounts on the console (hashed passwords; optional Resend reset email). Fresh installs create the first site admin via Create account — no known default password is shipped. That account cannot train models.
 - Prefer least-privilege access to video and alert data.
 - Plan for encryption, retention limits, and access audits before any pilot.
 - Do not scrape or reuse biometric identity databases in this prototype.

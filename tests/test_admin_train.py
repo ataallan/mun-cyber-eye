@@ -1,4 +1,4 @@
-"""Admin console training: auth gate, train, activate, upload."""
+"""Developer console training: auth gate, train, activate, upload."""
 
 from __future__ import annotations
 
@@ -31,6 +31,9 @@ def app(tmp_path):
             "OPERATOR_USERNAME": "reviewer",
             "OPERATOR_PASSWORD": "reviewpass",
             "OPERATOR_EMAIL": "reviewer@localhost",
+            "DEVELOPER_USERNAME": "labdev",
+            "DEVELOPER_PASSWORD": "dev-pass-99",
+            "DEVELOPER_EMAIL": "labdev@localhost",
             "ALERT_DB_PATH": str(tmp_path / "alerts.db"),
             "AUTH_DB_PATH": str(tmp_path / "auth.db"),
             "CAMERA_DB_PATH": str(tmp_path / "cameras.db"),
@@ -51,7 +54,7 @@ def client(app):
     return app.test_client()
 
 
-def _login(client, username="siteadmin", password="test-pass-12"):
+def _login(client, username="labdev", password="dev-pass-99"):
     return client.post(
         "/login",
         data={"username": username, "password": password},
@@ -73,13 +76,13 @@ def test_train_page_requires_login(client):
     assert "/login" in resp.headers["Location"]
 
 
-def test_operator_forbidden_from_train_actions(client, app, tmp_path):
+def test_operator_forbidden_from_train_actions(client, tmp_path):
     _login(client, "reviewer", "reviewpass")
-    page = client.get("/admin/train")
+    page = client.get("/admin/train", follow_redirects=True)
     assert page.status_code == 200
     body = page.get_data(as_text=True)
     assert ">Train models</a>" not in body
-    assert "Model training" in body
+    assert "Only Mun Cyber developer accounts" in body
     assert "Train from labeled data" not in body
     assert "Extract frames from video" not in body
 
@@ -93,7 +96,7 @@ def test_operator_forbidden_from_train_actions(client, app, tmp_path):
         follow_redirects=True,
     )
     assert denied.status_code == 200
-    assert "Only the admin role" in denied.get_data(as_text=True)
+    assert "Only Mun Cyber developer accounts" in denied.get_data(as_text=True)
     assert not list((tmp_path / "checkpoints").glob("*.joblib"))
 
     activate = client.post(
@@ -101,10 +104,29 @@ def test_operator_forbidden_from_train_actions(client, app, tmp_path):
         data={"checkpoint_path": "activity_custom.joblib"},
         follow_redirects=True,
     )
-    assert "Only the admin role" in activate.get_data(as_text=True)
+    assert "Only Mun Cyber developer accounts" in activate.get_data(as_text=True)
 
 
-def test_admin_nav_shows_train_models(client):
+def test_site_admin_cannot_train(client, tmp_path):
+    _login(client, "siteadmin", "test-pass-12")
+    dash = client.get("/")
+    assert ">Train models</a>" not in dash.get_data(as_text=True)
+    hidden = client.get("/admin/train", follow_redirects=True)
+    assert "Only Mun Cyber developer accounts" in hidden.get_data(as_text=True)
+    denied = client.post(
+        "/admin/train/run",
+        data={
+            "model_type": "forest",
+            "output_name": "activity_custom.joblib",
+            "generate_demo": "1",
+        },
+        follow_redirects=True,
+    )
+    assert "Only Mun Cyber developer accounts" in denied.get_data(as_text=True)
+    assert not list((tmp_path / "checkpoints").glob("*.joblib"))
+
+
+def test_developer_nav_shows_train_models(client):
     _login(client)
     dash = client.get("/")
     assert ">Train models</a>" in dash.get_data(as_text=True)
@@ -113,7 +135,7 @@ def test_admin_nav_shows_train_models(client):
     assert "/admin/train" in alias.headers["Location"]
 
 
-def test_admin_can_train_activate_and_upload(client, app, tmp_path):
+def test_developer_can_train_activate_and_upload(client, app, tmp_path):
     _login(client)
     resp = client.post(
         "/admin/train/run",
@@ -151,7 +173,7 @@ def test_admin_can_train_activate_and_upload(client, app, tmp_path):
     record = read_active_checkpoint(tmp_path / "active_checkpoint.json")
     assert record is not None
     assert Path(record["path"]) == ckpt
-    assert record["activated_by"] == "siteadmin"
+    assert record["activated_by"] == "labdev"
     assert app.config["ACTIVITY_CHECKPOINT"] == str(ckpt)
 
     upload = client.post(
@@ -232,7 +254,7 @@ def test_create_adapter_reads_active_checkpoint_json(tmp_path, monkeypatch, app)
     assert Path(adapter.checkpoint_path) == ckpt
 
 
-def test_admin_zip_upload_uses_split_category_layout(client, tmp_path):
+def test_developer_zip_upload_uses_split_category_layout(client, tmp_path):
     _login(client)
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
@@ -254,7 +276,7 @@ def test_admin_zip_upload_uses_split_category_layout(client, tmp_path):
     assert dest.is_file()
 
 
-def test_admin_upload_preserves_sport_context_folder(client, tmp_path):
+def test_developer_upload_preserves_sport_context_folder(client, tmp_path):
     _login(client)
     resp = client.post(
         "/admin/train/upload",
@@ -274,7 +296,7 @@ def test_admin_upload_preserves_sport_context_folder(client, tmp_path):
     assert "basketball" in body.lower()
 
 
-def test_admin_upload_scene_place_folder(client, tmp_path):
+def test_developer_upload_scene_place_folder(client, tmp_path):
     _login(client)
     resp = client.post(
         "/admin/train/upload",
@@ -295,7 +317,7 @@ def test_admin_upload_scene_place_folder(client, tmp_path):
     assert "scene__" in body or "Place type" in body or "street" in body.lower()
 
 
-def test_admin_zip_accepts_scene_folder(client, tmp_path):
+def test_developer_zip_accepts_scene_folder(client, tmp_path):
     _login(client)
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
@@ -314,7 +336,7 @@ def test_admin_zip_accepts_scene_folder(client, tmp_path):
     ).is_file()
 
 
-def test_admin_upload_custom_place_folder(client, app, tmp_path):
+def test_developer_upload_custom_place_folder(client, app, tmp_path):
     _login(client)
     page = client.get("/admin/train")
     assert "Other / custom" in page.get_data(as_text=True)
@@ -339,7 +361,7 @@ def test_admin_upload_custom_place_folder(client, app, tmp_path):
     assert "rooftop_cafe" in again.get_data(as_text=True)
 
 
-def test_admin_zip_accepts_catalog_sport_folder(client, tmp_path):
+def test_developer_zip_accepts_catalog_sport_folder(client, tmp_path):
     _login(client)
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
@@ -376,3 +398,72 @@ def test_overwrite_demo_requires_confirmation(client, app, tmp_path):
     )
     assert "requires confirmation" in resp.get_data(as_text=True)
     assert dest.read_bytes() == b"placeholder"
+
+
+def test_first_register_site_admin_cannot_train(tmp_path):
+    application = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test-secret",
+            "ADMIN_USERNAME": "",
+            "ADMIN_PASSWORD": "",
+            "DEVELOPER_USERNAME": "",
+            "DEVELOPER_PASSWORD": "",
+            "ADMIN_SYNC_PASSWORD": False,
+            "ALERT_DB_PATH": str(tmp_path / "alerts.db"),
+            "AUTH_DB_PATH": str(tmp_path / "auth.db"),
+            "SNAPSHOT_DIR": str(tmp_path / "snapshots"),
+            "ACTIVITY_DATA_ROOT": str(tmp_path / "activity"),
+            "CHECKPOINTS_DIR": str(tmp_path / "checkpoints"),
+            "ACTIVE_CHECKPOINT_FILE": str(tmp_path / "active_checkpoint.json"),
+            "ACTIVITY_CHECKPOINT": str(tmp_path / "checkpoints" / "missing.joblib"),
+            "ALERT_NOTIFY_ON_CREATE": False,
+            "SEED_DEMO_CAMERAS": False,
+        }
+    )
+    client = application.test_client()
+    created = client.post(
+        "/register",
+        data={
+            "username": "founder",
+            "email": "founder@example.com",
+            "password": "secret123",
+            "confirm_password": "secret123",
+        },
+        follow_redirects=True,
+    )
+    assert created.status_code == 200
+    founder = application.extensions["user_store"].get_by_username("founder")
+    assert founder is not None
+    assert founder.role == "admin"
+    client.post(
+        "/login",
+        data={"username": "founder", "password": "secret123"},
+        follow_redirects=True,
+    )
+    dash = client.get("/")
+    assert ">Train models</a>" not in dash.get_data(as_text=True)
+    denied = client.post(
+        "/admin/train/run",
+        data={
+            "model_type": "forest",
+            "output_name": "activity_custom.joblib",
+            "generate_demo": "1",
+        },
+        follow_redirects=True,
+    )
+    assert "Only Mun Cyber developer accounts" in denied.get_data(as_text=True)
+    assert not list((tmp_path / "checkpoints").glob("*.joblib"))
+    upload = client.post(
+        "/admin/train/upload",
+        data={"category": "ordinary", "split": "train"},
+        follow_redirects=True,
+    )
+    assert "Only Mun Cyber developer accounts" in upload.get_data(as_text=True)
+    extract = client.post(
+        "/admin/train/extract-video",
+        data={"kind": "activity", "category": "ordinary"},
+        follow_redirects=True,
+    )
+    assert "Only Mun Cyber developer accounts" in extract.get_data(as_text=True)
+

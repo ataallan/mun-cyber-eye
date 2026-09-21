@@ -1,4 +1,4 @@
-"""Helpers for the Admin → Train models console.
+"""Helpers for the developer (Mun Cyber) Train models console.
 
 Thin wrappers around ``vision.train_activity`` / ``vision.eval_activity`` plus
 safe upload and active-checkpoint activation. Training math stays in vision/.

@@ -63,7 +63,7 @@ data/activity/train/potential_fight__scene__corridor_hallway/*.jpg
 data/activity/train/game_or_play__basketball/*.jpg   # implies basketball_court
 ```
 
-Standalone `scene__<place>` folders map to `game_or_play` for sports venues and `ordinary` otherwise, unless a category prefix is present. Admin **Train models** can upload into a chosen place type or accept a zip that already uses these folder names.
+Standalone `scene__<place>` folders map to `game_or_play` for sports venues and `ordinary` otherwise, unless a category prefix is present. Developer **Train models** can upload into a chosen place type or accept a zip that already uses these folder names. Uploads are training-only and developer-only.
 
 `--generate-demo` writes a few `scene__*` folders so CI and Last run can exercise the assist. Those painters are not real places.
 

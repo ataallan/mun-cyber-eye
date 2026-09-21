@@ -16,7 +16,7 @@ Stable ids live in `vision/dangerous_objects.py`. Each row is marked `dangerous_
 | `improvised` | bottle, brick, chair_as_weapon | Context-dependent: a bottle on a table or an ordinary chair is **not** a weapon |
 | `chemical_fire` | spray_can, fire_proxy | Optional, honest, weak. Not a chemical-weapon or arson classifier |
 
-Admin **Extract frames from video** can target activity class `potential_weapon_object` or kind **dangerous / weapon-like class** (`data/dangerous/train/<id>/`).
+Developer **Extract frames from video** can target activity class `potential_weapon_object` or kind **dangerous / weapon-like class** (`data/dangerous/train/<id>/`).
 
 ## Use-against-person intensity (0–1)
 
