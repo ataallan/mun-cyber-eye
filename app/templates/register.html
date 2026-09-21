@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_password_field.html" import password_field, password_toggle_script %}
 {% block title %}Create account · {{ product_name }}{% endblock %}
 {% block content %}
 <section class="card auth-card">
@@ -23,12 +24,8 @@
     <label>Security email (optional — preferred for alert notify)
       <input type="email" name="security_email" autocomplete="off" placeholder="security@example.com">
     </label>
-    <label>Password
-      <input type="password" name="password" autocomplete="new-password" required minlength="8">
-    </label>
-    <label>Confirm password
-      <input type="password" name="confirm_password" autocomplete="new-password" required minlength="8">
-    </label>
+    {{ password_field("register-password", "password", "Password", "new-password", minlength=8) }}
+    {{ password_field("register-confirm", "confirm_password", "Confirm password", "new-password", minlength=8, show_label="Show confirm password", hide_label="Hide confirm password") }}
     <button class="btn btn-primary" type="submit">Create account</button>
   </form>
   <p class="auth-links">
@@ -37,3 +34,4 @@
   <p class="fineprint">Authorized use only. Operator accounts review alerts; they do not trigger enforcement. Later accounts are operators and stay pending until approved. Model training is reserved for Mun Cyber developer accounts and is never granted by Create account.</p>
 </section>
 {% endblock %}
+{% block scripts %}{{ password_toggle_script() }}{% endblock %}
