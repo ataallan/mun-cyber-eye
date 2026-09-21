@@ -40,7 +40,7 @@
       · true parallel streaming is not in this prototype</p>
     {% endif %}
     <label>Video file (optional)
-      <input type="file" name="video" id="video-file" accept="video/*,.mp4,.avi,.mov,.mkv">
+      <input type="file" name="video" id="video-file" accept="video/*,.mp4,.avi,.mov,.mkv" onchange="window.cybereyeSelectUpload && window.cybereyeSelectUpload();" oninput="window.cybereyeSelectUpload && window.cybereyeSelectUpload();">
     </label>
     <p class="fineprint" id="upload-hint">Choosing a file selects <strong>Authorized video file upload</strong> (the server also treats any attached filename as upload, so Synthetic MOCK cannot run silently).</p>
     <button class="btn btn-primary" type="submit">Run</button>
@@ -116,6 +116,7 @@
       }
     }
   }
+  window.cybereyeSelectUpload = selectUploadIfFile;
   if (fileInput) {
     fileInput.addEventListener("change", selectUploadIfFile);
     fileInput.addEventListener("input", selectUploadIfFile);
