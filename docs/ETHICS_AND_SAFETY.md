@@ -34,6 +34,8 @@ Mun Cyber Eye is an **assistance** system for authorized security personnel. It 
 - Computer vision can produce false positives and false negatives.
 - Heuristics in Phase 2 and the Phase 3 demo checkpoint are provisional; evaluate across lighting, angles, ages, clothing, and environments before pilots. Distinguishing game or play and dance from a real confrontation is difficult even for humans — do not treat a `potential_fight` label as proof.
 - The sports catalog and `sport_context` metadata are an **assistive lookup** (folder labels + simple court-color proxies). They do **not** mean the model knows most sports or can referee a real game.
+- Place / venue type (`place_type`) is a **catalog setting** (court, street, corridor, house, compound, …), optionally stamped from the camera registry or tagged folders. It is **not** recognition of a named arena, and **setting is not identity**.
+- Uniform / kit cues are **clothing-color clusters**. They must never be used as facial identity, demographics, gang labels, or proof of guilt.
 - Body-aggression scores are OpenCV motion / pose **proxies**. High motion during sport is often intense play. Do not treat `aggressive_motion` as proof of assault.
 - Optional face-expression assist (`ENABLE_FACE_AGGRESSION`, default **off**) is unreliable and assistive only. When enabled it may note a possible tense expression for a human to verify. It must **never** identify a person, infer demographics, or label a face as criminal.
 - The bundled activity model is trained on synthetic scenes. Retrain on authorized labeled video and publish per-class precision / recall / F1 before any field trial.
@@ -46,7 +48,7 @@ This system must **not**:
 
 - Trigger locks, weapons, or physical interventions without a human decision path.
 - Publish public “wanted” or guilt labels from detections alone.
-- Label faces as criminal or attach identity-based guilt from a detection (including any face-expression score).
+- Label faces as criminal or attach identity-based guilt from a detection (including any face-expression score or clothing / kit color).
 - Be marketed as infallible weapon or violence detection.
 - Treat a live ingest hook as an enforcement trigger (no locks, dispatch, or detention on camera events).
 

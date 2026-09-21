@@ -51,6 +51,7 @@ def test_health_reports_phase_5_and_cameras(client):
     assert data["allow_webcam"] is False
     assert data["cameras"]["total"] >= 2
     assert data["cameras"]["enabled"] >= 1
+    assert data["place_catalog_size"] >= 20
 
 
 def test_cameras_requires_auth(client):
@@ -117,6 +118,16 @@ def test_run_registered_file_camera_creates_stamped_alerts(app, client):
     assert alerts
     assert all(a.camera_id == "demo-file-01" for a in alerts)
     assert all(a.location_label == "Demo Lab" for a in alerts)
+    assert "Place type" in body
+    assert "gymnasium" in body.lower()
+    stamped = [
+        a.to_dict()["metadata"]
+        for a in alerts
+        if a.to_dict().get("metadata", {}).get("place_type")
+    ]
+    assert stamped
+    assert all(meta.get("place_type") == "gymnasium" for meta in stamped)
+    assert all("madison" not in (a.rationale or "").lower() for a in alerts)
     cam = app.extensions["camera_store"].get("demo-file-01")
     assert cam.last_seen_at
     assert cam.last_error is None
@@ -166,6 +177,8 @@ def test_run_synthetic_shows_game_dance_without_threat_alerts(app, client):
     assert "potential confrontation" in body
     assert "Basketball" in body
     assert "Sport context" in body
+    assert "Place type" in body
+    assert "Kit cues" in body
     assert "Body-aggression" in body
     assert "Face cue status" in body
     assert "disabled" in body
@@ -173,6 +186,35 @@ def test_run_synthetic_shows_game_dance_without_threat_alerts(app, client):
     assert "game_or_play" not in categories
     assert "dance" not in categories
     assert "potential_fight" in categories
+
+
+def test_camera_form_has_place_type_dropdown(client):
+    _login(client)
+    resp = client.get("/cameras/new")
+    body = resp.get_data(as_text=True)
+    assert "Place type" in body
+    assert "corridor_hallway" in body
+    assert "house_interior" in body
+    assert "compound_courtyard" in body
+    assert "Madison Square Garden" not in body
+
+    created = client.post(
+        "/cameras/new",
+        data={
+            "name": "Hall cam",
+            "location_label": "North corridor",
+            "source_type": "file",
+            "uri": "MOCK",
+            "sample_fps": "2",
+            "enabled": "1",
+            "place_type": "corridor_hallway",
+            "notes": "Authorized hall",
+        },
+        follow_redirects=True,
+    )
+    assert created.status_code == 200
+    assert "Hall cam" in created.get_data(as_text=True)
+    assert "corridor_hallway" in created.get_data(as_text=True)
 
 
 def test_run_page_lists_registry(client):

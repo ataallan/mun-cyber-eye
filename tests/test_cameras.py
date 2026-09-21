@@ -31,6 +31,7 @@ def test_create_get_list_and_disable(store):
     assert loaded is not None
     assert loaded.name == "Lobby west"
     assert loaded.location_label == "Main entrance"
+    assert loaded.place_type == ""
     assert loaded.source_type == "file"
     assert loaded.enabled is True
     assert loaded.effective_fps() == pytest.approx(2.0)
@@ -79,6 +80,22 @@ def test_invalid_source_type(store):
         store.create(name="Bad", source_type="drone", uri="x")
 
 
+def test_place_type_round_trip_and_reject_unknown(store):
+    cam = store.create(
+        name="North hall",
+        location_label="North corridor",
+        source_type="file",
+        uri="MOCK",
+        place_type="corridor_hallway",
+    )
+    assert cam.place_type == "corridor_hallway"
+    assert store.get(cam.id).place_type == "corridor_hallway"
+    updated = store.update(cam.id, place_type="house_interior")
+    assert updated.place_type == "house_interior"
+    with pytest.raises(ValueError):
+        store.create(name="Arena", source_type="file", uri="MOCK", place_type="madison_square_garden")
+
+
 def test_mask_and_resolve_uri(monkeypatch):
     assert mask_uri("rtsp://admin:hunter2@cam.example:554/h264") == (
         "rtsp://admin:****@cam.example:554/h264"
@@ -122,7 +139,9 @@ def test_seed_demo_cameras_once(store, tmp_path):
     rtsp_cam = store.get("demo-rtsp-01")
     assert file_cam.enabled is True
     assert file_cam.source_type == "file"
+    assert file_cam.place_type == "gymnasium"
     assert rtsp_cam.enabled is False
+    assert rtsp_cam.place_type == "street"
     assert rtsp_cam.uri == "env:RTSP_DEMO_URI"
     again = store.seed_demo_cameras(tmp_path)
     assert len(again) == 2
@@ -150,11 +169,13 @@ def test_camera_from_form_blank_uri_keeps_existing(store):
                 "sample_fps": "2",
                 "enabled": "1",
                 "notes": "",
+                "place_type": "street",
             }
         ),
         existing=cam,
     )
     assert "uri" not in payload
+    assert payload["place_type"] == "street"
     updated = store.update(cam.id, **payload)
     assert updated.uri == "rtsp://u:p@h/s"
     assert updated.location_label == "Dock"

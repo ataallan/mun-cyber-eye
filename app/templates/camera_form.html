@@ -10,9 +10,19 @@
     <label>Name
       <input type="text" name="name" required value="{{ camera.name if camera else '' }}" placeholder="Lobby west">
     </label>
-    <label>Location label
-      <input type="text" name="location_label" value="{{ camera.location_label if camera else '' }}" placeholder="Main entrance">
+    <label>Location / venue label
+      <input type="text" name="location_label" value="{{ camera.location_label if camera else '' }}" placeholder="North corridor">
     </label>
+    <p class="fineprint">Free-text site label only (for example “North corridor”). Do not invent a famous arena name. Place type below is the catalog setting.</p>
+    <label>Place type (optional)
+      <select name="place_type">
+        <option value="">unset — infer from folders / heuristic</option>
+        {% for place in place_types %}
+        <option value="{{ place.id }}" {% if camera and camera.place_type == place.id %}selected{% endif %}>{{ place.display_name }} ({{ place.id }})</option>
+        {% endfor %}
+      </select>
+    </label>
+    <p class="fineprint">Catalog setting (court, street, corridor, house, compound, …). The pipeline stamps this when set. Assistive only — not full scene understanding, not identity.</p>
     <label>Source type
       <select name="source_type">
         <option value="file" {% if not camera or camera.source_type == 'file' %}selected{% endif %}>file</option>

@@ -14,7 +14,12 @@ from typing import List, Optional, Sequence
 from vision.dataset import canonicalize_category
 from vision.detector import Detection
 
-from .sports_context import SceneContext, collect_scene_context, should_soften_fight
+from .sports_context import (
+    SceneContext,
+    collect_scene_context,
+    should_soften_fight,
+    street_play_verify,
+)
 
 
 class ActivityCategory(str, Enum):
@@ -55,6 +60,13 @@ class RiskResult:
     aggression_cues: List[str] = field(default_factory=list)
     face_cue_status: str = "disabled"
     face_note: str = ""
+    place_type: str = "unknown"
+    place_confidence: float = 0.0
+    place_display: str = ""
+    place_source: str = "none"
+    team_kit_similarity: float = 0.0
+    jersey_like_colors: bool = False
+    kit_note: str = ""
 
 
 def _env_flag(name: str, default: str = "0") -> bool:
@@ -160,7 +172,9 @@ class RiskEngine:
         )
         single_fight = bool(fight_hits) and len(people) >= 2
         if fight_pattern or single_fight:
-            if ctx.sport_decent:
+            if street_play_verify(ctx) or (ctx.sport_decent and not (
+                ctx.street_setting and ctx.aggression_very_high
+            )):
                 labels_out = sorted(
                     fight_hits
                     | set(ctx.aggression_cues)
@@ -181,18 +195,21 @@ class RiskEngine:
                 conf = min(0.95, conf + 0.08)
             level = (
                 RiskLevel.HIGH
-                if fight_pattern and conf >= 0.75
+                if (fight_pattern and conf >= 0.75) or ctx.strong_confrontation_setting
                 else RiskLevel.ELEVATED
             )
+            setting_bit = self._setting_rationale(ctx, lean_fight=True)
             rationale = (
                 "Movement/interaction patterns consistent with a potential physical "
                 "confrontation (no named sport context). Alert for authorized human "
                 "review only."
+                + setting_bit
                 if fight_pattern
                 else (
                     "Limited confrontation indicators with multiple people present "
                     "and no named sport context. Elevated attention; human review "
                     "recommended."
+                    + setting_bit
                 )
             )
             return self._stamp(
@@ -225,19 +242,12 @@ class RiskEngine:
                 ctx,
             )
 
-        if ctx.aggression_high and not ctx.sport_decent:
+        if ctx.aggression_high and not ctx.sport_decent and not street_play_verify(ctx):
             return self._stamp(
-                RiskResult(
-                    category=ActivityCategory.POTENTIAL_FIGHT,
-                    risk_level=RiskLevel.ELEVATED,
-                    confidence=round(max(ctx.aggression_score, 0.6), 3),
-                    rationale=(
-                        "Sustained high motion / body-aggression proxies without a named "
-                        "sport context. Leaning potential confrontation for authorized "
-                        "human review — not a determination of assault."
-                    ),
-                    contributing_labels=sorted(set(ctx.aggression_cues) | {p.label for p in people}),
-                    should_alert=True,
+                self._aggression_fight(
+                    people_labels=[p.label for p in people],
+                    ctx=ctx,
+                    extra="",
                 ),
                 ctx,
             )
@@ -287,19 +297,19 @@ class RiskEngine:
         if category == ActivityCategory.GAME_OR_PLAY:
             return self._combine_game_and_aggression(conf, score_txt, ctx)
 
-        if category == ActivityCategory.ORDINARY and ctx.aggression_high and not ctx.sport_decent:
-            return RiskResult(
-                category=ActivityCategory.POTENTIAL_FIGHT,
-                risk_level=RiskLevel.ELEVATED,
-                confidence=round(max(ctx.aggression_score, conf, 0.6), 3),
-                rationale=(
-                    "High body-aggression proxies and no named sport context — "
-                    "leaning potential confrontation for human review (the activity "
-                    "model had said ordinary)."
+        if (
+            category == ActivityCategory.ORDINARY
+            and ctx.aggression_high
+            and not ctx.sport_decent
+            and not street_play_verify(ctx)
+        ):
+            return self._aggression_fight(
+                people_labels=["ordinary"],
+                ctx=ctx,
+                extra=(
+                    " The activity model had said ordinary."
                     + score_txt
                 ),
-                contributing_labels=["ordinary", *ctx.aggression_cues],
-                should_alert=True,
             )
 
         if category == ActivityCategory.POTENTIAL_FIGHT and ctx.sport_strong and not ctx.aggression_high:
@@ -367,20 +377,15 @@ class RiskEngine:
         score_txt: str,
         ctx: SceneContext,
     ) -> RiskResult:
-        if ctx.aggression_high and not ctx.sport_decent:
-            return RiskResult(
-                category=ActivityCategory.POTENTIAL_FIGHT,
-                risk_level=RiskLevel.ELEVATED,
-                confidence=round(max(ctx.aggression_score, confidence, 0.6), 3),
-                rationale=(
-                    "High body-aggression proxies and no named sport context — "
-                    "leaning potential confrontation rather than game or play. "
-                    "Alert for authorized human review only."
+        if ctx.aggression_high and not ctx.sport_decent and not street_play_verify(ctx):
+            return self._aggression_fight(
+                people_labels=["game_or_play"],
+                ctx=ctx,
+                extra=(
+                    " Leaning potential confrontation rather than game or play."
                     + self._face_rationale_suffix(ctx)
                     + score_txt
                 ),
-                contributing_labels=["game_or_play", *ctx.aggression_cues],
-                should_alert=True,
             )
         if ctx.aggression_high and ctx.sport_decent:
             return self._sport_vs_fight(
@@ -414,6 +419,24 @@ class RiskEngine:
     ) -> RiskResult:
         """Named sport present: stay game_or_play unless operators page intense play."""
         sport_name = context.sport_display or context.sport_context or "a catalog sport"
+        if context.street_setting and context.aggression_very_high:
+            return RiskResult(
+                category=ActivityCategory.POTENTIAL_FIGHT,
+                risk_level=RiskLevel.HIGH,
+                confidence=round(max(confidence, context.aggression_score, 0.7), 3),
+                rationale=(
+                    f"Street setting plus extreme body-aggression "
+                    f"({context.aggression_score:.2f}) despite sport context "
+                    f"{sport_name}. Leaning potential confrontation for authorized "
+                    "human review — not a determination of assault."
+                    + self._setting_rationale(context, lean_fight=True)
+                    + self._kit_rationale_suffix(context)
+                    + self._face_rationale_suffix(context)
+                    + score_txt
+                ),
+                contributing_labels=labels,
+                should_alert=True,
+            )
         if context.aggression_high:
             should_alert = bool(self.alert_on_intense_sport)
             queued = (
@@ -428,6 +451,13 @@ class RiskEngine:
                 if softened_from_fight
                 else "Possible intense play; human should verify. "
             )
+            if street_play_verify(context):
+                lead = "Street play — verify. " + lead
+            elif context.sports_venue:
+                lead = (
+                    "Sports venue plus named sport — stronger lean toward game or play. "
+                    + lead
+                )
             return RiskResult(
                 category=ActivityCategory.GAME_OR_PLAY,
                 risk_level=RiskLevel.ELEVATED if should_alert else RiskLevel.LOW,
@@ -439,6 +469,8 @@ class RiskEngine:
                     f"({', '.join(context.aggression_cues) or 'motion proxies'}). "
                     + queued
                     + "Play can look like a clash; this is not a determination of assault."
+                    + self._setting_rationale(context, lean_fight=False)
+                    + self._kit_rationale_suffix(context)
                     + self._face_rationale_suffix(context)
                     + score_txt
                 ),
@@ -452,6 +484,13 @@ class RiskEngine:
             if (softened_from_fight or should_soften_fight(context))
             else ""
         )
+        if street_play_verify(context):
+            lead = "Street play — verify. " + lead
+        elif context.sports_venue and context.sport_context:
+            lead = (
+                "Sports venue plus named sport — stronger lean toward game or play. "
+                + lead
+            )
         return RiskResult(
             category=ActivityCategory.GAME_OR_PLAY,
             risk_level=RiskLevel.ELEVATED if should_alert else RiskLevel.LOW,
@@ -460,12 +499,80 @@ class RiskEngine:
                 f"{lead}Scene matches game or play"
                 f" ({sport_name}). No threat alert queued. "
                 "Human operators may still review the live source."
+                + self._setting_rationale(context, lean_fight=False)
+                + self._kit_rationale_suffix(context)
                 + self._face_rationale_suffix(context)
                 + score_txt
             ),
             contributing_labels=labels,
             should_alert=should_alert,
         )
+
+    def _aggression_fight(
+        self,
+        *,
+        people_labels: list[str],
+        ctx: SceneContext,
+        extra: str = "",
+    ) -> RiskResult:
+        level = (
+            RiskLevel.HIGH
+            if ctx.strong_confrontation_setting
+            else RiskLevel.ELEVATED
+        )
+        setting = self._setting_rationale(ctx, lean_fight=True)
+        return RiskResult(
+            category=ActivityCategory.POTENTIAL_FIGHT,
+            risk_level=level,
+            confidence=round(max(ctx.aggression_score, 0.6), 3),
+            rationale=(
+                "Sustained high motion / body-aggression proxies without a named "
+                "sport context. Leaning potential confrontation for authorized "
+                "human review — not a determination of assault."
+                + setting
+                + extra
+                + self._kit_rationale_suffix(ctx)
+                + self._face_rationale_suffix(ctx)
+            ),
+            contributing_labels=sorted(set(people_labels) | set(ctx.aggression_cues)),
+            should_alert=True,
+        )
+
+    @staticmethod
+    def _setting_rationale(ctx: SceneContext, *, lean_fight: bool) -> str:
+        if not ctx.place_type or ctx.place_type == "unknown":
+            return ""
+        label = ctx.place_display or ctx.place_type
+        source = f" ({ctx.place_source})" if ctx.place_source not in {"", "none"} else ""
+        if lean_fight and ctx.strong_confrontation_setting and not ctx.sport_decent:
+            return (
+                f" Setting: {label}{source} — street / corridor / house / compound "
+                "plus high body-aggression and no sport context, so a stronger lean "
+                "toward potential_fight. Place is a catalog type, not a named venue."
+            )
+        if street_play_verify(ctx):
+            return (
+                f" Setting: {label}{source}. Street play is still treated as "
+                "game or play unless aggression is extreme — verify."
+            )
+        return (
+            f" Setting: {label}{source}. Catalog place type only — never a "
+            "specific arena name."
+        )
+
+    @staticmethod
+    def _kit_rationale_suffix(ctx: SceneContext) -> str:
+        if ctx.kit_supports_play:
+            return (
+                f" Similar clothing colors (kit similarity {ctx.team_kit_similarity:.2f}) "
+                "slightly support a team / play reading — not identity or guilt."
+            )
+        if ctx.jersey_like_colors:
+            return (
+                " Saturated jersey-like colors noted; absence of matching kits "
+                "does not prove a fight."
+            )
+        return ""
 
     @staticmethod
     def _face_rationale_suffix(ctx: SceneContext) -> str:
@@ -490,6 +597,13 @@ class RiskEngine:
                 f" Sport context: {ctx.sport_display or ctx.sport_context}"
                 f" ({ctx.sport_confidence:.2f})."
             )
+        if ctx and ctx.place_type and ctx.place_type != "unknown":
+            sport_bit += (
+                f" Setting: {ctx.place_display or ctx.place_type}"
+                f" ({ctx.place_source or 'assist'})."
+            )
+        if ctx and street_play_verify(ctx):
+            sport_bit += " Street play — verify."
         if category == ActivityCategory.GAME_OR_PLAY:
             return (
                 "Phase 3 activity model classified the scene as game or play "
@@ -520,6 +634,13 @@ class RiskEngine:
         result.aggression_cues = list(ctx.aggression_cues)
         result.face_cue_status = ctx.face_status
         result.face_note = ctx.face_note
+        result.place_type = ctx.place_type or "unknown"
+        result.place_confidence = ctx.place_confidence
+        result.place_display = ctx.place_display or ""
+        result.place_source = ctx.place_source or "none"
+        result.team_kit_similarity = ctx.team_kit_similarity
+        result.jersey_like_colors = ctx.jersey_like_colors
+        result.kit_note = ctx.kit_note
         return result
 
     @staticmethod

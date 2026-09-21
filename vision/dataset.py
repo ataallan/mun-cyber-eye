@@ -23,17 +23,21 @@ onto ``game_or_play`` plus an optional ``sport_context``::
     train/game_or_play__basketball/*.jpg
     train/game_or_play/basketball/*.jpg
     train/basketball/*.jpg
+    train/scene__basketball_court/*.jpg
+    train/game_or_play__scene__street/*.jpg
 
 ``--generate-demo`` paints simple geometric scenes so CI and laptops can
 train without real CCTV — it is **not** a substitute for authorized video.
 Game vs fight is hard even for humans; these painters are honest synthetic
-proxies, not real activity. Named sports are a catalog + color/geometry
-assist, not a claim that the model knows most sports.
+proxies, not real activity. Named sports and place types are catalog +
+color/geometry assists, not a claim that the model knows most sports or
+every arena / street / home.
 """
 
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator, List, Optional, Tuple
 
@@ -41,6 +45,13 @@ import cv2
 import numpy as np
 
 from vision.features import extract_frame_features
+from vision.scene_context import (
+    DEMO_PLACE_SCENES,
+    default_category_for_place,
+    default_place_for_sport,
+    place_display_name,
+    resolve_place,
+)
 from vision.sports_catalog import (
     DEMO_DATASET_SPORTS,
     resolve_sport,
@@ -94,33 +105,89 @@ SPLITS = ("train", "val", "test")
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp"}
 
 
-def parse_folder_label(name: str) -> Tuple[str, Optional[str]]:
-    """Map a folder name onto (canonical_category, optional sport_context).
+@dataclass(frozen=True)
+class FolderTags:
+    """Parsed train-folder tags: activity class + optional sport / place."""
 
-    Accepts ``game_or_play__basketball``, a bare sport id/alias, and the
-    existing activity aliases (``confrontation`` → ``potential_fight``).
+    category: str
+    sport_context: Optional[str] = None
+    place_type: Optional[str] = None
+
+
+def parse_folder_tags(name: str) -> FolderTags:
+    """Map a folder name onto activity category, sport, and place type.
+
+    Accepts ``game_or_play__basketball``, ``scene__street``,
+    ``game_or_play__scene__street``, a bare sport id/alias, and activity
+    aliases (``confrontation`` → ``potential_fight``). Sport folders also
+    imply a default place (basketball → basketball_court).
     """
     key = name.strip().lower().replace(" ", "_").replace("-", "_")
+    tokens = [t for t in key.split("__") if t]
+    if not tokens:
+        raise ValueError(f"Unknown activity category '{name}'.")
+
     sport_ctx: Optional[str] = None
-    cat_key = key
-    if "__" in key:
-        left, right = key.split("__", 1)
-        sport = resolve_sport(right)
-        if sport is not None:
+    place_ctx: Optional[str] = None
+    leftovers: list[str] = []
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        if tok == "scene":
+            if i + 1 >= len(tokens):
+                raise ValueError(
+                    f"Folder '{name}' has 'scene' without a place type. "
+                    "Use scene__street, scene__basketball_court, …"
+                )
+            place = resolve_place(tokens[i + 1])
+            if place is None:
+                raise ValueError(
+                    f"Unknown place type '{tokens[i + 1]}' in folder '{name}'. "
+                    "See docs/SCENE_CONTEXT.md."
+                )
+            place_ctx = place.id
+            i += 2
+            continue
+        leftovers.append(tok)
+        i += 1
+
+    cat: Optional[str] = None
+    unknown: list[str] = []
+    for tok in leftovers:
+        if tok in CATEGORY_ALIASES:
+            cat = CATEGORY_ALIASES[tok]
+            continue
+        sport = resolve_sport(tok)
+        if sport is not None and tok not in CATEGORY_ALIASES:
             sport_ctx = sport.id
-        cat_key = left
+            continue
+        unknown.append(tok)
 
-    sport = resolve_sport(cat_key)
-    if sport is not None and cat_key not in CATEGORY_ALIASES:
-        return "game_or_play", sport.id
-
-    if cat_key not in CATEGORY_ALIASES:
+    if unknown:
+        raise ValueError(
+            f"Unknown activity category '{name}'. "
+            f"Use one of: {', '.join(ACTIVITY_CATEGORIES)}, "
+            f"a catalog sport, or scene__<place> (see docs/SCENE_CONTEXT.md)."
+        )
+    if sport_ctx and cat is None:
+        cat = "game_or_play"
+    if place_ctx and cat is None:
+        cat = default_category_for_place(place_ctx)
+    if sport_ctx and place_ctx is None:
+        place_ctx = default_place_for_sport(sport_ctx)
+    if cat is None:
         raise ValueError(
             f"Unknown activity category '{name}'. "
             f"Use one of: {', '.join(ACTIVITY_CATEGORIES)} "
-            f"or a catalog sport (see vision/sports_catalog.py)."
+            f"or a catalog sport / scene__<place> folder."
         )
-    return CATEGORY_ALIASES[cat_key], sport_ctx
+    return FolderTags(category=cat, sport_context=sport_ctx, place_type=place_ctx)
+
+
+def parse_folder_label(name: str) -> Tuple[str, Optional[str]]:
+    """Map a folder name onto (canonical_category, optional sport_context)."""
+    tags = parse_folder_tags(name)
+    return tags.category, tags.sport_context
 
 
 def canonicalize_category(name: str) -> str:
@@ -137,38 +204,52 @@ def ensure_dataset_tree(root: str | Path) -> Path:
 
 
 def _yield_labeled_images(
-    folder: Path, category: str, sport: Optional[str]
-) -> Iterator[Tuple[Path, str, Optional[str]]]:
+    folder: Path, category: str, sport: Optional[str], place: Optional[str] = None
+) -> Iterator[Tuple[Path, str, Optional[str], Optional[str]]]:
     for path in sorted(folder.iterdir()):
         if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES:
-            yield path, category, sport
+            yield path, category, sport, place
         elif path.is_dir():
             try:
-                nested_cat, nested_sport = parse_folder_label(path.name)
+                nested = parse_folder_tags(path.name)
             except ValueError:
                 logger.warning("Skipping unrecognized class folder: %s", path)
                 continue
-            use_sport = nested_sport or sport
-            use_cat = nested_cat if nested_sport is None else category
-            if nested_sport and category == "game_or_play":
+            use_sport = nested.sport_context or sport
+            use_place = nested.place_type or place
+            use_cat = nested.category if nested.sport_context is None else category
+            if nested.sport_context and category == "game_or_play":
                 use_cat = "game_or_play"
-            yield from _yield_labeled_images(path, use_cat, use_sport)
+            yield from _yield_labeled_images(path, use_cat, use_sport, use_place)
+
+
+def iter_split_samples_with_tags(
+    root: str | Path, split: str
+) -> Iterator[Tuple[Path, FolderTags]]:
+    """Yield (image_path, FolderTags) including optional place_type."""
+    split_dir = Path(root) / split
+    if not split_dir.is_dir():
+        return
+    for child in sorted(p for p in split_dir.iterdir() if p.is_dir()):
+        try:
+            tags = parse_folder_tags(child.name)
+        except ValueError:
+            logger.warning("Skipping unrecognized class folder: %s", child)
+            continue
+        for path, category, sport, place in _yield_labeled_images(
+            child, tags.category, tags.sport_context, tags.place_type
+        ):
+            yield path, FolderTags(
+                category=category, sport_context=sport, place_type=place
+            )
 
 
 def iter_split_samples_with_context(
     root: str | Path, split: str
 ) -> Iterator[Tuple[Path, str, Optional[str]]]:
     """Yield (image_path, canonical_category, sport_context) for a split."""
-    split_dir = Path(root) / split
-    if not split_dir.is_dir():
-        return
-    for child in sorted(p for p in split_dir.iterdir() if p.is_dir()):
-        try:
-            category, sport = parse_folder_label(child.name)
-        except ValueError:
-            logger.warning("Skipping unrecognized class folder: %s", child)
-            continue
-        yield from _yield_labeled_images(child, category, sport)
+    for path, tags in iter_split_samples_with_tags(root, split):
+        yield path, tags.category, tags.sport_context
 
 
 def iter_split_samples(
@@ -210,17 +291,27 @@ def render_demo_frame(
     width: int = 160,
     height: int = 120,
     sport_context: Optional[str] = None,
+    place_type: Optional[str] = None,
 ) -> np.ndarray:
     """Paint a class-typical synthetic scene (demo / tests only)."""
-    category, parsed_sport = parse_folder_label(category)
-    sport = sport_context or parsed_sport
+    tags = parse_folder_tags(category) if category else FolderTags("ordinary")
+    category = tags.category
+    sport = sport_context or tags.sport_context
+    place = place_type or tags.place_type
     if sport:
         resolved = resolve_sport(sport)
         sport = resolved.id if resolved is not None else sport
+        if place is None:
+            place = default_place_for_sport(sport)
+    if place:
+        resolved_place = resolve_place(place)
+        place = resolved_place.id if resolved_place is not None else place
     rng = np.random.default_rng(int(seed))
     img = np.zeros((height, width, 3), dtype=np.uint8)
     if category == "game_or_play" and sport:
         _paint_sport(img, rng, sport)
+    elif place and place in _PLACE_PAINTERS:
+        _PLACE_PAINTERS[place](img, rng)
     else:
         painters = {
             "ordinary": _paint_ordinary,
@@ -283,6 +374,23 @@ def generate_demo_dataset(
                 if not ok:
                     raise RuntimeError(f"Failed to write {path}")
                 written += 1
+        n_place = max(2, n // 4)
+        for p_i, place in enumerate(DEMO_PLACE_SCENES):
+            dest = root_path / split / f"scene__{place}"
+            dest.mkdir(parents=True, exist_ok=True)
+            for i in range(n_place):
+                path = dest / f"demo_scene__{place}_{i:04d}.jpg"
+                if path.exists() and not overwrite:
+                    continue
+                frame = render_demo_frame(
+                    default_category_for_place(place),
+                    seed=seed + offset + 80_000 + p_i * 100 + i,
+                    place_type=place,
+                )
+                ok = cv2.imwrite(str(path), frame)
+                if not ok:
+                    raise RuntimeError(f"Failed to write {path}")
+                written += 1
     logger.info("Demo dataset at %s (wrote %s new images)", root_path, written)
     return root_path
 
@@ -291,6 +399,157 @@ def _add_noise(img: np.ndarray, rng: np.random.Generator, sigma: float) -> None:
     noise = rng.normal(0, sigma, img.shape)
     np.clip(img.astype(np.float32) + noise, 0, 255, out=noise)
     img[:] = noise.astype(np.uint8)
+
+
+def _paint_street(img: np.ndarray, rng: np.random.Generator) -> None:
+    """Gray roadway + vertical building slabs (synthetic street proxy)."""
+    h, w = img.shape[:2]
+    tone = int(rng.integers(95, 125))
+    img[:] = (tone, tone, tone + int(rng.integers(-6, 7)))
+    cv2.rectangle(img, (0, 0), (int(w * 0.22), int(h * 0.62)), (40, 42, 48), -1)
+    cv2.rectangle(img, (int(w * 0.78), 0), (w - 1, int(h * 0.58)), (36, 38, 44), -1)
+    for x in (8, 18, int(w * 0.82), int(w * 0.90)):
+        cv2.line(img, (x, 4), (x, int(h * 0.58)), (28, 28, 32), 2)
+    cv2.line(img, (0, int(h * 0.72)), (w - 1, int(h * 0.72)), (180, 180, 185), 1)
+    _draw_person(img, int(w * 0.30), standing=True, color=(50, 50, 60), rng=rng)
+    _draw_person(img, int(w * 0.55), standing=True, color=(45, 48, 70), rng=rng)
+
+
+def _paint_corridor(img: np.ndarray, rng: np.random.Generator) -> None:
+    """Dark sides, bright vanishing center — synthetic hallway proxy."""
+    h, w = img.shape[:2]
+    img[:] = (8, 8, 10)
+    cv2.rectangle(img, (0, 0), (int(w * 0.18), h - 1), (6, 6, 8), -1)
+    cv2.rectangle(img, (int(w * 0.82), 0), (w - 1, h - 1), (6, 6, 8), -1)
+    pts = np.array(
+        [
+            [int(w * 0.16), h - 1],
+            [int(w * 0.44), int(h * 0.36)],
+            [int(w * 0.56), int(h * 0.36)],
+            [int(w * 0.84), h - 1],
+        ],
+        dtype=np.int32,
+    )
+    cv2.fillConvexPoly(img, pts, (220, 220, 225))
+    cv2.line(img, (int(w * 0.16), h - 1), (int(w * 0.44), int(h * 0.36)), (240, 240, 245), 2)
+    cv2.line(img, (int(w * 0.84), h - 1), (int(w * 0.56), int(h * 0.36)), (240, 240, 245), 2)
+    cv2.line(img, (int(w * 0.22), h - 1), (int(w * 0.46), int(h * 0.36)), (200, 200, 210), 1)
+    cv2.line(img, (int(w * 0.78), h - 1), (int(w * 0.54), int(h * 0.36)), (200, 200, 210), 1)
+    cv2.rectangle(
+        img,
+        (int(w * 0.44), int(h * 0.18)),
+        (int(w * 0.56), int(h * 0.36)),
+        (235, 235, 240),
+        -1,
+    )
+    _draw_person(img, int(w * 0.30), standing=True, color=(40, 40, 50), rng=rng)
+
+
+def _paint_house_interior(img: np.ndarray, rng: np.random.Generator) -> None:
+    """Warm indoor wash — synthetic house / home proxy, not a specific address."""
+    h, w = img.shape[:2]
+    img[:] = (
+        int(rng.integers(30, 55)),
+        int(rng.integers(130, 165)),
+        int(rng.integers(190, 225)),
+    )
+    cv2.rectangle(img, (8, int(h * 0.55)), (int(w * 0.38), h - 6), (50, 90, 140), -1)
+    cv2.rectangle(img, (int(w * 0.62), int(h * 0.42)), (w - 10, int(h * 0.70)), (40, 80, 130), -1)
+    _draw_person(img, int(w * 0.44), standing=True, color=(40, 70, 90), rng=rng)
+
+
+def _paint_compound(img: np.ndarray, rng: np.random.Generator) -> None:
+    """Tan courtyard walls — synthetic compound proxy."""
+    h, w = img.shape[:2]
+    img[:] = (
+        int(rng.integers(110, 145)),
+        int(rng.integers(165, 195)),
+        int(rng.integers(190, 220)),
+    )
+    cv2.rectangle(img, (0, 0), (w - 1, int(h * 0.22)), (80, 130, 165), -1)
+    cv2.rectangle(img, (0, 0), (int(w * 0.10), h - 1), (75, 125, 160), -1)
+    cv2.rectangle(img, (int(w * 0.90), 0), (w - 1, h - 1), (75, 125, 160), -1)
+    cv2.rectangle(
+        img,
+        (int(w * 0.22), int(h * 0.30)),
+        (int(w * 0.78), int(h * 0.78)),
+        (90, 145, 175),
+        -1,
+    )
+    _draw_person(img, int(w * 0.36), standing=True, color=(30, 50, 80), rng=rng)
+    _draw_person(img, int(w * 0.58), standing=True, color=(35, 55, 70), rng=rng)
+
+
+def _paint_parking_lot(img: np.ndarray, rng: np.random.Generator) -> None:
+    h, w = img.shape[:2]
+    img[:] = (110, 112, 115)
+    for y in range(int(h * 0.25), h - 6, max(10, h // 6)):
+        cv2.line(img, (8, y), (w - 9, y), (220, 220, 225), 1)
+    _draw_person(img, int(w * 0.40), standing=True, color=(40, 40, 50), rng=rng)
+
+
+def _paint_sidewalk(img: np.ndarray, rng: np.random.Generator) -> None:
+    h, w = img.shape[:2]
+    img[:] = (130, 132, 135)
+    cv2.rectangle(img, (0, 0), (w - 1, int(h * 0.28)), (70, 90, 80), -1)
+    cv2.line(img, (0, int(h * 0.30)), (w - 1, int(h * 0.30)), (20, 200, 230), 2)
+    _draw_person(img, int(w * 0.42), standing=True, color=(50, 55, 70), rng=rng)
+
+
+def _paint_playground_place(img: np.ndarray, rng: np.random.Generator) -> None:
+    h, w = img.shape[:2]
+    img[:] = (40, 170, 60)
+    cv2.rectangle(img, (int(w * 0.15), int(h * 0.20)), (int(w * 0.85), int(h * 0.35)), (40, 90, 200), -1)
+    _draw_person(img, int(w * 0.30), standing=True, color=(20, 40, 200), rng=rng)
+    _draw_person(img, int(w * 0.60), standing=True, color=(30, 180, 220), rng=rng)
+
+
+def _paint_pool(img: np.ndarray, rng: np.random.Generator) -> None:
+    h, w = img.shape[:2]
+    img[:] = (190, 140, 40)
+    cv2.rectangle(img, (10, 16), (w - 11, h - 12), (210, 180, 50), -1)
+    _draw_person(img, int(w * 0.40), standing=True, color=(240, 240, 240), rng=rng)
+
+
+def _paint_track(img: np.ndarray, rng: np.random.Generator) -> None:
+    h, w = img.shape[:2]
+    img[:] = (40, 50, 160)
+    for y in range(12, h - 8, max(8, h // 7)):
+        cv2.line(img, (6, y), (w - 7, y), (230, 230, 235), 1)
+    _draw_person(img, int(w * 0.35), standing=True, color=(20, 20, 30), rng=rng)
+
+
+def _paint_skate_park(img: np.ndarray, rng: np.random.Generator) -> None:
+    h, w = img.shape[:2]
+    img[:] = (90, 95, 100)
+    cv2.ellipse(img, (w // 2, int(h * 0.70)), (int(w * 0.38), int(h * 0.22)), 0, 0, 180, (60, 65, 70), -1)
+    _draw_person(img, int(w * 0.45), standing=True, color=(20, 80, 200), rng=rng)
+
+
+def _paint_gymnasium(img: np.ndarray, rng: np.random.Generator) -> None:
+    h, w = img.shape[:2]
+    img[:] = (70, 90, 110)
+    cv2.rectangle(img, (8, 8), (w - 9, h - 9), (220, 220, 225), 2)
+    _draw_person(img, int(w * 0.32), standing=True, color=(20, 40, 180), rng=rng)
+    _draw_person(img, int(w * 0.58), standing=True, color=(180, 40, 30), rng=rng)
+
+
+_PLACE_PAINTERS = {
+    "street": _paint_street,
+    "sidewalk": _paint_sidewalk,
+    "parking_lot": _paint_parking_lot,
+    "corridor_hallway": _paint_corridor,
+    "house_interior": _paint_house_interior,
+    "compound_courtyard": _paint_compound,
+    "driveway": _paint_street,
+    "residential_yard": _paint_compound,
+    "playground": _paint_playground_place,
+    "swimming_pool": _paint_pool,
+    "track": _paint_track,
+    "skate_park": _paint_skate_park,
+    "gymnasium": _paint_gymnasium,
+    "indoor_arena": _paint_gymnasium,
+}
 
 
 def _paint_game(img: np.ndarray, rng: np.random.Generator) -> None:
@@ -397,6 +656,16 @@ def _paint_american_football(img: np.ndarray, rng: np.random.Generator) -> None:
     cx = int(rng.integers(int(w * 0.40), int(w * 0.58)))
     cy = int(rng.integers(int(h * 0.45), int(h * 0.65)))
     cv2.ellipse(img, (cx, cy), (12, 7), 25, 0, 360, (15, 50, 85), -1)
+
+
+_PLACE_PAINTERS.update(
+    {
+        "basketball_court": _paint_basketball,
+        "sports_field": _paint_soccer,
+        "tennis_court": _paint_tennis,
+        "volleyball_court": _paint_volleyball,
+    }
+)
 
 
 def _paint_dance(img: np.ndarray, rng: np.random.Generator) -> None:
@@ -521,10 +790,13 @@ def count_split(root: str | Path, split: str) -> dict[str, int]:
 def describe_dataset(root: str | Path) -> dict:
     root_path = Path(root)
     sports: dict[str, int] = {}
+    places: dict[str, int] = {}
     for split in SPLITS:
-        for _, _cat, sport in iter_split_samples_with_context(root_path, split):
-            if sport:
-                sports[sport] = sports.get(sport, 0) + 1
+        for _path, tags in iter_split_samples_with_tags(root_path, split):
+            if tags.sport_context:
+                sports[tags.sport_context] = sports.get(tags.sport_context, 0) + 1
+            if tags.place_type:
+                places[tags.place_type] = places.get(tags.place_type, 0) + 1
     return {
         "root": str(root_path),
         "categories": list(ACTIVITY_CATEGORIES),
@@ -532,5 +804,9 @@ def describe_dataset(root: str | Path) -> dict:
         "sport_contexts": {
             sport: {"id": sport, "label": sport_display_name(sport), "frames": n}
             for sport, n in sorted(sports.items())
+        },
+        "place_types": {
+            place: {"id": place, "label": place_display_name(place), "frames": n}
+            for place, n in sorted(places.items())
         },
     }

@@ -1,12 +1,17 @@
-"""Combine sport context, body-aggression, and optional face assists.
+"""Combine sport, scene-place, kit, body-aggression, and optional face assists.
 
 Single enrichment point so MOCK, YOLO, and the activity adapter share
 the same metadata contract without double-counting cues.
+
+Place type is a catalog setting (court / street / corridor / house / …),
+not recognition of a named arena. Kit cues are clothing-color clusters,
+not identity or guilt.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import List, Optional, Sequence
 
 import numpy as np
@@ -18,6 +23,14 @@ from vision.aggression import (
 )
 from vision.detector import Detection
 from vision.face_aggression import FaceAggressionResult, analyze_face_aggression
+from vision.scene_context import (
+    KitCues,
+    PlaceAssessment,
+    analyze_kit_cues,
+    infer_scene_place,
+    kit_sport_confidence_boost,
+    place_display_name,
+)
 from vision.sports_catalog import infer_sport_context, resolve_sport, sport_display_name
 
 
@@ -34,11 +47,21 @@ class SceneAssist:
     sport_display: str = ""
     aggression: AggressionAssessment = field(default_factory=AggressionAssessment)
     face: FaceAggressionResult = field(default_factory=FaceAggressionResult)
+    place: PlaceAssessment = field(default_factory=PlaceAssessment)
+    kit: KitCues = field(default_factory=KitCues)
 
     def to_extras(self) -> dict:
         extras: dict = {
             "aggression": self.aggression.to_dict(),
             "face_aggression": self.face.to_dict(),
+            "scene_context": self.place.to_dict(),
+            "kit": self.kit.to_dict(),
+            "place_type": self.place.place_type,
+            "place_display": self.place.display or place_display_name(self.place.place_type),
+            "place_confidence": round(float(self.place.confidence), 3),
+            "place_source": self.place.source,
+            "team_kit_similarity": round(float(self.kit.team_kit_similarity), 3),
+            "jersey_like_colors": bool(self.kit.jersey_like_colors),
         }
         if self.sport_context:
             extras["sport_context"] = self.sport_context
@@ -71,6 +94,50 @@ def _existing_sport(detections: Sequence[Detection]) -> tuple[Optional[str], flo
     return best_id, best_conf
 
 
+def _existing_place(detections: Sequence[Detection]) -> Optional[PlaceAssessment]:
+    best: Optional[PlaceAssessment] = None
+    best_conf = 0.0
+    for det in detections:
+        extras = det.extras or {}
+        raw = extras.get("place_type")
+        scene = extras.get("scene_context")
+        if not raw and isinstance(scene, dict):
+            raw = scene.get("place_type")
+        if not raw:
+            continue
+        try:
+            conf = float(
+                extras.get("place_confidence")
+                or (scene.get("place_confidence") if isinstance(scene, dict) else 0)
+                or det.confidence
+            )
+        except (TypeError, ValueError):
+            conf = float(det.confidence)
+        if conf >= best_conf:
+            best_conf = conf
+            source = str(
+                extras.get("place_source")
+                or (scene.get("place_source") if isinstance(scene, dict) else "")
+                or "detection"
+            )
+            best = PlaceAssessment(
+                place_type=str(raw),
+                confidence=conf,
+                display=str(
+                    extras.get("place_display")
+                    or (scene.get("place_display") if isinstance(scene, dict) else "")
+                    or place_display_name(str(raw))
+                ),
+                source=source,
+                note=str(
+                    extras.get("place_note")
+                    or (scene.get("note") if isinstance(scene, dict) else "")
+                    or ""
+                ),
+            )
+    return best
+
+
 def _activity_labels(detections: Sequence[Detection]) -> set[str]:
     from vision.dataset import canonicalize_category
 
@@ -96,8 +163,11 @@ def enrich_detections(
     state: Optional[AssistState] = None,
     *,
     enable_face: Optional[bool] = None,
+    camera_place_type: Optional[str] = None,
+    location_label: Optional[str] = None,
+    data_root: Optional[str | Path] = None,
 ) -> tuple[List[Detection], SceneAssist]:
-    """Attach sport / aggression / face metadata and emit soft fight labels."""
+    """Attach sport / place / kit / aggression / face metadata."""
     state = state or AssistState()
     dets = list(detections)
     sport_id, sport_conf = _existing_sport(dets)
@@ -117,6 +187,30 @@ def enrich_detections(
     ):
         sport_id, sport_conf = inferred_id, inferred_conf
 
+    kit = analyze_kit_cues(image_bgr, dets)
+    if sport_id:
+        sport_conf = kit_sport_confidence_boost(kit, float(sport_conf or 0.0))
+
+    # Camera stamp wins when set. Else extras already on the detection,
+    # then labeled folders, then heuristic. Do not invent a sports venue
+    # on threat-class frames from a color wash.
+    allow_heuristic = not bool(activity_labels & _THREAT_ACTIVITY)
+    if camera_place_type:
+        place = infer_scene_place(
+            image_bgr,
+            camera_place_type=camera_place_type,
+            data_root=data_root,
+            allow_heuristic=False,
+        )
+    else:
+        place = _existing_place(dets) or infer_scene_place(
+            image_bgr,
+            camera_place_type=None,
+            data_root=data_root,
+            allow_heuristic=allow_heuristic,
+        )
+    _ = location_label  # operator free-text only; never used as a famous arena
+
     aggression = analyze_aggression(
         image_bgr,
         prev_bgr=state.prev_bgr,
@@ -131,6 +225,8 @@ def enrich_detections(
         sport_display=sport_display_name(sport_id) if sport_id else "",
         aggression=aggression,
         face=face,
+        place=place,
+        kit=kit,
     )
     extras = assist.to_extras()
 
@@ -156,7 +252,12 @@ def enrich_detections(
         merged.append(
             Detection(
                 label="scene_assist",
-                confidence=max(assist.aggression.score, assist.sport_confidence, 0.2),
+                confidence=max(
+                    assist.aggression.score,
+                    assist.sport_confidence,
+                    assist.place.confidence,
+                    0.2,
+                ),
                 extras=extras,
             )
         )

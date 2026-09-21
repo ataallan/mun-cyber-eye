@@ -115,6 +115,7 @@ If YOLO is missing and no activity checkpoint loads, the app uses honest **MOCK*
 | Webcam ingest | Real **only if** `ALLOW_WEBCAM=1` (default refused) |
 | Phase 3 activity model (OpenCV + sklearn) | Real **if** checkpoint loads |
 | Sports catalog + optional `sport_context` | Real (assistive labels / demo court proxies — not “knows most sports”) |
+| Scene place types + kit-color cues | Real (catalog + camera stamp / folders / synthetic proxies — not full scene understanding; uniforms ≠ identity) |
 | Body-aggression OpenCV proxies | Real (motion / proximity / raised-arm; assistive) |
 | Face-expression assist | Optional, **off** (`ENABLE_FACE_AGGRESSION=0`); never identity or criminal labels |
 | Train / eval (accuracy, P/R/F1 per class) | Real (CLI + Admin → Train models) |
