@@ -3,8 +3,8 @@
 {% block content %}
 <section class="card">
   <h1>Authorized cameras</h1>
-  <p class="muted">Register only feeds you are authorized to monitor. AI detects and alerts; humans verify and decide. Offline cameras and missing credentials are reported honestly — the pipeline will not invent detections. Home/community object inventory (when YOLO is installed) is assistive metadata on Last run / alerts; cameras themselves are unchanged.</p>
-  <p class="fineprint">Webcam ingest is {{ "enabled (ALLOW_WEBCAM=1)" if allow_webcam else "refused (ALLOW_WEBCAM=0)" }}. RTSP passwords are masked here; prefer <code>env:VAR_NAME</code> secret references.</p>
+  <p class="muted">Register only feeds you are authorized to monitor. Elevated-risk detection runs automatically from these cameras when the pipeline runs — not from uploading incident clips. AI detects and alerts; humans verify and decide. Offline cameras and missing credentials are reported honestly — the pipeline will not invent detections. Home/community object inventory (when YOLO is installed) is assistive metadata on Last run / alerts; cameras themselves are unchanged.</p>
+  <p class="fineprint">Webcam ingest is {{ "enabled (ALLOW_WEBCAM=1)" if allow_webcam else "refused (ALLOW_WEBCAM=0)" }}. RTSP passwords are masked here; prefer <code>env:VAR_NAME</code> secret references. Enable or disable a camera, or detach it from My cameras / account linkage. There is no permanent camera delete.</p>
 
   <div class="toolbar">
     <p class="muted" style="margin:0">{{ cameras|length }} registered · {{ cameras|selectattr('enabled')|list|length }} enabled</p>

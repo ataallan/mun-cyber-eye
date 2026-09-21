@@ -294,6 +294,11 @@ class UserStore:
             rows = conn.execute(q).fetchall()
         return [self._row_to_user(r) for r in rows]
 
+    def count(self) -> int:
+        with self._conn() as conn:
+            row = conn.execute("SELECT COUNT(*) FROM users").fetchone()
+        return int(row[0]) if row else 0
+
     def get_by_email(self, email: str) -> Optional[User]:
         email = normalize_email(email)
         if not email:
@@ -429,7 +434,8 @@ def admin_required(view):
         if session.get("role") != "admin":
             flash(
                 "Only the admin role can train or activate models. "
-                "Registered accounts are operators unless promoted in the database.",
+                "Registered accounts are operators unless this is the first account "
+                "(which becomes admin) or the row is promoted in the database.",
                 "error",
             )
             return redirect(url_for("main.dashboard"))

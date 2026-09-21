@@ -14,15 +14,15 @@ from app.auth import UserStore
 
 @pytest.fixture
 def app(tmp_path):
+    """Fresh install: no env bootstrap, no default password."""
     return create_app(
         {
             "TESTING": True,
             "SECRET_KEY": "test-secret",
-            "ADMIN_USERNAME": "operator",
-            "ADMIN_PASSWORD": "changeme",
-            "ADMIN_EMAIL": "operator@localhost",
-            "ADMIN_SYNC_PASSWORD": True,
-            "ADMIN_ROLE": "admin",
+            "ADMIN_USERNAME": "",
+            "ADMIN_PASSWORD": "",
+            "ADMIN_EMAIL": "",
+            "ADMIN_SYNC_PASSWORD": False,
             "ALERT_DB_PATH": str(tmp_path / "alerts.db"),
             "AUTH_DB_PATH": str(tmp_path / "auth.db"),
             "SNAPSHOT_DIR": str(tmp_path / "snapshots"),
@@ -59,12 +59,30 @@ def test_login_page_has_logo_and_create_account(client):
     assert "Don't have an account?" in body
     assert "Create account" in body
     assert "Forgot password?" in body
+    assert "Create the first admin account" in body
+    assert "changeme" not in body
+    assert "default password" in body.lower()
+
+
+def test_fresh_install_has_no_default_operator_changeme(app, client):
+    store: UserStore = app.extensions["user_store"]
+    assert store.count() == 0
+    assert store.get_by_username("operator") is None
+    rv = client.post(
+        "/login",
+        data={"username": "operator", "password": "changeme"},
+    )
+    assert rv.status_code == 200
+    assert "Invalid credentials" in rv.get_data(as_text=True)
+    assert "Alert console" not in rv.get_data(as_text=True)
 
 
 def test_register_then_login(client):
     rv = _register(client)
     assert rv.status_code == 200
-    assert "Account created" in rv.get_data(as_text=True)
+    assert "Account created" in rv.get_data(as_text=True) or "site admin" in rv.get_data(
+        as_text=True
+    )
 
     bad = client.post(
         "/login",
@@ -83,25 +101,51 @@ def test_register_then_login(client):
     assert "alice" in ok.get_data(as_text=True)
 
 
-def test_bad_password_for_env_admin(client):
-    rv = client.post(
-        "/login",
-        data={"username": "operator", "password": "not-the-password"},
+def test_first_register_is_admin_second_is_operator(app, client):
+    first = _register(client, username="founder", email="founder@example.com")
+    assert first.status_code == 200
+    assert "site admin" in first.get_data(as_text=True).lower()
+    founder = app.extensions["user_store"].get_by_username("founder")
+    assert founder is not None
+    assert founder.role == "admin"
+
+    second = _register(client, username="reviewer", email="reviewer@example.com")
+    assert second.status_code == 200
+    reviewer = app.extensions["user_store"].get_by_username("reviewer")
+    assert reviewer is not None
+    assert reviewer.role == "operator"
+
+
+def test_optional_env_bootstrap_when_both_set(tmp_path):
+    application = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test-secret",
+            "ADMIN_USERNAME": "siteadmin",
+            "ADMIN_PASSWORD": "test-pass-12",
+            "ADMIN_EMAIL": "siteadmin@localhost",
+            "ADMIN_SYNC_PASSWORD": True,
+            "ADMIN_ROLE": "admin",
+            "ALERT_DB_PATH": str(tmp_path / "alerts.db"),
+            "AUTH_DB_PATH": str(tmp_path / "auth.db"),
+            "SNAPSHOT_DIR": str(tmp_path / "snapshots"),
+        }
     )
-    assert rv.status_code == 200
-    assert "Invalid credentials" in rv.get_data(as_text=True)
-
-
-def test_env_admin_still_logs_in_after_migration(client):
-    rv = client.post(
+    client = application.test_client()
+    bad = client.post(
         "/login",
-        data={"username": "operator", "password": "changeme"},
+        data={"username": "siteadmin", "password": "not-the-password"},
+    )
+    assert "Invalid credentials" in bad.get_data(as_text=True)
+    ok = client.post(
+        "/login",
+        data={"username": "siteadmin", "password": "test-pass-12"},
         follow_redirects=True,
     )
-    assert rv.status_code == 200
-    text = rv.get_data(as_text=True)
+    assert ok.status_code == 200
+    text = ok.get_data(as_text=True)
     assert "Alert console" in text
-    assert "operator" in text
+    assert "siteadmin" in text
     assert "admin" in text
 
 

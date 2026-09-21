@@ -6,8 +6,13 @@
     <img class="auth-logo" src="{{ url_for('static', filename='img/mun-cyber-eye-logo.png') }}" alt="Mun Cyber Eye logo">
     <p class="auth-product">{{ product_name }}</p>
   </div>
+  {% if needs_setup %}
+  <h1>Create the first admin account</h1>
+  <p class="muted">Choose a username and a strong password (at least 8 characters). This first account becomes site admin. No default password is shipped.</p>
+  {% else %}
   <h1>Create account</h1>
   <p class="muted">Register as an operator to review alerts. New accounts do not grant autonomous control — humans verify and decide.</p>
+  {% endif %}
   <form method="post" class="form">
     <label>Username
       <input type="text" name="username" autocomplete="username" required minlength="3" maxlength="32">
@@ -29,6 +34,6 @@
   <p class="auth-links">
     <span>Already have an account? <a href="{{ url_for('main.login') }}">Sign in</a></span>
   </p>
-  <p class="fineprint">Authorized use only. Operator accounts review alerts; they do not trigger enforcement.</p>
+  <p class="fineprint">Authorized use only. Operator accounts review alerts; they do not trigger enforcement. Later accounts are operators unless promoted in the database.</p>
 </section>
 {% endblock %}

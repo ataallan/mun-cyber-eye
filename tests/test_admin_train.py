@@ -23,9 +23,9 @@ def app(tmp_path):
         {
             "TESTING": True,
             "SECRET_KEY": "test-secret",
-            "ADMIN_USERNAME": "operator",
-            "ADMIN_PASSWORD": "changeme",
-            "ADMIN_EMAIL": "operator@localhost",
+            "ADMIN_USERNAME": "siteadmin",
+            "ADMIN_PASSWORD": "test-pass-12",
+            "ADMIN_EMAIL": "siteadmin@localhost",
             "ADMIN_SYNC_PASSWORD": True,
             "ADMIN_ROLE": "admin",
             "OPERATOR_USERNAME": "reviewer",
@@ -51,7 +51,7 @@ def client(app):
     return app.test_client()
 
 
-def _login(client, username="operator", password="changeme"):
+def _login(client, username="siteadmin", password="test-pass-12"):
     return client.post(
         "/login",
         data={"username": username, "password": password},
@@ -151,7 +151,7 @@ def test_admin_can_train_activate_and_upload(client, app, tmp_path):
     record = read_active_checkpoint(tmp_path / "active_checkpoint.json")
     assert record is not None
     assert Path(record["path"]) == ckpt
-    assert record["activated_by"] == "operator"
+    assert record["activated_by"] == "siteadmin"
     assert app.config["ACTIVITY_CHECKPOINT"] == str(ckpt)
 
     upload = client.post(

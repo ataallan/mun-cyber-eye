@@ -32,8 +32,8 @@ def app(tmp_path):
         {
             "TESTING": True,
             "SECRET_KEY": "test",
-            "ADMIN_USERNAME": "operator",
-            "ADMIN_PASSWORD": "changeme",
+            "ADMIN_USERNAME": "siteadmin",
+            "ADMIN_PASSWORD": "test-pass-12",
             "ADMIN_ROLE": "admin",
             "OPERATOR_USERNAME": "reviewer",
             "OPERATOR_PASSWORD": "review",
@@ -54,7 +54,7 @@ def client(app):
     return app.test_client()
 
 
-def _login(client, username="operator", password="changeme"):
+def _login(client, username="siteadmin", password="test-pass-12"):
     return client.post(
         "/login",
         data={"username": username, "password": password},
@@ -175,6 +175,40 @@ def test_ack_still_works(app, client):
     assert trail[-1]["note"] == "Checked feed"
 
 
+def test_alert_detail_hitl_actions_have_no_delete(app, client):
+    alert = _make_alert(app)
+    _login(client)
+    page = client.get(f"/alerts/{alert.id}")
+    body = page.get_data(as_text=True)
+    assert 'value="acknowledge"' in body
+    assert 'value="dismiss"' in body
+    assert 'value="escalate"' in body
+    assert 'value="reopen"' in body
+    assert 'value="delete"' not in body
+    assert "no delete that wipes the row" in body.lower()
+
+    resp = client.post(
+        f"/alerts/{alert.id}/action",
+        data={"action": "delete"},
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert "Invalid action" in resp.get_data(as_text=True)
+    loaded = app.extensions["alert_store"].get(alert.id)
+    assert loaded is not None
+    assert loaded.status == "open"
+
+
+def test_cameras_page_has_enable_disable_not_delete(client):
+    _login(client)
+    body = client.get("/cameras").get_data(as_text=True)
+    assert "Enable" in body or "Disable" in body
+    assert "permanent camera delete" in body.lower() or "no permanent" in body.lower()
+    assert ">Delete<" not in body
+    missing = client.post("/cameras/demo-file-01/delete", follow_redirects=False)
+    assert missing.status_code in {404, 405}
+
+
 def test_relative_snapshot_dir_resolves_and_serves(tmp_path, monkeypatch):
     from pathlib import Path
 
@@ -183,8 +217,8 @@ def test_relative_snapshot_dir_resolves_and_serves(tmp_path, monkeypatch):
         {
             "TESTING": True,
             "SECRET_KEY": "test",
-            "ADMIN_USERNAME": "operator",
-            "ADMIN_PASSWORD": "changeme",
+            "ADMIN_USERNAME": "siteadmin",
+            "ADMIN_PASSWORD": "test-pass-12",
             "ALERT_DB_PATH": str(tmp_path / "app.db"),
             "AUTH_DB_PATH": str(tmp_path / "auth.db"),
             "SNAPSHOT_DIR": "data/snapshots",
@@ -195,6 +229,6 @@ def test_relative_snapshot_dir_resolves_and_serves(tmp_path, monkeypatch):
     resolved.mkdir(parents=True, exist_ok=True)
     (resolved / "frame_demo.jpg").write_bytes(b"\xff\xd8\xff\xd9")
     client = application.test_client()
-    client.post("/login", data={"username": "operator", "password": "changeme"})
+    client.post("/login", data={"username": "siteadmin", "password": "test-pass-12"})
     resp = client.get("/snapshots/frame_demo.jpg")
     assert resp.status_code == 200

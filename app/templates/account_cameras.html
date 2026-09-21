@@ -6,7 +6,7 @@
 {% endif %}
 <section class="card">
   <h1>{% if self_edit %}My cameras{% else %}{{ account.username }}{% endif %}</h1>
-  <p class="muted">Attach or detach any number of authorized cameras on this account. Alert email uses the <strong>security email</strong> when set, otherwise the login email. Email is notify-only — humans verify and decide.</p>
+  <p class="muted">Attach or detach any number of authorized cameras on this account (unlink only — cameras stay in the registry). Alert email uses the <strong>security email</strong> when set, otherwise the login email. Email is notify-only — humans verify and decide.</p>
 
   <dl class="kv">
     <dt>Username</dt><dd class="mono">{{ account.username }}</dd>

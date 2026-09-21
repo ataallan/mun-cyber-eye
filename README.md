@@ -5,11 +5,13 @@
 
 > See danger earlier. Alert faster. Protect people.
 
-Phase 5 **prototype**: register authorized cameras → ingest file / RTSP / (gated) webcam or MOCK → sample frames → **activity model** (or YOLO / MOCK) → risk engine → structured SQLite alerts → Flask console for **human review** → optional Resend email / SIEM webhook to **authorized personnel**.
+Phase 5 **prototype**: register authorized cameras → ingest file / RTSP / (gated) webcam → sample frames → **activity model** (or YOLO / MOCK) → risk engine → structured SQLite alerts → Flask console for **human review** → optional Resend email / SIEM webhook to **authorized personnel**.
 
 **Safety banner (always on):** *AI detects and alerts. Humans verify and decide.*
 
-Authorized cameras only. No autonomous enforcement.
+Authorized cameras only. No autonomous enforcement. No facial criminal or identity labeling.
+
+**Windows standalone:** unzip and run `install_and_run.bat` (or `install_and_run.ps1`). See [docs/STANDALONE.md](docs/STANDALONE.md).
 
 ## Quick start
 
@@ -24,18 +26,15 @@ python run.py
 
 Open **http://127.0.0.1:5055**
 
-Sign in with either:
+There is **no default password**. On a fresh install, use **Create account** — the first account becomes site admin (choose a strong password). Later accounts are operators.
 
-- **Create account** on the login page (new operators), or  
-- The seeded demo admin (change in `.env`): `operator` / `changeme`
-
-1. Sign in  
+1. Create account / sign in  
 2. **Cameras** → confirm the seeded Demo Lab File camera, or add an authorized file / RTSP source  
-3. **Run Pipeline** → pick that camera (or all enabled) — MOCK / Phase 3 activity demo still work. To process your own clip, select **Authorized video file upload** (or attach a file — the form auto-selects upload so Synthetic MOCK is not used). Zero-alert runs still report frames processed.
-4. Open an alert → `camera_id` + `location_label` from the registry, then acknowledge / dismiss / escalate  
-5. Optional: **Recipients** + `RESEND_API_KEY` to email authorized operators  
+3. **Run Pipeline** → registered cameras (product detection path). Lab-only MOCK / Phase 3 synthetic demo are labeled as development, not customer detection. **Video uploads are for training only** (Admin → Train models → Extract frames from video).  
+4. Open an alert → `camera_id` + `location_label` from the registry, then acknowledge / dismiss / escalate / reopen (alerts are retained — no delete wipe)  
+5. Optional: **Recipients** + `RESEND_API_KEY` to email authorized operators. Camera owners are notified via `security_email` or login email.  
 
-Webcam capture stays off unless `ALLOW_WEBCAM=1`. A missing RTSP secret or dead stream marks `last_error` on the camera and does not invent detections. Details: [docs/PHASE5.md](docs/PHASE5.md).
+Webcam capture stays off unless `ALLOW_WEBCAM=1`. A missing RTSP secret or dead stream marks `last_error` on the camera and does not invent detections. Details: [docs/PHASE5.md](docs/PHASE5.md), [docs/PRODUCT_OPS.md](docs/PRODUCT_OPS.md).
 
 Without a Resend key the console still works. Delivery is marked `queued` / `undelivered` — never reported as sent.
 
@@ -172,15 +171,19 @@ app/             Flask console (templates, static, auth)
 data/activity/   Labeled frames (train/val/test/<category>)
 data/objects/    Labeled object/structure frames (sibling tree)
 data/checkpoints/activity_demo.joblib
-data/uploads/    Operator-supplied authorized clips (gitignored)
-docs/            ARCHITECTURE.md, ETHICS_AND_SAFETY.md, PHASE3.md, PHASE3b.md, SPORTS_AND_AGGRESSION.md, SCENE_CONTEXT.md, OBJECTS_AND_STRUCTURES.md, DANGEROUS_OBJECTS.md, GUNSHOTS_AND_FALLS.md, PHASE4.md, PHASE5.md
+data/uploads/    Leftover train-extract files may remain (gitignored; no delete library)
+docs/            ARCHITECTURE.md, ETHICS_AND_SAFETY.md, PRODUCT_OPS.md, STANDALONE.md, PHASE3.md, PHASE3b.md, SPORTS_AND_AGGRESSION.md, SCENE_CONTEXT.md, OBJECTS_AND_STRUCTURES.md, DANGEROUS_OBJECTS.md, GUNSHOTS_AND_FALLS.md, PHASE4.md, PHASE5.md
 pipeline.py      End-to-end orchestration
 run.py           Entrypoint
+install_and_run.bat / .ps1   Windows standalone launcher
+scripts/         Optional standalone zip builder
 tests/           pytest (risk + alerts + notify + mock + activity + cameras)
 ```
 
 ## Docs
 
+- [Standalone Windows download](docs/STANDALONE.md)
+- [Product operations and retention](docs/PRODUCT_OPS.md)
 - [Phase 5 — live / multi-camera ingest](docs/PHASE5.md)
 - [Phase 4 — alert system](docs/PHASE4.md)
 - [Phase 3 — activity recognition](docs/PHASE3.md)

@@ -1,6 +1,5 @@
 """Flask console: camera registry, run-from-camera, webcam gate, health."""
 
-import re
 from io import BytesIO
 from pathlib import Path
 
@@ -8,7 +7,6 @@ import numpy as np
 import pytest
 
 from app.factory import create_app
-from vision.detector import Detection, VisionAdapter
 
 
 @pytest.fixture
@@ -17,8 +15,8 @@ def app(tmp_path):
         {
             "TESTING": True,
             "SECRET_KEY": "test",
-            "ADMIN_USERNAME": "operator",
-            "ADMIN_PASSWORD": "changeme",
+            "ADMIN_USERNAME": "siteadmin",
+            "ADMIN_PASSWORD": "test-pass-12",
             "ADMIN_ROLE": "admin",
             "ALERT_DB_PATH": str(tmp_path / "app.db"),
             "AUTH_DB_PATH": str(tmp_path / "auth.db"),
@@ -37,7 +35,7 @@ def client(app):
     return app.test_client()
 
 
-def _login(client, username="operator", password="changeme"):
+def _login(client, username="siteadmin", password="test-pass-12"):
     return client.post(
         "/login",
         data={"username": username, "password": password},
@@ -197,14 +195,14 @@ def test_run_synthetic_shows_game_dance_without_threat_alerts(app, client):
 
 def test_camera_form_lists_console_users_and_assigns_owner(app, client):
     _login(client)
-    admin = app.extensions["user_store"].get_by_username("operator")
+    admin = app.extensions["user_store"].get_by_username("siteadmin")
     assert admin is not None
     form = client.get("/cameras/new")
     body = form.get_data(as_text=True)
     assert form.status_code == 200
     assert "Accounts linked to this camera" in body
     assert admin.email in body
-    assert "operator" in body
+    assert "siteadmin" in body
     assert "My cameras" in body
     created = client.post(
         "/cameras/new",
@@ -225,13 +223,13 @@ def test_camera_form_lists_console_users_and_assigns_owner(app, client):
     assert created.status_code == 200
     listing = created.get_data(as_text=True)
     assert "Owned hall" in listing
-    assert "operator" in listing
+    assert "siteadmin" in listing
     stored = [
         c for c in app.extensions["camera_store"].list_cameras() if c.name == "Owned hall"
     ]
     assert stored
     assert stored[0].owner_user_id == admin.id
-    assert stored[0].owner_username == "operator"
+    assert stored[0].owner_username == "siteadmin"
     assert stored[0].notify_email == "security@example.com"
     links = app.extensions["camera_store"].list_accounts_for_camera(stored[0].id)
     assert {row["user_id"] for row in links} == {admin.id}
@@ -332,13 +330,15 @@ def test_run_page_lists_registry(client):
     _login(client)
     resp = client.get("/run")
     body = resp.get_data(as_text=True)
-    assert "Registered camera" in body
+    assert "Registered authorized cameras" in body
     assert "demo-file-01" in body
     assert "All enabled cameras" in body
-    assert "Authorized video file upload" in body
-    assert "video-file" in body
-    assert "mode-upload" in body
-    assert "upload-hint" in body
+    assert "product detection path" in body
+    assert "Lab / development only" in body
+    assert "Authorized video file upload" not in body
+    assert "mode-upload" not in body
+    assert "video-file" not in body
+    assert "Train models" in body
 
 
 def _tiny_video(path: Path, frames: int = 40) -> Path:
@@ -357,14 +357,7 @@ def _tiny_video(path: Path, frames: int = 40) -> Path:
     return path
 
 
-class _OrdinaryAdapter(VisionAdapter):
-    name = "ordinary-test"
-
-    def detect(self, image_bgr, frame_index: int = 0):
-        return [Detection("ordinary", 0.95)]
-
-
-def test_run_synthetic_mode_with_file_uses_upload(app, client, tmp_path):
+def test_run_ignores_attached_file_and_keeps_synthetic(app, client, tmp_path):
     video = _tiny_video(tmp_path / "src" / "hallway.avi")
     _login(client)
     resp = client.post(
@@ -378,21 +371,18 @@ def test_run_synthetic_mode_with_file_uses_upload(app, client, tmp_path):
     )
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert "authorized upload — hallway.avi" in body
-    assert "hallway.avi" in body
-    assert "Synthetic Demo" not in body
-    assert "Authorized video file upload" in body
-    assert "form mode was synthetic" in body
-    frames = re.search(r"Frames processed:\s*(\d+)", body)
-    assert frames and int(frames.group(1)) > 0
+    assert "training only" in body.lower()
+    assert "authorized upload — hallway.avi" not in body
+    assert "Synthetic Demo" in body
     saved = Path(app.config["UPLOAD_DIR"]) / "hallway.avi"
-    assert saved.is_file()
+    assert not saved.is_file()
     alerts = app.extensions["alert_store"].list_alerts()
-    assert all("authorized upload — hallway.avi" in a.source_label for a in alerts)
-    assert all("Synthetic" not in a.source_label for a in alerts)
+    assert alerts
+    assert all("Synthetic" in a.source_label for a in alerts)
+    assert all("authorized upload" not in a.source_label for a in alerts)
 
 
-def test_run_camera_mode_with_file_uses_upload(app, client, tmp_path):
+def test_run_camera_mode_ignores_attached_file(app, client, tmp_path):
     video = _tiny_video(tmp_path / "src" / "gate.avi", frames=12)
     _login(client)
     resp = client.post(
@@ -407,18 +397,15 @@ def test_run_camera_mode_with_file_uses_upload(app, client, tmp_path):
     )
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert "authorized upload — gate.avi" in body
-    assert "form mode was camera" in body
-    frames = re.search(r"Frames processed:\s*(\d+)", body)
-    assert frames and int(frames.group(1)) > 0
+    assert "training only" in body.lower()
+    assert "authorized upload — gate.avi" not in body
     alerts = app.extensions["alert_store"].list_alerts()
-    assert all("authorized upload" in a.source_label for a in alerts)
+    assert alerts
+    assert all(a.camera_id == "demo-file-01" for a in alerts)
+    assert all("authorized upload" not in a.source_label for a in alerts)
 
 
-def test_upload_quiet_run_explains_zero_alerts(app, client, tmp_path, monkeypatch):
-    monkeypatch.setattr(
-        "vision.detector.create_adapter", lambda *a, **k: _OrdinaryAdapter()
-    )
+def test_run_upload_mode_is_rejected(app, client, tmp_path):
     video = _tiny_video(tmp_path / "src" / "ordinary.avi", frames=12)
     _login(client)
     before = len(app.extensions["alert_store"].list_alerts())
@@ -433,12 +420,8 @@ def test_upload_quiet_run_explains_zero_alerts(app, client, tmp_path, monkeypatc
     )
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert "authorized upload — ordinary.avi" in body
-    assert "no elevated-risk frames" in body
-    assert "ordinary" in body
-    assert "Top predicted categories" in body
-    frames = re.search(r"Frames processed:\s*(\d+)", body)
-    assert frames and int(frames.group(1)) > 0
+    assert "not a customer detection path" in body.lower() or "training only" in body.lower()
+    assert "authorized upload — ordinary.avi" not in body
     assert len(app.extensions["alert_store"].list_alerts()) == before
 
 

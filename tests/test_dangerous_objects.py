@@ -230,9 +230,9 @@ def app(tmp_path):
         {
             "TESTING": True,
             "SECRET_KEY": "test-secret",
-            "ADMIN_USERNAME": "operator",
-            "ADMIN_PASSWORD": "changeme",
-            "ADMIN_EMAIL": "operator@localhost",
+            "ADMIN_USERNAME": "siteadmin",
+            "ADMIN_PASSWORD": "test-pass-12",
+            "ADMIN_EMAIL": "siteadmin@localhost",
             "ADMIN_SYNC_PASSWORD": True,
             "ADMIN_ROLE": "admin",
             "ALERT_DB_PATH": str(tmp_path / "alerts.db"),
@@ -273,7 +273,7 @@ def _tiny_video(path, n_frames=8, fps=4):
 def test_admin_extract_dangerous_and_weapon_activity(client, tmp_path):
     client.post(
         "/login",
-        data={"username": "operator", "password": "changeme"},
+        data={"username": "siteadmin", "password": "test-pass-12"},
         follow_redirects=True,
     )
     video = tmp_path / "clip.avi"

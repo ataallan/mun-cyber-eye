@@ -94,5 +94,34 @@ def test_invalid_action(store):
         frame_index=0,
         timestamp_sec=0.0,
     )
-    with pytest.raises(ValueError):
+    assert store.VALID_ACTIONS == {"acknowledge", "dismiss", "escalate", "reopen"}
+    with pytest.raises(ValueError, match="Invalid action"):
         store.apply_action(alert.id, "delete", actor="op")
+    retained = store.get(alert.id)
+    assert retained is not None
+    assert retained.status == "open"
+
+
+def test_human_actions_do_not_include_delete(store):
+    alert = store.create_alert(
+        source_label="Cam",
+        category="potential_fight",
+        risk_level="high",
+        confidence=0.8,
+        rationale="r",
+        frame_index=0,
+        timestamp_sec=0.0,
+    )
+    for action, status in (
+        ("acknowledge", "acknowledged"),
+        ("dismiss", "dismissed"),
+        ("escalate", "escalated"),
+        ("reopen", "open"),
+    ):
+        store.apply_action(alert.id, action, actor="reviewer")
+        loaded = store.get(alert.id)
+        assert loaded is not None
+        assert loaded.status == status
+    trail = [e["action"] for e in store.audit_trail(alert.id)]
+    assert "delete" not in trail
+    assert trail[-4:] == ["acknowledge", "dismiss", "escalate", "reopen"]

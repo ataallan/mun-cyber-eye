@@ -3,28 +3,24 @@
 {% block content %}
 <section class="card">
   <h1>Run detection pipeline</h1>
-  <p class="muted">Pick a registered authorized camera, run all enabled cameras sequentially, or keep the synthetic MOCK / Phase 3 activity demo. Webcam capture is refused unless <code>ALLOW_WEBCAM=1</code>. Offline or unconfigured cameras are reported honestly — no fake detections.</p>
-  <p class="fineprint">The activity model does not “know most sports” or “understand all arenas.” Named <code>sport_context</code> and <code>place_type</code> are catalog + folder / camera / color-geometry assists. Home/community objects are a YOLO inventory assist when ultralytics is installed — otherwise Last run reports <code>objects_backend=unavailable</code> and does not invent a refrigerator. Kit similarity is a clothing-color cluster, not identity or guilt. Body-aggression cues are OpenCV motion proxies, not a determination of assault. Face-expression assist is <strong>{% if face_aggression_enabled %}on (lab){% else %}off{% endif %}</strong> and never identifies a person or attaches a criminal label.</p>
+  <p class="muted">Detection runs from <strong>registered authorized cameras</strong> when this pipeline runs (one camera or all enabled, sequentially). Register RTSP, file-source cameras, or a webcam if <code>ALLOW_WEBCAM=1</code>. Offline or unconfigured cameras are reported honestly — no fake detections. There is no customer “upload an incident clip for live detection” path.</p>
+  <p class="fineprint">Video files belong on <a href="{{ url_for('main.admin_train') }}">Train models</a> (extract frames into a labeled dataset). Synthetic MOCK / Phase 3 activity demo remain for lab and development only — they are not the customer detection path. The activity model does not “know most sports” or “understand all arenas.” Named <code>sport_context</code> and <code>place_type</code> are catalog + folder / camera / color-geometry assists. Home/community objects are a YOLO inventory assist when ultralytics is installed — otherwise Last run reports <code>objects_backend=unavailable</code> and does not invent a refrigerator. Kit similarity is a clothing-color cluster, not identity or guilt. Body-aggression cues are OpenCV motion proxies, not a determination of assault. Face-expression assist is <strong>{% if face_aggression_enabled %}on (lab){% else %}off{% endif %}</strong> and never identifies a person or attaches a criminal label.</p>
 
-  <form method="post" enctype="multipart/form-data" class="form" id="run-form">
+  <form method="post" class="form" id="run-form">
     <fieldset>
       <legend>Mode</legend>
       <label class="radio">
-        <input type="radio" name="mode" value="synthetic" checked>
-        Synthetic demo (MOCK detections — no video file needed)
+        <input type="radio" name="mode" value="camera" checked>
+        Registered authorized cameras (product detection path)
+      </label>
+      <label class="radio">
+        <input type="radio" name="mode" value="synthetic">
+        Lab / development only — Synthetic MOCK (not the customer detection path)
       </label>
       <label class="radio">
         <input type="radio" name="mode" value="activity">
-        Phase 3 activity model (synthetic class scenes
-        {% if activity_checkpoint_ready %}— checkpoint ready{% else %}— falls back to MOCK if no checkpoint{% endif %})
-      </label>
-      <label class="radio">
-        <input type="radio" name="mode" value="camera">
-        Registered camera (file / RTSP / webcam)
-      </label>
-      <label class="radio">
-        <input type="radio" name="mode" value="upload" id="mode-upload">
-        Authorized video file upload (uses activity checkpoint when present, else YOLO/MOCK)
+        Lab / development only — Phase 3 activity model on synthetic scenes
+        {% if activity_checkpoint_ready %}— checkpoint ready{% else %}— falls back to MOCK if no checkpoint{% endif %}
       </label>
     </fieldset>
     <label>Camera
@@ -40,10 +36,7 @@
       · {{ enabled_cameras|length }} enabled
       · true parallel streaming is not in this prototype</p>
     {% endif %}
-    <label>Video file (optional)
-      <input type="file" name="video" id="video-file" accept="video/*,.mp4,.avi,.mov,.mkv" onchange="window.cybereyeSelectUpload && window.cybereyeSelectUpload();" oninput="window.cybereyeSelectUpload && window.cybereyeSelectUpload();">
-    </label>
-    <p class="fineprint" id="upload-hint">Choosing a file selects <strong>Authorized video file upload</strong> (the server also treats any attached filename as upload, so Synthetic MOCK cannot run silently).</p>
+    <p class="fineprint">To label site video, use Train models → Extract frames from video. Leftover extract files may remain on disk; there is no video library or delete UI.</p>
     <button class="btn btn-primary" type="submit">Run</button>
   </form>
 
@@ -217,8 +210,8 @@
     {% endif %}
     {% if result.quiet %}
     <div class="quiet-run">
-      <p>Video was analyzed; no elevated-risk frames under current heuristics / model (ordinary). That is expected for many real videos until models are trained on your site.</p>
-      <p class="fineprint">{{ result.frames }} frame(s) were sampled from {% if result.filename %}<code>{{ result.filename }}</code>{% else %}{{ result.source }}{% endif %}. Zero alerts means the model stayed on <code>ordinary</code> — not that the file was ignored.</p>
+      <p>Frames were analyzed; no elevated-risk frames under current heuristics / model (ordinary). That is expected for many real cameras until models are trained on your site.</p>
+      <p class="fineprint">{{ result.frames }} frame(s) were sampled from {% if result.filename %}<code>{{ result.filename }}</code>{% else %}{{ result.source }}{% endif %}. Zero alerts means the model stayed on <code>ordinary</code> — not that the source was ignored.</p>
       <a class="btn btn-primary" href="{{ url_for('main.dashboard') }}">Open dashboard</a>
     </div>
     {% endif %}
@@ -251,31 +244,4 @@
   </div>
   {% endif %}
 </section>
-<script>
-(function () {
-  var fileInput = document.getElementById("video-file");
-  var uploadRadio = document.getElementById("mode-upload");
-  var form = document.getElementById("run-form");
-  var hint = document.getElementById("upload-hint");
-  function selectUploadIfFile() {
-    if (fileInput && uploadRadio && fileInput.files && fileInput.files.length) {
-      uploadRadio.checked = true;
-      if (hint) {
-        hint.textContent =
-          "Attached file will run as Authorized video file upload: " +
-          fileInput.files[0].name +
-          " (Synthetic MOCK is not used).";
-      }
-    }
-  }
-  window.cybereyeSelectUpload = selectUploadIfFile;
-  if (fileInput) {
-    fileInput.addEventListener("change", selectUploadIfFile);
-    fileInput.addEventListener("input", selectUploadIfFile);
-  }
-  if (form) {
-    form.addEventListener("submit", selectUploadIfFile);
-  }
-})();
-</script>
 {% endblock %}

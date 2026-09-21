@@ -20,15 +20,22 @@ def _env_flag(name: str, default: str = "0") -> bool:
 
 
 def _seed_env_users(user_store: UserStore, config: dict) -> None:
+    """Optional env bootstrap only when both username and password are set.
+
+    Fresh installs ship with empty ADMIN_* values. There is no default
+    password. The first Create account becomes admin.
+    """
     sync = bool(config.get("ADMIN_SYNC_PASSWORD", True))
-    admin_username = config["ADMIN_USERNAME"]
-    user_store.ensure_bootstrap_admin(
-        admin_username,
-        config["ADMIN_PASSWORD"],
-        config.get("ADMIN_EMAIL") or f"{admin_username}@localhost",
-        sync_password=sync,
-        role=config.get("ADMIN_ROLE") or "admin",
-    )
+    admin_username = (config.get("ADMIN_USERNAME") or "").strip()
+    admin_password = config.get("ADMIN_PASSWORD") or ""
+    if admin_username and admin_password:
+        user_store.ensure_bootstrap_admin(
+            admin_username,
+            admin_password,
+            config.get("ADMIN_EMAIL") or f"{admin_username}@localhost",
+            sync_password=sync,
+            role=config.get("ADMIN_ROLE") or "admin",
+        )
     op_user = (config.get("OPERATOR_USERNAME") or "").strip()
     op_pass = config.get("OPERATOR_PASSWORD") or ""
     if op_user and op_pass:
@@ -50,13 +57,14 @@ def create_app(test_config: dict | None = None) -> Flask:
         template_folder="templates",
         static_folder="static",
     )
-    admin_username = os.getenv("ADMIN_USERNAME", "operator")
+    admin_username = (os.getenv("ADMIN_USERNAME") or "").strip()
     app.config.update(
         SECRET_KEY=os.getenv("FLASK_SECRET_KEY", "dev-only-change-me"),
         ADMIN_USERNAME=admin_username,
-        ADMIN_PASSWORD=os.getenv("ADMIN_PASSWORD", "changeme"),
+        ADMIN_PASSWORD=os.getenv("ADMIN_PASSWORD", ""),
         ADMIN_ROLE=os.getenv("ADMIN_ROLE", "admin"),
-        ADMIN_EMAIL=os.getenv("ADMIN_EMAIL", f"{admin_username}@localhost"),
+        ADMIN_EMAIL=os.getenv("ADMIN_EMAIL", "")
+        or (f"{admin_username}@localhost" if admin_username else ""),
         ADMIN_SYNC_PASSWORD=_env_flag("ADMIN_SYNC_PASSWORD", "1"),
         OPERATOR_USERNAME=os.getenv("OPERATOR_USERNAME", ""),
         OPERATOR_PASSWORD=os.getenv("OPERATOR_PASSWORD", ""),

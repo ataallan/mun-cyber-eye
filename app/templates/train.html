@@ -3,7 +3,7 @@
 {% block content %}
 <section class="hero">
   <h1>Model training</h1>
-  <p class="muted">Train and activate the Phase 3 activity checkpoint from labeled frames. Upload a video to sample JPEG frames into a label folder — videos are sampled to frames; the sklearn activity trainer still learns from images. The CLI remains available; this page is the same <code>train_activity_model</code> path without SSH.</p>
+  <p class="muted">Train and activate the Phase 3 activity checkpoint from labeled frames. <strong>Video file uploads are for training only</strong> — extract JPEG frames into a label folder. They are not a live detection path. Videos are sampled to frames; the sklearn activity trainer still learns from images. The CLI remains available; this page is the same <code>train_activity_model</code> path without SSH.</p>
 </section>
 
 <div class="callout callout-safety" role="status">
@@ -377,8 +377,8 @@
 </section>
 
 <section class="card">
-  <h2>Extract frames from video</h2>
-  <p class="muted">Upload an <strong>authorized</strong> mp4 / avi / mov / mkv. The existing <code>FrameSampler</code> writes JPEGs into the chosen label folder. Videos are sampled to frames; the sklearn activity trainer still learns from images. Path traversal is rejected. Object-class frames go to <code>data/objects/train/&lt;object_id&gt;/</code>. Dangerous-object frames go to <code>data/dangerous/train/&lt;id&gt;/</code>. Activity class <code>potential_weapon_object</code> remains available under “activity class”.</p>
+  <h2>Extract frames from video (training only)</h2>
+  <p class="muted">This is the product upload path: an <strong>authorized</strong> mp4 / avi / mov / mkv is sampled to labeled JPEGs. It does <strong>not</strong> run live detection. The existing <code>FrameSampler</code> writes JPEGs into the chosen label folder. Videos are sampled to frames; the sklearn activity trainer still learns from images. Path traversal is rejected. Object-class frames go to <code>data/objects/train/&lt;object_id&gt;/</code>. Dangerous-object frames go to <code>data/dangerous/train/&lt;id&gt;/</code>. Activity class <code>potential_weapon_object</code> remains available under “activity class.” Leftover source files may remain on disk; there is no video library or delete UI.</p>
   <form method="post" action="{{ url_for('main.admin_train_extract_video') }}" enctype="multipart/form-data" class="form" id="extract-video-form">
     <label>Label kind
       <select name="kind" id="extract-kind">
@@ -486,7 +486,7 @@
 {% else %}
 <section class="card">
   <h2>Admin actions</h2>
-  <p class="muted">You can view checkpoint status and dataset counts. Only an <code>admin</code> can train, evaluate, activate, or upload. The seeded <code>ADMIN_USERNAME</code> account is admin; registered users are operators unless promoted in SQLite.</p>
+  <p class="muted">You can view checkpoint status and dataset counts. Only an <code>admin</code> can train, evaluate, activate, or upload. The first Create account on a fresh install is admin; later registered users are operators unless promoted in SQLite. Optional env bootstrap (<code>ADMIN_USERNAME</code> + <code>ADMIN_PASSWORD</code>) is only used when you set both — no default password is shipped.</p>
 </section>
 {% endif %}
 

@@ -54,9 +54,9 @@ def app(tmp_path):
         {
             "TESTING": True,
             "SECRET_KEY": "test-secret",
-            "ADMIN_USERNAME": "operator",
-            "ADMIN_PASSWORD": "changeme",
-            "ADMIN_EMAIL": "operator@localhost",
+            "ADMIN_USERNAME": "siteadmin",
+            "ADMIN_PASSWORD": "test-pass-12",
+            "ADMIN_EMAIL": "siteadmin@localhost",
             "ADMIN_SYNC_PASSWORD": True,
             "ADMIN_ROLE": "admin",
             "OPERATOR_USERNAME": "reviewer",
@@ -83,7 +83,7 @@ def client(app):
     return app.test_client()
 
 
-def _login(client, username="operator", password="changeme"):
+def _login(client, username="siteadmin", password="test-pass-12"):
     return client.post(
         "/login",
         data={"username": username, "password": password},

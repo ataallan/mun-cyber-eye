@@ -211,8 +211,8 @@ def test_signed_in_extra_recipient_from_route(tmp_path):
         {
             "TESTING": True,
             "SECRET_KEY": "test",
-            "ADMIN_USERNAME": "operator",
-            "ADMIN_PASSWORD": "changeme",
+            "ADMIN_USERNAME": "siteadmin",
+            "ADMIN_PASSWORD": "test-pass-12",
             "ADMIN_EMAIL": "actor@example.com",
             "ADMIN_ROLE": "admin",
             "ALERT_DB_PATH": str(tmp_path / "app.db"),
@@ -235,7 +235,7 @@ def test_signed_in_extra_recipient_from_route(tmp_path):
     cameras = application.extensions["camera_store"]
     users = application.extensions["user_store"]
     users.set_security_email(
-        users.get_by_username("operator").id, "actor-sec@example.com"
+        users.get_by_username("siteadmin").id, "actor-sec@example.com"
     )
     owner = users.create_user(
         username="siteowner",
@@ -278,7 +278,7 @@ def test_signed_in_extra_recipient_from_route(tmp_path):
         location_label="Dock",
     )
     client = application.test_client()
-    client.post("/login", data={"username": "operator", "password": "changeme"})
+    client.post("/login", data={"username": "siteadmin", "password": "test-pass-12"})
     resp = client.post(f"/alerts/{alert.id}/notify", follow_redirects=True)
     assert resp.status_code == 200
     dest = seen["body"]["to"]
@@ -294,8 +294,8 @@ def test_account_page_attaches_many_cameras(tmp_path):
         {
             "TESTING": True,
             "SECRET_KEY": "test",
-            "ADMIN_USERNAME": "operator",
-            "ADMIN_PASSWORD": "changeme",
+            "ADMIN_USERNAME": "siteadmin",
+            "ADMIN_PASSWORD": "test-pass-12",
             "ADMIN_EMAIL": "ops@example.com",
             "ADMIN_ROLE": "admin",
             "ALERT_DB_PATH": str(tmp_path / "app.db"),
@@ -305,7 +305,7 @@ def test_account_page_attaches_many_cameras(tmp_path):
         }
     )
     client = application.test_client()
-    client.post("/login", data={"username": "operator", "password": "changeme"})
+    client.post("/login", data={"username": "siteadmin", "password": "test-pass-12"})
     mine = client.get("/account")
     body = mine.get_data(as_text=True)
     assert mine.status_code == 200
@@ -321,7 +321,7 @@ def test_account_page_attaches_many_cameras(tmp_path):
         follow_redirects=True,
     )
     assert saved.status_code == 200
-    user = application.extensions["user_store"].get_by_username("operator")
+    user = application.extensions["user_store"].get_by_username("siteadmin")
     assert user.security_email == "security@example.com"
     linked = set(
         application.extensions["camera_store"].list_camera_ids_for_user(user.id)
@@ -329,7 +329,7 @@ def test_account_page_attaches_many_cameras(tmp_path):
     assert linked == {"demo-file-01", "demo-corridor-01"}
     listing = client.get("/accounts")
     assert listing.status_code == 200
-    assert "operator" in listing.get_data(as_text=True)
+    assert "siteadmin" in listing.get_data(as_text=True)
     assert "security@example.com" in listing.get_data(as_text=True)
 
 
@@ -338,8 +338,8 @@ def test_factory_wires_camera_and_user_stores_into_notifier(tmp_path):
         {
             "TESTING": True,
             "SECRET_KEY": "test",
-            "ADMIN_USERNAME": "operator",
-            "ADMIN_PASSWORD": "changeme",
+            "ADMIN_USERNAME": "siteadmin",
+            "ADMIN_PASSWORD": "test-pass-12",
             "ADMIN_EMAIL": "ops@example.com",
             "ALERT_DB_PATH": str(tmp_path / "app.db"),
             "AUTH_DB_PATH": str(tmp_path / "auth.db"),
@@ -350,7 +350,7 @@ def test_factory_wires_camera_and_user_stores_into_notifier(tmp_path):
     notifier = application.extensions["notifier"]
     assert notifier.camera_store is application.extensions["camera_store"]
     assert notifier.user_store is application.extensions["user_store"]
-    admin = application.extensions["user_store"].get_by_username("operator")
+    admin = application.extensions["user_store"].get_by_username("siteadmin")
     assert admin.email == "ops@example.com"
 
 
@@ -359,8 +359,8 @@ def test_run_pipeline_includes_signed_in_account(tmp_path):
         {
             "TESTING": True,
             "SECRET_KEY": "test",
-            "ADMIN_USERNAME": "operator",
-            "ADMIN_PASSWORD": "changeme",
+            "ADMIN_USERNAME": "siteadmin",
+            "ADMIN_PASSWORD": "test-pass-12",
             "ADMIN_EMAIL": "actor@example.com",
             "ADMIN_ROLE": "admin",
             "ALERT_DB_PATH": str(tmp_path / "app.db"),
@@ -385,7 +385,7 @@ def test_run_pipeline_includes_signed_in_account(tmp_path):
     store = application.extensions["alert_store"]
     users = application.extensions["user_store"]
     users.set_security_email(
-        users.get_by_username("operator").id, "security@example.com"
+        users.get_by_username("siteadmin").id, "security@example.com"
     )
     cfg = NotifyConfig(
         resend_api_key="re_test",
@@ -404,7 +404,7 @@ def test_run_pipeline_includes_signed_in_account(tmp_path):
         user_store=users,
     )
     client = application.test_client()
-    client.post("/login", data={"username": "operator", "password": "changeme"})
+    client.post("/login", data={"username": "siteadmin", "password": "test-pass-12"})
     resp = client.post("/run", data={"mode": "synthetic"}, follow_redirects=True)
     assert resp.status_code == 200
     assert seen["tos"]
