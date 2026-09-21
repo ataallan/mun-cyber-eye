@@ -17,7 +17,7 @@ from functools import wraps
 from pathlib import Path
 from typing import Iterator, Optional
 
-from flask import redirect, request, session, url_for
+from flask import flash, redirect, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
 VALID_ROLES = frozenset({"admin", "operator"})
@@ -352,6 +352,25 @@ def login_required(view):
     def wrapped(*args, **kwargs):
         if not session.get("user"):
             return redirect(url_for("main.login", next=request.path))
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
+def admin_required(view):
+    """Admin role only — train, activate, and upload labeled frames."""
+
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get("user"):
+            return redirect(url_for("main.login", next=request.path))
+        if session.get("role") != "admin":
+            flash(
+                "Only the admin role can train or activate models. "
+                "Registered accounts are operators unless promoted in the database.",
+                "error",
+            )
+            return redirect(url_for("main.dashboard"))
         return view(*args, **kwargs)
 
     return wrapped

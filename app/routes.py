@@ -29,6 +29,7 @@ from vision.sports_catalog import all_sports, sport_display_name
 from ingest.cameras import camera_from_form, mask_uri
 
 from .auth import (
+    admin_required,
     guest_only,
     login_required,
     safe_next_url,
@@ -37,6 +38,7 @@ from .auth import (
     validate_password,
     validate_username,
 )
+from . import training as training_ops
 
 bp = Blueprint("main", __name__)
 
@@ -571,7 +573,10 @@ def _run_registered_selection(camera_id: str, store, notifier, snapshot_dir: str
             raise ValueError("Camera not found.")
         selected = [camera]
 
-    adapter = create_adapter(current_app.config["VISION_BACKEND"])
+    adapter = create_adapter(
+        current_app.config["VISION_BACKEND"],
+        checkpoint=current_app.config.get("ACTIVITY_CHECKPOINT"),
+    )
     pipe = CyberEyePipeline(
         store=store,
         adapter=adapter,
@@ -690,7 +695,10 @@ def run_pipeline():
                     return redirect(url_for("main.run_pipeline"))
                 path, safe = _save_uploaded_video(upload)
                 source_label = _upload_source_label(safe)
-                adapter = create_adapter(current_app.config["VISION_BACKEND"])
+                adapter = create_adapter(
+                    current_app.config["VISION_BACKEND"],
+                    checkpoint=current_app.config.get("ACTIVITY_CHECKPOINT"),
+                )
                 pipe = CyberEyePipeline(
                     store=store,
                     adapter=adapter,
@@ -756,6 +764,194 @@ def run_pipeline():
     )
 
 
+def _train_page_context(extra: dict | None = None) -> dict:
+    from vision.dataset import ACTIVITY_CATEGORIES, SPLITS
+    from vision.sports_catalog import all_sports
+
+    ctx = {
+        "checkpoint": training_ops.current_checkpoint_info(current_app.config),
+        "dataset": training_ops.dataset_inventory(current_app.config),
+        "categories": list(ACTIVITY_CATEGORIES),
+        "sports": all_sports(),
+        "splits": list(SPLITS),
+        "checkpoints": training_ops.list_checkpoint_files(current_app.config),
+        "audit": _store().list_system_audit(limit=20),
+        "is_admin": session.get("role") == "admin",
+        "last_metrics": None,
+        "last_eval": None,
+        "metric_reports": {},
+    }
+    if extra:
+        ctx.update(extra)
+    return ctx
+
+
+@bp.route("/train")
+@login_required
+def train_redirect():
+    return redirect(url_for("main.admin_train"))
+
+
+@bp.route("/admin/train", methods=["GET"])
+@login_required
+def admin_train():
+    """Admins train/activate; operators may view status only."""
+    return render_template("train.html", **_train_page_context())
+
+
+@bp.route("/admin/train/run", methods=["POST"])
+@admin_required
+def admin_train_run():
+    actor = session.get("user", "unknown")
+    try:
+        n_train = int(request.form.get("n_train") or (8 if current_app.testing else 40))
+        n_val = int(request.form.get("n_val") or (4 if current_app.testing else 12))
+        n_test = int(request.form.get("n_test") or (4 if current_app.testing else 12))
+        dest, metrics, bundle = training_ops.run_training(
+            current_app.config,
+            model_type=(request.form.get("model_type") or "forest").strip().lower(),
+            output_name=request.form.get("output_name") or "activity_custom.joblib",
+            generate_demo=request.form.get("generate_demo") == "1",
+            overwrite_demo_images=request.form.get("overwrite_demo_images") == "1",
+            confirm_overwrite_demo=request.form.get("confirm_overwrite_demo") == "1",
+            seed=int(request.form.get("seed") or 7),
+            n_train=max(1, n_train),
+            n_val=max(0, n_val),
+            n_test=max(0, n_test),
+        )
+    except (ValueError, TypeError) as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("main.admin_train"))
+    except Exception as exc:
+        flash(f"Training failed: {exc}", "error")
+        return redirect(url_for("main.admin_train"))
+
+    acc = None
+    if isinstance(metrics.get("test"), dict):
+        acc = metrics["test"].get("accuracy")
+    elif isinstance(metrics.get("val"), dict):
+        acc = metrics["val"].get("accuracy")
+    note = f"checkpoint={dest} model={bundle.model_type}"
+    if acc is not None:
+        note += f" accuracy={acc}"
+    _store().record_system_audit("train_model", actor, note)
+    flash(
+        f"Training finished in-request. Wrote {dest.name}. "
+        "Metrics are stored in the checkpoint. Humans still verify every alert.",
+        "ok",
+    )
+    return render_template(
+        "train.html",
+        **_train_page_context(
+            {
+                "last_metrics": metrics,
+                "metric_reports": training_ops.metrics_as_text(metrics),
+            }
+        ),
+    )
+
+
+@bp.route("/admin/train/activate", methods=["POST"])
+@admin_required
+def admin_train_activate():
+    actor = session.get("user", "unknown")
+    chosen = (request.form.get("checkpoint_path") or "").strip()
+    try:
+        dest = training_ops.apply_active_checkpoint(current_app.config, chosen, actor)
+    except (ValueError, OSError) as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("main.admin_train"))
+    _store().record_system_audit(
+        "activate_checkpoint", actor, f"path={dest}"
+    )
+    flash(
+        f"Active checkpoint is now {dest}. "
+        "Run Pipeline and uploads will use this file. "
+        "Pointer: data/active_checkpoint.json (not a secret).",
+        "ok",
+    )
+    return redirect(url_for("main.admin_train"))
+
+
+@bp.route("/admin/train/evaluate", methods=["POST"])
+@admin_required
+def admin_train_evaluate():
+    actor = session.get("user", "unknown")
+    split = (request.form.get("split") or "test").strip().lower()
+    chosen = (request.form.get("checkpoint_path") or "").strip() or None
+    try:
+        report = training_ops.run_evaluation(
+            current_app.config, split=split, checkpoint=chosen
+        )
+    except (ValueError, TypeError) as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("main.admin_train"))
+    _store().record_system_audit(
+        "evaluate_checkpoint",
+        actor,
+        f"split={split} accuracy={report.get('accuracy')} n={report.get('n_samples')}",
+    )
+    flash(f"Evaluation on {split}: accuracy {report.get('accuracy')}.", "ok")
+    from vision.metrics import format_metrics_report
+
+    return render_template(
+        "train.html",
+        **_train_page_context(
+            {
+                "last_eval": report,
+                "metric_reports": {split: format_metrics_report(report)},
+            }
+        ),
+    )
+
+
+@bp.route("/admin/train/upload", methods=["POST"])
+@admin_required
+def admin_train_upload():
+    actor = session.get("user", "unknown")
+    category = request.form.get("category") or ""
+    split = request.form.get("split") or "train"
+    sport_context = (request.form.get("sport_context") or "").strip()
+    zip_file = request.files.get("zipfile")
+    images = request.files.getlist("images")
+    try:
+        folder = (
+            training_ops.folder_label_for_upload(category, sport_context)
+            if category or sport_context
+            else ""
+        )
+        if zip_file and zip_file.filename:
+            saved = training_ops.save_labeled_zip(
+                current_app.config,
+                zip_file,
+                default_category=folder or None,
+                default_split=split,
+            )
+            kind = "zip"
+        else:
+            saved = training_ops.save_labeled_files(
+                current_app.config,
+                images,
+                category=folder or category,
+                split=split,
+                sport_context="" if folder else sport_context,
+            )
+            kind = "files"
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("main.admin_train"))
+    _store().record_system_audit(
+        "upload_labels",
+        actor,
+        f"{kind} count={saved} split={split} category={folder or category or 'from-zip'}",
+    )
+    flash(
+        f"Saved {saved} labeled frame(s). Training improves assistive detection only.",
+        "ok",
+    )
+    return redirect(url_for("main.admin_train"))
+
+
 @bp.route("/snapshots/<path:filename>")
 @login_required
 def snapshot_file(filename: str):
@@ -774,6 +970,7 @@ def health():
         "phase": 5,
         "vision_backend": current_app.config.get("VISION_BACKEND"),
         "activity_checkpoint_ready": ckpt.is_file(),
+        "activity_checkpoint": str(ckpt) if ckpt else "",
         "allow_webcam": bool(current_app.config.get("ALLOW_WEBCAM")),
         "face_aggression_enabled": face_aggression_enabled(),
         "sports_catalog_size": len(all_sports()),

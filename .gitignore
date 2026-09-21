@@ -19,6 +19,7 @@ data/activity/train/
 data/activity/val/
 data/activity/test/
 data/checkpoints/*.json
+data/active_checkpoint.json
 *.mp4
 *.avi
 *.mov

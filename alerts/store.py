@@ -174,6 +174,17 @@ class AlertStore:
                 CREATE INDEX IF NOT EXISTS idx_alerts_created ON alerts(created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_audit_alert ON audit_log(alert_id);
                 CREATE INDEX IF NOT EXISTS idx_delivery_alert ON delivery_log(alert_id);
+
+                CREATE TABLE IF NOT EXISTS system_audit (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    action TEXT NOT NULL,
+                    actor TEXT NOT NULL,
+                    note TEXT,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_system_audit_created
+                    ON system_audit(created_at DESC);
                 """
             )
             self._migrate_alerts(conn)
@@ -365,6 +376,30 @@ class AlertStore:
                 """,
                 (alert_id, action, actor, note or "", _utc_now()),
             )
+
+    def record_system_audit(self, action: str, actor: str, note: str = "") -> None:
+        """Record a console action that is not tied to a single alert (train/activate)."""
+        with self._conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO system_audit (action, actor, note, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (action, actor, note or "", _utc_now()),
+            )
+
+    def list_system_audit(self, limit: int = 25) -> List[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, action, actor, note, created_at
+                FROM system_audit
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (int(limit),),
+            ).fetchall()
+        return [dict(r) for r in rows]
 
     def audit_trail(self, alert_id: str) -> List[dict]:
         with self._conn() as conn:

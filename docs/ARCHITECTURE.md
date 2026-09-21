@@ -53,8 +53,8 @@ Camera registry (SQLite)  →  authorized file / RTSP / webcam / MOCK
 1. Risk engine sets `should_alert=True` → structured alert created (`status=open`, `delivery_status=pending`).
 2. Optional outbound delivery: Resend email to authorized recipients and/or SIEM webhook. Missing keys are `queued` / `undelivered` — never reported as sent.
 3. Operator signs in (SQLite users; env admin is seeded on boot). `admin` or `operator` may manage recipients and resend. See [AUTH.md](AUTH.md).
-4. Operator **acknowledges**, **dismisses**, or **escalates** with optional note.
-5. Every review action and notify/resend attempt is written to `audit_log` with actor + timestamp. Channel attempts go to `delivery_log`.
+4. Operator **acknowledges**, **dismisses**, or **escalates** with optional note. Admins may train or activate a checkpoint (`/admin/train`).
+5. Every review action and notify/resend attempt is written to `audit_log` with actor + timestamp. Channel attempts go to `delivery_log`. Train / activate / labeled-frame uploads go to `system_audit`.
 
 Structured fields and delivery statuses are documented in [PHASE4.md](PHASE4.md).
 
@@ -78,6 +78,7 @@ Phase 3 training and metrics are documented in [PHASE3.md](PHASE3.md).
 - `data/uploads/` — operator-supplied authorized video files (gitignored)  
 - `data/activity/` — labeled activity frames (`train` / `val` / `test`)  
 - `data/checkpoints/activity_demo.joblib` — default activity model  
+- `data/active_checkpoint.json` — console-activated checkpoint pointer (not a secret)  
 - Paths configurable via `.env`
 
 ## Non-goals (Phase 5)

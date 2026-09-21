@@ -17,4 +17,4 @@ Optional sport context on play folders: `game_or_play__basketball/`, `game_or_pl
 python -m vision.train_activity --generate-demo
 ```
 
-See [docs/PHASE3.md](../../docs/PHASE3.md).
+Admins can also upload frames and train from the console (**Train models**, `/admin/train`). See [docs/ADMIN_TRAINING.md](../../docs/ADMIN_TRAINING.md) and [docs/PHASE3.md](../../docs/PHASE3.md).

@@ -73,6 +73,16 @@ def create_app(test_config: dict | None = None) -> Flask:
             "ACTIVITY_CHECKPOINT",
             str(root / "data" / "checkpoints" / "activity_demo.joblib"),
         ),
+        ACTIVITY_DATA_ROOT=os.getenv(
+            "ACTIVITY_DATA_ROOT", str(root / "data" / "activity")
+        ),
+        CHECKPOINTS_DIR=os.getenv(
+            "CHECKPOINTS_DIR", str(root / "data" / "checkpoints")
+        ),
+        ACTIVE_CHECKPOINT_FILE=os.getenv(
+            "ACTIVE_CHECKPOINT_FILE",
+            str(root / "data" / "active_checkpoint.json"),
+        ),
         SAMPLE_FPS=float(os.getenv("SAMPLE_FPS", "2")),
         MAX_FRAMES_PER_RUN=int(os.getenv("MAX_FRAMES_PER_RUN", "120")),
         DEFAULT_CAMERA_LABEL=os.getenv(
@@ -96,6 +106,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         ENABLE_FACE_AGGRESSION=_env_flag("ENABLE_FACE_AGGRESSION", "0"),
         ALERT_ON_INTENSE_SPORT=_env_flag("ALERT_ON_INTENSE_SPORT", "0"),
     )
+    test_overrides = set(test_config or {})
     if test_config:
         app.config.update(test_config)
         if "CAMERA_DB_PATH" not in test_config and test_config.get("ALERT_DB_PATH"):
@@ -120,6 +131,22 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.config["UPLOAD_DIR"] = _abs(
         app.config.get("UPLOAD_DIR") or str(Path(app.config["SNAPSHOT_DIR"]).parent / "uploads")
     )
+    app.config["ACTIVITY_DATA_ROOT"] = _abs(
+        app.config.get("ACTIVITY_DATA_ROOT") or str(root / "data" / "activity")
+    )
+    app.config["CHECKPOINTS_DIR"] = _abs(
+        app.config.get("CHECKPOINTS_DIR") or str(root / "data" / "checkpoints")
+    )
+    app.config["ACTIVE_CHECKPOINT_FILE"] = _abs(
+        app.config.get("ACTIVE_CHECKPOINT_FILE")
+        or str(root / "data" / "active_checkpoint.json")
+    )
+    if "ACTIVITY_CHECKPOINT" not in test_overrides:
+        from vision.checkpoint_config import read_active_checkpoint
+
+        record = read_active_checkpoint(app.config["ACTIVE_CHECKPOINT_FILE"])
+        if record and record.get("path"):
+            app.config["ACTIVITY_CHECKPOINT"] = record["path"]
     app.config["ACTIVITY_CHECKPOINT"] = _abs(app.config["ACTIVITY_CHECKPOINT"])
     app.config["ALLOW_WEBCAM"] = bool(app.config.get("ALLOW_WEBCAM", False))
     try:
@@ -134,6 +161,9 @@ def create_app(test_config: dict | None = None) -> Flask:
     Path(app.config["CAMERA_DB_PATH"]).parent.mkdir(parents=True, exist_ok=True)
     Path(app.config["SNAPSHOT_DIR"]).mkdir(parents=True, exist_ok=True)
     Path(app.config["UPLOAD_DIR"]).mkdir(parents=True, exist_ok=True)
+    Path(app.config["ACTIVITY_DATA_ROOT"]).mkdir(parents=True, exist_ok=True)
+    Path(app.config["CHECKPOINTS_DIR"]).mkdir(parents=True, exist_ok=True)
+    Path(app.config["ACTIVE_CHECKPOINT_FILE"]).parent.mkdir(parents=True, exist_ok=True)
 
     store = AlertStore(app.config["ALERT_DB_PATH"])
     notify_config = NotifyConfig(
