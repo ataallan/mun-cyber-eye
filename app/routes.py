@@ -49,7 +49,7 @@ from .auth import (
     begin_login_code_challenge,
     clear_login_code_challenge,
     console_session_guard,
-    consume_demo_login_code,
+    peek_demo_login_code,
     developer_required,
     guest_only,
     login_required,
@@ -540,10 +540,10 @@ def login_code():
             if "Sign in again" in message or "approved" in message.lower():
                 clear_login_code_challenge()
                 return redirect(url_for("main.login"))
-            return _render_login_code(user, demo_login_code=consume_demo_login_code())
+            return _render_login_code(user, demo_login_code=peek_demo_login_code())
         return _complete_console_login(user)
 
-    return _render_login_code(user, demo_login_code=consume_demo_login_code())
+    return _render_login_code(user, demo_login_code=peek_demo_login_code())
 
 
 @bp.route("/login-code/resend", methods=["POST"])

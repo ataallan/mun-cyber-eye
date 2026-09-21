@@ -863,8 +863,8 @@ def clear_login_code_challenge() -> None:
     session.pop("_demo_login_code", None)
 
 
-def consume_demo_login_code() -> str:
-    value = session.pop("_demo_login_code", None)
+def peek_demo_login_code() -> str:
+    value = session.get("_demo_login_code")
     return str(value) if value else ""
 
 

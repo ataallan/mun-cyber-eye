@@ -216,15 +216,17 @@ def create_app(test_config: dict | None = None) -> Flask:
     except (TypeError, ValueError):
         app.config["RTSP_CONNECT_TIMEOUT_SEC"] = 8.0
     try:
-        app.config["LOGIN_CODE_MINUTES"] = int(
-            app.config.get("LOGIN_CODE_MINUTES", 10) or 10
-        )
+        minutes = app.config.get("LOGIN_CODE_MINUTES", 10)
+        if minutes is None or minutes == "":
+            minutes = 10
+        app.config["LOGIN_CODE_MINUTES"] = int(minutes)
     except (TypeError, ValueError):
         app.config["LOGIN_CODE_MINUTES"] = 10
     try:
-        app.config["LOGIN_CODE_RESEND_SECONDS"] = int(
-            app.config.get("LOGIN_CODE_RESEND_SECONDS", 45) or 45
-        )
+        resend_s = app.config.get("LOGIN_CODE_RESEND_SECONDS", 45)
+        if resend_s is None or resend_s == "":
+            resend_s = 45
+        app.config["LOGIN_CODE_RESEND_SECONDS"] = int(resend_s)
     except (TypeError, ValueError):
         app.config["LOGIN_CODE_RESEND_SECONDS"] = 45
 
