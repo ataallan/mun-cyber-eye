@@ -45,6 +45,13 @@ def test_synthetic_demo_creates_alerts(tmp_path):
     non_alerts = {a.category for a in result.assessments if not a.should_alert}
     assert "game_or_play" in non_alerts
     assert "dance" in non_alerts
+    assert result.objects_backend == "mock"
+    assert result.object_counts
+    assert any(
+        obj.get("id") == "refrigerator"
+        for a in result.assessments
+        for obj in a.objects_seen
+    )
 
 
 def test_synthetic_demo_offline_notify_does_not_invent_success(tmp_path):
@@ -85,12 +92,16 @@ class _OrdinaryAdapter(VisionAdapter):
         return [Detection("ordinary", 0.94)]
 
 
-def test_ordinary_frames_are_counted_without_alerts(tmp_path):
+def test_ordinary_frames_are_counted_without_alerts(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "vision.object_inventory.try_load_yolo", lambda model_name="yolov8n.pt": None
+    )
     store = AlertStore(tmp_path / "alerts.db")
     pipe = CyberEyePipeline(
         store=store,
         adapter=_OrdinaryAdapter(),
         snapshot_dir=tmp_path / "snaps",
+        object_mode="auto",
     )
     frames = [
         SampledFrame(
@@ -106,3 +117,6 @@ def test_ordinary_frames_are_counted_without_alerts(tmp_path):
     assert result.alerts_created == []
     assert result.category_counts == {"ordinary": 5}
     assert store.list_alerts() == []
+    assert result.objects_backend == "unavailable"
+    assert result.object_counts == {}
+    assert all(not a.objects_seen for a in result.assessments)

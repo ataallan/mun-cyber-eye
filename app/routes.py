@@ -25,6 +25,8 @@ from alerts.notify import parse_env_recipients, send_resend_email
 from alerts.schema import category_display_name, structured_payload
 from vision.dataset import ACTIVITY_CATEGORIES
 from vision.face_aggression import face_aggression_enabled
+from vision.gunshot_assist import gunshot_audio_enabled
+from vision.objects_catalog import all_objects, object_display_name
 from vision.scene_context import all_places, place_display_name
 from vision.sports_catalog import all_sports, sport_display_name
 from ingest.cameras import camera_from_form, mask_uri
@@ -454,11 +456,17 @@ def _pipeline_result_summary(results, *, mode: str = "", filename: str = "") -> 
     )
     sport_counts: Counter[str] = Counter()
     place_counts: Counter[str] = Counter()
+    object_counts: Counter[str] = Counter()
+    objects_backend = ""
     cue_counts: Counter[str] = Counter()
     max_aggression = 0.0
     max_kit = 0.0
     jersey_frames = 0
     face_statuses: Counter[str] = Counter()
+    fall_counts: Counter[str] = Counter()
+    gunshot_frames = 0
+    aimed_frames = 0
+    thrown_frames = 0
     assist_rows = []
     for result in rows:
         for assessment in getattr(result, "assessments", []) or []:
@@ -468,6 +476,13 @@ def _pipeline_result_summary(results, *, mode: str = "", filename: str = "") -> 
             place = getattr(assessment, "place_type", "") or ""
             if place and place != "unknown":
                 place_counts[place] += 1
+            for obj in getattr(assessment, "objects_seen", []) or []:
+                oid = obj.get("id") if isinstance(obj, dict) else str(obj)
+                if oid:
+                    object_counts[str(oid)] += 1
+            backend_name = getattr(assessment, "objects_backend", "") or ""
+            if backend_name:
+                objects_backend = backend_name
             score = float(getattr(assessment, "aggression_score", 0.0) or 0.0)
             max_aggression = max(max_aggression, score)
             kit = float(getattr(assessment, "team_kit_similarity", 0.0) or 0.0)
@@ -477,6 +492,15 @@ def _pipeline_result_summary(results, *, mode: str = "", filename: str = "") -> 
             for cue in getattr(assessment, "aggression_cues", []) or []:
                 cue_counts[str(cue)] += 1
             face_statuses[getattr(assessment, "face_cue_status", "") or "disabled"] += 1
+            manner = getattr(assessment, "fall_manner", "") or ""
+            if manner:
+                fall_counts[manner] += 1
+            if getattr(assessment, "gunshot_proxy", False):
+                gunshot_frames += 1
+            if getattr(assessment, "aimed_at_person", False):
+                aimed_frames += 1
+            if getattr(assessment, "thrown_at_person", False):
+                thrown_frames += 1
             assist_rows.append(
                 {
                     "frame": assessment.frame_index,
@@ -495,8 +519,29 @@ def _pipeline_result_summary(results, *, mode: str = "", filename: str = "") -> 
                     "cues": list(getattr(assessment, "aggression_cues", []) or []),
                     "face": getattr(assessment, "face_cue_status", "disabled"),
                     "alert": bool(assessment.should_alert),
+                    "fall_manner": getattr(assessment, "fall_manner", "") or "",
+                    "fall_display": getattr(assessment, "fall_display", "") or "",
+                    "gunshot": bool(getattr(assessment, "gunshot_proxy", False)),
+                    "aimed": bool(getattr(assessment, "aimed_at_person", False)),
+                    "thrown": bool(getattr(assessment, "thrown_at_person", False)),
+                    "throw_label": getattr(assessment, "throw_label", "") or "",
+                    "weapon_tier": getattr(assessment, "weapon_use_tier", "") or "",
+                    "objects": [
+                        obj.get("id") if isinstance(obj, dict) else str(obj)
+                        for obj in (getattr(assessment, "objects_seen", []) or [])
+                    ],
                 }
             )
+    if not object_counts:
+        for result in rows:
+            object_counts.update(getattr(result, "object_counts", None) or {})
+    if not objects_backend:
+        backends_obj = [getattr(r, "objects_backend", "") for r in rows]
+        objects_backend = next((b for b in backends_obj if b), "unavailable")
+    objects_note = next(
+        (getattr(r, "objects_note", "") for r in rows if getattr(r, "objects_note", "")),
+        "",
+    )
     face_status = "disabled"
     if face_statuses:
         face_status = face_statuses.most_common(1)[0][0]
@@ -526,6 +571,16 @@ def _pipeline_result_summary(results, *, mode: str = "", filename: str = "") -> 
             }
             for place, n in place_counts.most_common()
         ],
+        "objects_backend": objects_backend or "unavailable",
+        "objects_note": objects_note,
+        "objects": [
+            {
+                "id": oid,
+                "label": object_display_name(oid),
+                "count": n,
+            }
+            for oid, n in object_counts.most_common()
+        ],
         "kit": {
             "max_similarity": round(max_kit, 3),
             "jersey_like_frames": jersey_frames,
@@ -537,6 +592,21 @@ def _pipeline_result_summary(results, *, mode: str = "", filename: str = "") -> 
         },
         "face_cue_status": face_status,
         "face_enabled": face_aggression_enabled(),
+        "fall_manners": [
+            {"id": m, "count": n} for m, n in fall_counts.most_common()
+        ],
+        "gunshot_proxy_frames": gunshot_frames,
+        "gunshot_audio_status": next(
+            (
+                getattr(assessment, "gunshot_audio_status", "")
+                for result in rows
+                for assessment in getattr(result, "assessments", []) or []
+                if getattr(assessment, "gunshot_audio_status", "")
+            ),
+            "disabled",
+        ),
+        "aimed_at_person_frames": aimed_frames,
+        "thrown_at_person_frames": thrown_frames,
         "assist_rows": assist_rows,
         "cameras": [
             {
@@ -807,6 +877,12 @@ def _train_page_context(extra: dict | None = None) -> dict:
         "categories": list(ACTIVITY_CATEGORIES),
         "sports": all_sports(),
         "places": all_places(),
+        "objects": all_objects(),
+        "object_groups": {
+            "home": [o for o in all_objects() if o.group == "home"],
+            "community": [o for o in all_objects() if o.group == "community"],
+        },
+        "objects_dataset": training_ops.objects_inventory(current_app.config),
         "splits": list(SPLITS),
         "checkpoints": training_ops.list_checkpoint_files(current_app.config),
         "audit": _store().list_system_audit(limit=20),
@@ -988,6 +1064,86 @@ def admin_train_upload():
     return redirect(url_for("main.admin_train"))
 
 
+@bp.route("/admin/train/extract-video", methods=["POST"])
+@admin_required
+def admin_train_extract_video():
+    actor = session.get("user", "unknown")
+    video = request.files.get("video")
+    try:
+        fps = float(request.form.get("sample_fps") or current_app.config.get("SAMPLE_FPS") or 2)
+        max_frames = int(request.form.get("max_frames") or 60)
+        result = training_ops.extract_video_frames(
+            current_app.config,
+            video,
+            kind=(request.form.get("kind") or "activity").strip().lower(),
+            split=(request.form.get("split") or "train").strip().lower(),
+            category=request.form.get("category") or "",
+            sport_context=(request.form.get("sport_context") or "").strip(),
+            place_type=(request.form.get("place_type") or "").strip(),
+            object_id=(request.form.get("object_id") or "").strip(),
+            sample_fps=fps,
+            max_frames=max_frames,
+        )
+    except (ValueError, TypeError) as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("main.admin_train"))
+    _store().record_system_audit(
+        "extract_video_frames",
+        actor,
+        (
+            f"source={result['source']} frames={result['frames']} "
+            f"kind={result['kind']} folder={result['folder']} split={result['split']}"
+        ),
+    )
+    flash(
+        f"Sampled {result['frames']} frame(s) from {result['source']} into "
+        f"{result['folder']} ({result['split']}). Videos are sampled to frames; "
+        "the sklearn activity trainer still learns from images. Humans verify.",
+        "ok",
+    )
+    return redirect(url_for("main.admin_train"))
+
+
+@bp.route("/admin/train/objects", methods=["POST"])
+@admin_required
+def admin_train_objects():
+    actor = session.get("user", "unknown")
+    try:
+        dest, metrics, bundle = training_ops.run_object_training(
+            current_app.config,
+            model_type=(request.form.get("model_type") or "forest").strip().lower(),
+            output_name=request.form.get("output_name") or "objects_custom.joblib",
+            seed=int(request.form.get("seed") or 7),
+        )
+    except (ValueError, TypeError) as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("main.admin_train"))
+    except Exception as exc:
+        flash(f"Object training failed: {exc}", "error")
+        return redirect(url_for("main.admin_train"))
+    classes = bundle.get("categories") or []
+    _store().record_system_audit(
+        "train_object_model",
+        actor,
+        f"checkpoint={dest} classes={len(classes)}",
+    )
+    flash(
+        f"Object classifier wrote {dest.name} ({len(classes)} class(es)). "
+        "Runtime inventory still prefers YOLO and will not invent objects "
+        "when the detector is missing. Humans verify.",
+        "ok",
+    )
+    return render_template(
+        "train.html",
+        **_train_page_context(
+            {
+                "last_metrics": metrics,
+                "metric_reports": training_ops.metrics_as_text(metrics),
+            }
+        ),
+    )
+
+
 @bp.route("/snapshots/<path:filename>")
 @login_required
 def snapshot_file(filename: str):
@@ -1009,8 +1165,10 @@ def health():
         "activity_checkpoint": str(ckpt) if ckpt else "",
         "allow_webcam": bool(current_app.config.get("ALLOW_WEBCAM")),
         "face_aggression_enabled": face_aggression_enabled(),
+        "gunshot_audio_enabled": gunshot_audio_enabled(),
         "sports_catalog_size": len(all_sports()),
         "place_catalog_size": len(all_places()),
+        "objects_catalog_size": len(all_objects()),
         "notify": {
             "resend_configured": notify.resend_configured,
             "webhook_configured": notify.webhook_configured,

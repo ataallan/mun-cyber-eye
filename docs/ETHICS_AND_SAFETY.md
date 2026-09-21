@@ -35,9 +35,14 @@ Mun Cyber Eye is an **assistance** system for authorized security personnel. It 
 - Heuristics in Phase 2 and the Phase 3 demo checkpoint are provisional; evaluate across lighting, angles, ages, clothing, and environments before pilots. Distinguishing game or play and dance from a real confrontation is difficult even for humans — do not treat a `potential_fight` label as proof.
 - The sports catalog and `sport_context` metadata are an **assistive lookup** (folder labels + simple court-color proxies). They do **not** mean the model knows most sports or can referee a real game.
 - Place / venue type (`place_type`) is a **catalog setting** (court, street, corridor, house, compound, …), optionally stamped from the camera registry or tagged folders. It is **not** recognition of a named arena, and **setting is not identity**.
+- Home / community object inventory (refrigerator, chair, bench, playground equipment, …) is **assistive**. YOLO maps overlapping COCO labels when installed; otherwise the console reports `objects_backend=unavailable` and does **not** invent objects on a real upload. This is not a property inventory or a determination of what happened.
 - Uniform / kit cues are **clothing-color clusters**. They must never be used as facial identity, demographics, gang labels, or proof of guilt.
 - Body-aggression scores are OpenCV motion / pose **proxies**. High motion during sport is often intense play. Do not treat `aggressive_motion` as proof of assault.
 - Optional face-expression assist (`ENABLE_FACE_AGGRESSION`, default **off**) is unreliable and assistive only. When enabled it may note a possible tense expression for a human to verify. It must **never** identify a person, infer demographics, or label a face as criminal.
+- Fall **manner** (`sudden_collapse` / `accidental_fall` / `unknown_fall`) is a bbox / motion subtype on `potential_fall`. It is **not** a medical diagnosis of syncope, assault, or a trip. Person-down still needs review.
+- Gunshot **video** proxies (`possible_gunshot_video_proxy`) are not ballistic proof. `ENABLE_GUNSHOT_AUDIO=0` never invents a bang. Fireworks and reflections false-fire.
+- `firearm_aimed_at_person` is a bbox cone toward another person — not proof of a real firearm or intent. Sport context must **not** suppress it. One person with a gun-like object is brandish only.
+- `object_thrown_at_person` (`thrown_projectile`) is a weak frame-to-frame translation toward another person. Sport balls on a court may stay game or play; a brick or bottle toward a person on a street / corridor / house does **not** get sport-softened. This is not proof of assault.
 - The bundled activity model is trained on synthetic scenes. Retrain on authorized labeled video and publish per-class precision / recall / F1 before any field trial.
 - Measure reviewer agreement with AI alerts (see proposal evaluation metrics).
 - A higher F1 score does not authorize skipping human review.

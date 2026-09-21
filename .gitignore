@@ -18,6 +18,9 @@ data/uploads/*
 data/activity/train/
 data/activity/val/
 data/activity/test/
+data/objects/train/
+data/objects/val/
+data/objects/test/
 data/checkpoints/*.json
 data/active_checkpoint.json
 *.mp4

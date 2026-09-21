@@ -54,7 +54,7 @@ Documented rule (also covered by tests):
 5. **Street + `sport_context`** (street soccer, …) → still `game_or_play` unless aggression is **extreme**; rationale notes *“street play — verify.”*
 6. Similar kit colors slightly boost play confidence; missing kits do not prove a fight.
 
-Weapon-object and fall paths are unchanged. Dance stays dance (choreography is not upgraded to a fight on scene-cut motion).
+Weapon-object, aimed-firearm, harmful thrown-object, gunshot-proxy, and fall paths are **not** sport-softened (a bat on a field may still soften; `firearm_aimed_at_person` never does). A sports ball thrown toward a teammate on a court stays `game_or_play` unless an aimed-firearm cue is also strong. Brick / bottle / improvised toward a person on a street / corridor / house alerts. Dance stays dance (choreography is not upgraded to a fight on scene-cut motion). See [GUNSHOTS_AND_FALLS.md](GUNSHOTS_AND_FALLS.md).
 
 ```bash
 # .env
@@ -94,6 +94,7 @@ Admins can upload sport-folder frames and retrain from **Train models** (`/admin
 - Place type (catalog setting) and kit-color cues
 - Body-aggression max score and cues
 - Face cue status (`disabled` / `none_detected` / `unavailable` / `assistive`)
+- Fall manner, gunshot video proxy, `firearm_aimed_at_person`, `object_thrown_at_person`
 - A per-frame scene-assist table
 
 Alert rationale distinguishes intense sport from confrontation when the policy can tell them apart. Reviewers still decide.

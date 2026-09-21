@@ -28,6 +28,42 @@
         {% if payload.metadata and payload.metadata.sport_context %}
         <dt>Sport context</dt><dd>{{ payload.metadata.sport_display or payload.metadata.sport_context }} <span class="mono muted">({{ payload.metadata.sport_context }})</span></dd>
         {% endif %}
+        {% if payload.metadata and payload.metadata.objects %}
+        <dt>Nearby objects</dt><dd>
+          {% for obj in payload.metadata.objects %}
+            {{ obj.display or obj.id }} <span class="mono muted">({{ '%.2f'|format(obj.confidence or 0) }})</span>{% if not loop.last %}, {% endif %}
+          {% endfor %}
+          <span class="fineprint">assistive inventory — humans verify</span>
+        </dd>
+        {% elif payload.metadata and payload.metadata.objects_backend == 'unavailable' %}
+        <dt>Nearby objects</dt><dd><span class="muted">unavailable</span> <span class="fineprint">{{ payload.metadata.objects_note or 'no detector; nothing invented' }}</span></dd>
+        {% endif %}
+        {% if payload.metadata and payload.metadata.fall_manner %}
+        <dt>Fall manner</dt><dd>{{ payload.metadata.fall_display or payload.metadata.fall_manner }} <span class="mono muted">({{ payload.metadata.fall_manner }})</span> <span class="fineprint">not a medical diagnosis of syncope, assault, or a trip — person-down still needs review</span></dd>
+        {% endif %}
+        {% if payload.metadata and payload.metadata.gunshot %}
+        <dt>Gunshot proxy</dt><dd>
+          {% if payload.metadata.gunshot.video_proxy %}visual proxy <code>possible_gunshot_video_proxy</code>{% else %}no visual proxy this frame{% endif %}
+          · audio <code>{{ payload.metadata.gunshot.audio_status or 'disabled' }}</code>
+          <span class="fineprint">not a confirmed gunshot; audio off does not invent a bang</span>
+        </dd>
+        {% endif %}
+        {% if payload.metadata and payload.metadata.weapon %}
+        <dt>Weapon use</dt><dd>
+          {% if payload.metadata.weapon.aimed_at_person %}<code>firearm_aimed_at_person</code> · {% endif %}
+          intensity {{ '%.2f'|format(payload.metadata.weapon.use_intensity or 0) }}
+          {% if payload.metadata.weapon.use_tier %} ({{ payload.metadata.weapon.use_tier }}){% endif %}
+          <span class="fineprint">bbox proxy — not proof of a real firearm or intent; sport does not suppress an aimed-at-person cue</span>
+        </dd>
+        {% endif %}
+        {% if payload.metadata and payload.metadata.throw and payload.metadata.throw.thrown_at_person %}
+        <dt>Thrown object</dt><dd>
+          <code>object_thrown_at_person</code>
+          · <code>thrown_projectile</code>
+          {% if payload.metadata.throw.object_label %} · {{ payload.metadata.throw.object_label }}{% endif %}
+          <span class="fineprint">Possible object thrown toward a person — verify. Not proof of assault. Distinct from an aimed firearm and from a static brandish.</span>
+        </dd>
+        {% endif %}
         {% if payload.metadata and payload.metadata.kit %}
         <dt>Kit cues</dt><dd>similarity {{ '%.2f'|format(payload.metadata.kit.team_kit_similarity or 0) }}{% if payload.metadata.kit.jersey_like_colors %} · jersey-like{% endif %} <span class="fineprint">clothing color only — not identity or guilt</span></dd>
         {% endif %}

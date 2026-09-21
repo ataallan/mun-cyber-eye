@@ -4,7 +4,7 @@
 <section class="card">
   <h1>Run detection pipeline</h1>
   <p class="muted">Pick a registered authorized camera, run all enabled cameras sequentially, or keep the synthetic MOCK / Phase 3 activity demo. Webcam capture is refused unless <code>ALLOW_WEBCAM=1</code>. Offline or unconfigured cameras are reported honestly — no fake detections.</p>
-  <p class="fineprint">The activity model does not “know most sports” or “understand all arenas.” Named <code>sport_context</code> and <code>place_type</code> are catalog + folder / camera / color-geometry assists. Kit similarity is a clothing-color cluster, not identity or guilt. Body-aggression cues are OpenCV motion proxies, not a determination of assault. Face-expression assist is <strong>{% if face_aggression_enabled %}on (lab){% else %}off{% endif %}</strong> and never identifies a person or attaches a criminal label.</p>
+  <p class="fineprint">The activity model does not “know most sports” or “understand all arenas.” Named <code>sport_context</code> and <code>place_type</code> are catalog + folder / camera / color-geometry assists. Home/community objects are a YOLO inventory assist when ultralytics is installed — otherwise Last run reports <code>objects_backend=unavailable</code> and does not invent a refrigerator. Kit similarity is a clothing-color cluster, not identity or guilt. Body-aggression cues are OpenCV motion proxies, not a determination of assault. Face-expression assist is <strong>{% if face_aggression_enabled %}on (lab){% else %}off{% endif %}</strong> and never identifies a person or attaches a criminal label.</p>
 
   <form method="post" enctype="multipart/form-data" class="form" id="run-form">
     <fieldset>
@@ -81,6 +81,22 @@
       {% else %}
       <li>Place type: <span class="muted">unknown / unset</span></li>
       {% endif %}
+      <li>Objects / structures:
+        {% if result.objects %}
+          {% for row in result.objects %}
+            {{ row.label }} <span class="mono muted">({{ row.id }})</span> × {{ row.count }}{% if not loop.last %}, {% endif %}
+          {% endfor %}
+          <span class="mono muted"> · backend {{ result.objects_backend or 'unavailable' }}</span>
+        {% else %}
+          <span class="muted">none
+            {% if result.objects_backend == 'unavailable' %}
+              ({{ result.objects_backend }}{% if result.objects_note %} — {{ result.objects_note }}{% endif %})
+            {% else %}
+              ({{ result.objects_backend or 'unavailable' }})
+            {% endif %}
+          </span>
+        {% endif %}
+      </li>
       <li>Kit cues: max team-kit similarity {{ '%.2f'|format(result.kit.max_similarity or 0) }}
         · jersey-like frames {{ result.kit.jersey_like_frames or 0 }}
         <span class="muted">(clothing color clusters only — not identity)</span>
@@ -97,6 +113,29 @@
       </li>
       <li>Face cue status: <code>{{ result.face_cue_status or 'disabled' }}</code>
         {% if not result.face_enabled %}(ENABLE_FACE_AGGRESSION=0){% endif %}
+      </li>
+      <li>Fall manner:
+        {% if result.fall_manners %}
+          {% for row in result.fall_manners %}
+            <code>{{ row.id }}</code> × {{ row.count }}{% if not loop.last %}, {% endif %}
+          {% endfor %}
+          <span class="muted"> (subtype of potential_fall — not a medical diagnosis)</span>
+        {% else %}
+          <span class="muted">none this run</span>
+        {% endif %}
+      </li>
+      <li>Gunshot video proxy: {{ result.gunshot_proxy_frames or 0 }} frame(s)
+        · audio <code>{{ result.gunshot_audio_status or 'disabled' }}</code>
+        <span class="muted">(visual proxy only — not ballistic proof; audio off does not invent a bang)</span>
+      </li>
+      <li>Aimed firearm-like object toward person
+        (<code>firearm_aimed_at_person</code>): {{ result.aimed_at_person_frames or 0 }} frame(s)
+        <span class="muted">— never sport-softened</span>
+      </li>
+      <li>Thrown object toward person
+        (<code>object_thrown_at_person</code> / <code>thrown_projectile</code>):
+        {{ result.thrown_at_person_frames or 0 }} frame(s)
+        <span class="muted">— sport balls on a court may stay game or play; brick/bottle on a street do not</span>
       </li>
     </ul>
     {% if result.category_rows %}
@@ -119,7 +158,7 @@
     {% endif %}
     {% if result.assist_rows %}
     <h3>Scene assists</h3>
-    <p class="muted">Per-frame activity class, place type, optional sport context, kit-color cues, body-aggression proxies, and face-cue status. Assistive only — humans verify. Setting is not identity.</p>
+    <p class="muted">Per-frame activity class, place type, optional sport context, kit-color cues, body-aggression proxies, face-cue status, and safety assists (fall manner, gunshot proxy, aimed firearm, thrown object). Assistive only — humans verify. Setting is not identity.</p>
     <table class="table">
       <thead>
         <tr>
@@ -130,6 +169,7 @@
           <th>Kit</th>
           <th>Aggression</th>
           <th>Face</th>
+          <th>Safety cues</th>
           <th>Threat alert</th>
         </tr>
       </thead>
@@ -143,6 +183,13 @@
           <td>{{ '%.2f'|format(row.kit or 0) }}{% if row.jersey %} <span class="fineprint">jersey-like</span>{% endif %}</td>
           <td>{{ '%.2f'|format(row.aggression or 0) }}{% if row.cues %} <span class="fineprint">{% for cue in row.cues %}<code>{{ cue }}</code> {% endfor %}</span>{% endif %}</td>
           <td class="mono">{{ row.face }}</td>
+          <td class="fineprint">
+            {% if row.fall_manner %}<code>{{ row.fall_manner }}</code> {% endif %}
+            {% if row.gunshot %}<code>possible_gunshot_video_proxy</code> {% endif %}
+            {% if row.aimed %}<code>firearm_aimed_at_person</code> {% endif %}
+            {% if row.thrown %}<code>object_thrown_at_person</code>{% if row.throw_label %} ({{ row.throw_label }}){% endif %} {% endif %}
+            {% if not row.fall_manner and not row.gunshot and not row.aimed and not row.thrown %}<span class="muted">—</span>{% endif %}
+          </td>
           <td>{% if row.alert %}yes{% else %}none{% endif %}</td>
         </tr>
       {% endfor %}

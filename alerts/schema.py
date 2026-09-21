@@ -26,6 +26,7 @@ CATEGORY_DISPLAY_NAMES = {
     "potential_fight": "potential confrontation",
     "potential_fall": "potential fall",
     "potential_weapon_object": "potential weapon-like object",
+    "potential_gunshot": "potential gunshot (video proxy)",
 }
 
 ADVISORY_ACTIONS = {
@@ -45,6 +46,13 @@ ADVISORY_ACTIONS = {
         "is not proof of weapon possession or intent. If confirmed, follow "
         "site SOP and notify authorized personnel. Do not treat this as "
         "authorization to use force."
+    ),
+    "potential_gunshot": (
+        "Advisory only: review the authorized feed for a possible gunshot "
+        "video proxy (flash / dive / firearm-like object). This is not a "
+        "confirmed gunshot and not ballistic proof. If a shot is confirmed, "
+        "follow site SOP. The system will not dispatch force or emergency "
+        "services on its own."
     ),
     "ordinary": (
         "Advisory only: no elevated response recommended. Continue normal "

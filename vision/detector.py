@@ -44,7 +44,8 @@ class MockVisionAdapter(VisionAdapter):
     Cycles through ordinary / game / dance / fight / fall / weapon-like
     patterns based on frame index so the risk engine and alert UI can be
     exercised end-to-end. Game and dance emit Phase 3 category labels so they
-    are not mistaken for fights.
+    are not mistaken for fights. Later slots add a sports-ball pass, a street
+    bottle throw, and a two-person aimed firearm-like object.
     """
 
     name = "mock"
@@ -98,6 +99,7 @@ class MockVisionAdapter(VisionAdapter):
             ),
             Detection("person", 0.88, (50, 50, 190, 400)),
             Detection("person", 0.84, (210, 60, 350, 405)),
+            Detection("sports ball", 0.81, (60, 200, 90, 230)),
         ],
         8: [
             Detection(
@@ -118,6 +120,7 @@ class MockVisionAdapter(VisionAdapter):
             ),
             Detection("person", 0.88, (40, 50, 180, 400)),
             Detection("person", 0.86, (220, 60, 360, 410)),
+            Detection("sports ball", 0.80, (250, 200, 280, 230)),
         ],
         9: [
             Detection(
@@ -131,6 +134,39 @@ class MockVisionAdapter(VisionAdapter):
             ),
             Detection("person", 0.89, (80, 40, 200, 410)),
             Detection("person", 0.85, (200, 50, 320, 420)),
+        ],
+        10: [
+            Detection("person", 0.91, (30, 40, 120, 380)),
+            Detection("person", 0.88, (280, 50, 380, 400)),
+            Detection(
+                "bottle",
+                0.79,
+                (90, 180, 115, 230),
+                extras={
+                    "place_type": "street",
+                    "place_confidence": 0.86,
+                    "place_source": "mock",
+                },
+            ),
+        ],
+        11: [
+            Detection("person", 0.90, (30, 40, 120, 380)),
+            Detection("person", 0.87, (280, 50, 380, 400)),
+            Detection(
+                "bottle",
+                0.78,
+                (230, 180, 255, 230),
+                extras={
+                    "place_type": "street",
+                    "place_confidence": 0.86,
+                    "place_source": "mock",
+                },
+            ),
+        ],
+        12: [
+            Detection("person", 0.92, (40, 50, 140, 400)),
+            Detection("person", 0.90, (280, 50, 380, 400)),
+            Detection("gun", 0.77, (140, 210, 230, 230)),
         ],
     }
 

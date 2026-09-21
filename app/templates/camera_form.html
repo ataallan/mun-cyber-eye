@@ -22,7 +22,7 @@
         {% endfor %}
       </select>
     </label>
-    <p class="fineprint">Catalog setting (court, street, corridor, house, compound, …). The pipeline stamps this when set. Assistive only — not full scene understanding, not identity.</p>
+    <p class="fineprint">Catalog setting (court, street, corridor, house, compound, …). The pipeline stamps this when set. Assistive only — not full scene understanding, not identity. Detected home/community objects may add a small place lean when this is unset; they do not replace this stamp.</p>
     <label>Source type
       <select name="source_type">
         <option value="file" {% if not camera or camera.source_type == 'file' %}selected{% endif %}>file</option>

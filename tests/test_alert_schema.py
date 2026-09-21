@@ -41,6 +41,7 @@ def test_category_display_names():
     assert category_display_name("game_or_play") == "game or play"
     assert category_display_name("dance") == "dance"
     assert category_display_name("potential_fight") == "potential confrontation"
+    assert category_display_name("potential_gunshot") == "potential gunshot (video proxy)"
 
 
 def test_severity_mapping():

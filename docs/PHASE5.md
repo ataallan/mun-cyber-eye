@@ -70,7 +70,7 @@ Alerts created from a registry camera carry that camera’s `camera_id` and `loc
 | Path | Who | Purpose |
 |------|-----|---------|
 | `/cameras` | admin / operator | List, add, edit, enable / disable |
-| `/run` | signed-in reviewer | MOCK, activity demo, one camera, all enabled, or upload. Attaching a video file auto-selects **Authorized video file upload** (server-side if a filename is present, so Synthetic MOCK cannot run silently). Zero-alert runs still report frames processed. |
+| `/run` | signed-in reviewer | MOCK, activity demo, one camera, all enabled, or upload. Attaching a video file auto-selects **Authorized video file upload** (server-side if a filename is present, so Synthetic MOCK cannot run silently). Zero-alert runs still report frames processed. Last run lists optional home/community objects when YOLO is available; otherwise `objects_backend=unavailable` (nothing invented). |
 | `/` | signed-in reviewer | Alert console + camera health |
 
 ## Safety
