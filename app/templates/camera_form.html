@@ -55,13 +55,13 @@
     </label>
     <fieldset>
       <legend>Accounts linked to this camera</legend>
-      <p class="fineprint">One camera can notify many accounts. Prefer <a href="{{ url_for('main.my_cameras') }}">My cameras</a>{% if session.get('role') == 'admin' %} or admin <a href="{{ url_for('main.accounts') }}">Accounts</a>{% endif %} to attach many cameras on one account.</p>
+      <p class="fineprint">One camera can notify many accounts. Prefer <a href="{{ url_for('main.my_cameras') }}">My cameras</a>{% if can_approve_accounts %} or <a href="{{ url_for('main.accounts') }}">Accounts</a>{% endif %} to attach many cameras on one account.</p>
       {% if console_users %}
       <div class="checklist">
         {% for u in console_users %}
         <label class="check">
           <input type="checkbox" name="account_user_ids" value="{{ u.id }}" {% if u.id in (linked_account_ids or []) %}checked{% endif %}>
-          <span>{{ u.username }} · {{ u.security_email or u.email or 'no email' }}{% if not u.active %} (inactive){% endif %}</span>
+          <span>{{ u.username }} · {{ u.security_email or u.email or 'no email' }}{% if not u.approved %} (pending){% elif not u.active %} (inactive){% endif %}</span>
         </label>
         {% endfor %}
       </div>

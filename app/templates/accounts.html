@@ -3,9 +3,52 @@
 {% block content %}
 <section class="card">
   <h1>Accounts</h1>
-  <p class="muted">Assign many cameras to each console account. Alert mail uses each account’s security email (or login email). This is notify-only.</p>
-  <p class="fineprint">Your own assignments: <a href="{{ url_for('main.my_cameras') }}">My cameras</a>.</p>
+  <p class="muted">New public registrations stay <strong>pending</strong> until a site admin or Mun Cyber developer approves them. Unapproved accounts cannot sign in, run cameras, or receive alert mail. This is notify-only — humans verify and decide.</p>
+  <p class="fineprint">Your own assignments: <a href="{{ url_for('main.my_cameras') }}">My cameras</a>. Operators can review alerts after approval; they cannot approve accounts or train models.</p>
 
+  <h2>Pending approval</h2>
+  {% if pending %}
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Username</th>
+        <th>Login email</th>
+        <th>Role</th>
+        <th>Created</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for u in pending %}
+      <tr>
+        <td class="mono">{{ u.username }} <span class="badge status-pending">pending</span></td>
+        <td class="mono">{{ u.email or '—' }}</td>
+        <td>{{ u.role }}</td>
+        <td class="mono">{{ u.created_at }}</td>
+        <td>
+          <div class="btn-row">
+            <form method="post" action="{{ url_for('main.account_approve', user_id=u.id) }}">
+              <button class="btn btn-primary btn-sm" type="submit">Approve</button>
+            </form>
+            {% if u.id != current_user_id %}
+            <form method="post" action="{{ url_for('main.account_reject', user_id=u.id) }}">
+              <button class="btn btn-danger btn-sm" type="submit">Reject</button>
+            </form>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No accounts waiting for approval.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Directory</h2>
+  <p class="muted">Assign cameras to approved accounts. Alert mail uses each account’s security email (or login email).</p>
   {% if accounts %}
   <table class="table">
     <thead>
@@ -14,19 +57,56 @@
         <th>Login email</th>
         <th>Security email</th>
         <th>Role</th>
+        <th>Status</th>
         <th>Cameras</th>
         <th></th>
       </tr>
     </thead>
     <tbody>
     {% for u in accounts %}
+      {% set st = u.access_status() %}
       <tr>
-        <td class="mono">{{ u.username }}{% if not u.active %} <span class="badge status-dismissed">inactive</span>{% endif %}</td>
+        <td class="mono">{{ u.username }}</td>
         <td class="mono">{{ u.email or '—' }}</td>
         <td class="mono">{{ u.security_email or '—' }}</td>
         <td>{{ u.role }}</td>
+        <td>
+          {% set st = u.access_status() %}
+          {% if st == 'pending' %}
+          <span class="badge status-pending">pending</span>
+          {% elif st == 'active' %}
+          <span class="badge status-acknowledged">active</span>
+          {% elif st == 'rejected' %}
+          <span class="badge status-dismissed">rejected</span>
+          {% else %}
+          <span class="badge status-dismissed">inactive</span>
+          {% endif %}
+        </td>
         <td>{{ camera_counts.get(u.id, 0) }}</td>
-        <td><a class="btn btn-ghost" href="{{ url_for('main.account_edit', user_id=u.id) }}">Cameras</a></td>
+        <td>
+          <div class="btn-row">
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('main.account_edit', user_id=u.id) }}">Cameras</a>
+            {% if st == 'pending' %}
+            <form method="post" action="{{ url_for('main.account_approve', user_id=u.id) }}">
+              <button class="btn btn-primary btn-sm" type="submit">Approve</button>
+            </form>
+            {% elif st == 'rejected' %}
+            <form method="post" action="{{ url_for('main.account_approve', user_id=u.id) }}">
+              <button class="btn btn-primary btn-sm" type="submit">Approve</button>
+            </form>
+            {% elif st == 'active' and u.id != current_user_id %}
+            <form method="post" action="{{ url_for('main.account_active', user_id=u.id) }}">
+              <input type="hidden" name="active" value="0">
+              <button class="btn btn-ghost btn-sm" type="submit">Deactivate</button>
+            </form>
+            {% elif st == 'inactive' %}
+            <form method="post" action="{{ url_for('main.account_active', user_id=u.id) }}">
+              <input type="hidden" name="active" value="1">
+              <button class="btn btn-primary btn-sm" type="submit">Reactivate</button>
+            </form>
+            {% endif %}
+          </div>
+        </td>
       </tr>
     {% endfor %}
     </tbody>
@@ -35,4 +115,31 @@
   <p class="muted">No console accounts yet.</p>
   {% endif %}
 </section>
+
+{% if account_audit %}
+<section class="card">
+  <h2>Recent account decisions</h2>
+  <p class="fineprint">Written to <code>system_audit</code> with the acting admin or developer.</p>
+  <table class="table">
+    <thead>
+      <tr>
+        <th>When</th>
+        <th>Action</th>
+        <th>Actor</th>
+        <th>Note</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for row in account_audit %}
+      <tr>
+        <td class="mono">{{ row.created_at }}</td>
+        <td>{{ row.action }}</td>
+        <td class="mono">{{ row.actor }}</td>
+        <td class="mono">{{ row.note }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
 {% endblock %}

@@ -119,6 +119,8 @@ def test_first_register_is_admin_second_is_operator(app, client):
     reviewer = app.extensions["user_store"].get_by_username("reviewer")
     assert reviewer is not None
     assert reviewer.role == "operator"
+    assert reviewer.approved is False
+    assert "pending admin approval" in second.get_data(as_text=True).lower()
 
 
 def test_register_ignores_posted_developer_role(app, client):

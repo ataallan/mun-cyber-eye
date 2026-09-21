@@ -37,8 +37,11 @@ from ingest.cameras import (
 
 from .auth import (
     CUSTOMER_ROLES,
+    INACTIVE_LOGIN_MESSAGE,
+    PENDING_LOGIN_MESSAGE,
     account_notify_email,
-    admin_required,
+    approver_required,
+    console_session_guard,
     developer_required,
     guest_only,
     login_required,
@@ -57,12 +60,13 @@ MANAGE_ROLES = {"admin", "operator", "developer"}
 
 
 def operator_required(view):
-    """Admin/operator only — recipient management and outbound resend."""
+    """Admin/operator/developer — recipient management and outbound resend."""
 
     @wraps(view)
     def wrapped(*args, **kwargs):
-        if not session.get("user"):
-            return redirect(url_for("main.login", next=request.path))
+        blocked = console_session_guard()
+        if blocked is not None:
+            return blocked
         if session.get("role") not in MANAGE_ROLES:
             flash("Only admin, operator, or developer roles can manage alert delivery.", "error")
             return redirect(url_for("main.dashboard"))
@@ -97,7 +101,7 @@ def _session_notify_emails() -> list[str]:
     if not username:
         return []
     user = _users().get_by_username(username)
-    if user is None or not user.active:
+    if user is None or not user.can_access_console():
         return []
     email = account_notify_email(user)
     return [email] if email else []
@@ -153,12 +157,17 @@ def login():
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
-        user = _users().authenticate(username, password)
-        if user:
+        user, status = _users().attempt_login(username, password)
+        if status == "ok" and user:
             start_session(user)
             flash("Signed in. Alerts require human verification.", "ok")
             return redirect(safe_next_url())
-        flash("Invalid credentials.", "error")
+        if status == "pending":
+            flash(PENDING_LOGIN_MESSAGE, "error")
+        elif status == "inactive":
+            flash(INACTIVE_LOGIN_MESSAGE, "error")
+        else:
+            flash("Invalid credentials.", "error")
     return render_template(
         "login.html",
         next=request.args.get("next", ""),
@@ -197,6 +206,8 @@ def register():
                 email=email,
                 password=password,
                 role=role,
+                approved=is_first,
+                approved_by="bootstrap" if is_first else "",
             )
             if security_email:
                 _users().set_security_email(user.id, security_email)
@@ -207,13 +218,19 @@ def register():
             )
         if user.role == "admin":
             flash(
-                "First account created as site admin. Sign in with the password you chose. "
+                "First account created as site admin and auto-approved so you can "
+                "approve later registrations. Sign in with the password you chose. "
                 "No default password is shipped. Site admin runs cameras and review — "
                 "not model training.",
                 "ok",
             )
         else:
-            flash("Account created. Sign in with your new operator credentials.", "ok")
+            flash(
+                "Account created. It is pending admin approval — you cannot sign in "
+                "to cameras, alerts, or Run Pipeline until a site admin or developer "
+                "approves it.",
+                "ok",
+            )
         return redirect(url_for("main.login"))
     return render_template("register.html", needs_setup=_users().count() == 0)
 
@@ -228,7 +245,7 @@ def forgot_password():
         user = store.find_by_username_or_email(identifier) if identifier else None
         token = None
         reset_url = None
-        if user and user.active:
+        if user and user.can_access_console():
             minutes = int(current_app.config.get("RESET_TOKEN_MINUTES", 45))
             token = store.create_reset_token(user.id, ttl_minutes=minutes)
             reset_url = _reset_url(token)
@@ -240,7 +257,7 @@ def forgot_password():
 
         notify = current_app.extensions["notify_config"]
         if notify.resend_configured:
-            if user and user.active and reset_url:
+            if user and user.can_access_console() and reset_url:
                 minutes = int(current_app.config.get("RESET_TOKEN_MINUTES", 45))
                 html, text = _password_reset_email(user.username, reset_url, minutes)
                 ok, detail = send_resend_email(
@@ -892,17 +909,37 @@ def my_cameras():
 
 
 @bp.route("/accounts")
-@admin_required
+@approver_required
 def accounts():
     users = _users().list_users(active_only=False)
+    pending = [u for u in users if u.access_status() == "pending"]
     counts = {
         user.id: len(_cameras().list_camera_ids_for_user(user.id)) for user in users
     }
-    return render_template("accounts.html", accounts=users, camera_counts=counts)
+    current = _current_user()
+    decisions = [
+        row
+        for row in _store().list_system_audit(limit=40)
+        if row.get("action")
+        in {
+            "approve_account",
+            "reject_account",
+            "deactivate_account",
+            "reactivate_account",
+        }
+    ][:12]
+    return render_template(
+        "accounts.html",
+        accounts=users,
+        pending=pending,
+        camera_counts=counts,
+        current_user_id=current.id if current else "",
+        account_audit=decisions,
+    )
 
 
 @bp.route("/accounts/<user_id>", methods=["GET", "POST"])
-@admin_required
+@approver_required
 def account_edit(user_id: str):
     user = _users().get_by_id(user_id)
     if user is None:
@@ -923,6 +960,95 @@ def account_edit(user_id: str):
         linked_ids=set(_cameras().list_camera_ids_for_user(user.id)),
         self_edit=False,
     )
+
+
+def _account_decision_actor() -> str:
+    return session.get("user", "unknown")
+
+
+def _cannot_change_own_access(user) -> bool:
+    actor = (_account_decision_actor() or "").strip().lower()
+    return user.username.strip().lower() == actor
+
+
+@bp.route("/accounts/<user_id>/approve", methods=["POST"])
+@approver_required
+def account_approve(user_id: str):
+    store = _users()
+    user = store.get_by_id(user_id)
+    if user is None:
+        flash("Account not found.", "error")
+        return redirect(url_for("main.accounts"))
+    actor = _account_decision_actor()
+    updated = store.approve_user(user.id, actor)
+    _store().record_system_audit(
+        "approve_account",
+        actor,
+        f"user={updated.username} role={updated.role}",
+    )
+    flash(
+        f"Approved {updated.username}. They can now sign in to cameras, alerts, and Run Pipeline.",
+        "ok",
+    )
+    return redirect(url_for("main.accounts"))
+
+
+@bp.route("/accounts/<user_id>/reject", methods=["POST"])
+@approver_required
+def account_reject(user_id: str):
+    store = _users()
+    user = store.get_by_id(user_id)
+    if user is None:
+        flash("Account not found.", "error")
+        return redirect(url_for("main.accounts"))
+    if _cannot_change_own_access(user):
+        flash("You cannot reject your own account.", "error")
+        return redirect(url_for("main.accounts"))
+    actor = _account_decision_actor()
+    try:
+        updated = store.reject_user(user.id, actor)
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("main.accounts"))
+    _store().record_system_audit(
+        "reject_account",
+        actor,
+        f"user={updated.username} role={updated.role}",
+    )
+    flash(
+        f"Rejected {updated.username}. They cannot sign in until approved again.",
+        "ok",
+    )
+    return redirect(url_for("main.accounts"))
+
+
+@bp.route("/accounts/<user_id>/active", methods=["POST"])
+@approver_required
+def account_active(user_id: str):
+    store = _users()
+    user = store.get_by_id(user_id)
+    if user is None:
+        flash("Account not found.", "error")
+        return redirect(url_for("main.accounts"))
+    active = request.form.get("active", "0") == "1"
+    if not active and _cannot_change_own_access(user):
+        flash("You cannot deactivate your own account.", "error")
+        return redirect(url_for("main.accounts"))
+    actor = _account_decision_actor()
+    try:
+        updated = store.set_user_active(user.id, active)
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("main.accounts"))
+    action = "reactivate_account" if updated.active else "deactivate_account"
+    _store().record_system_audit(
+        action,
+        actor,
+        f"user={updated.username} role={updated.role}",
+    )
+    state = "reactivated" if updated.active else "deactivated"
+    flash(f"{updated.username} {state}.", "ok")
+    return redirect(url_for("main.accounts"))
 
 
 @bp.route("/run", methods=["GET", "POST"])

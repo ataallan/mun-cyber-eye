@@ -514,6 +514,11 @@ class NotificationService:
             if not getattr(user, "active", True):
                 notes.append(f"Camera account '{user.username}' is inactive; skipped")
                 continue
+            if not getattr(user, "approved", True):
+                notes.append(
+                    f"Camera account '{user.username}' is awaiting approval; skipped"
+                )
+                continue
             email = ""
             if hasattr(user, "notify_address"):
                 email = user.notify_address()

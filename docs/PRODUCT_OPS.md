@@ -24,9 +24,11 @@ Run Pipeline does **not** treat a one-shot “Authorized video file upload” as
 
 ## Accounts
 
-Fresh installs ship **no default password**. Create the first **site admin** with **Create account**. Later registrations are operators. Site admin and operator run cameras, alerts, My cameras, recipients, and Run Pipeline — they **cannot** train. Optional `ADMIN_USERNAME` / `ADMIN_PASSWORD` bootstrap only if you set both yourself — never a published default.
+Fresh installs ship **no default password**. Create the first **site admin** with **Create account** — that first account is **auto-approved** so the product is not locked out. Later public registrations are operators and stay **pending** until a site `admin` or `developer` approves them on **Accounts**. Unapproved users cannot sign in to the console, cameras, Run Pipeline, or alerts; password reset does not bypass that gate.
 
-Model training is reserved for the **developer** role (Mun Cyber Technologies). Seed it only on lab machines with **both** `DEVELOPER_USERNAME` and `DEVELOPER_PASSWORD` (optional `DEVELOPER_EMAIL`). Customer `.env.example` leaves these empty. Never `operator` / `changeme`.
+Site admin and operator run cameras, alerts, My cameras, recipients, and Run Pipeline **after approval** — they **cannot** train. Optional `ADMIN_USERNAME` / `ADMIN_PASSWORD` bootstrap only if you set both yourself — never a published default. Env-seeded `ADMIN_*`, `OPERATOR_*`, and `DEVELOPER_*` accounts are active/approved when created.
+
+Model training is reserved for the **developer** role (Mun Cyber Technologies). Seed it only on lab machines with **both** `DEVELOPER_USERNAME` and `DEVELOPER_PASSWORD` (optional `DEVELOPER_EMAIL`). Customer `.env.example` leaves these empty. Never `operator` / `changeme`. Developers can also approve customer accounts. Ordinary operators cannot.
 
 ## Retention — no UI wipe
 
