@@ -1,8 +1,14 @@
 """Flask console: camera registry, run-from-camera, webcam gate, health."""
 
+import re
+from io import BytesIO
+from pathlib import Path
+
+import numpy as np
 import pytest
 
 from app.factory import create_app
+from vision.detector import Detection, VisionAdapter
 
 
 @pytest.fixture
@@ -151,3 +157,124 @@ def test_run_page_lists_registry(client):
     assert "Registered camera" in body
     assert "demo-file-01" in body
     assert "All enabled cameras" in body
+    assert "Authorized video file upload" in body
+    assert "video-file" in body
+    assert "mode-upload" in body
+    assert "upload-hint" in body
+
+
+def _tiny_video(path: Path, frames: int = 40) -> Path:
+    import cv2
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fourcc = cv2.VideoWriter_fourcc(*"MJPG")
+    writer = cv2.VideoWriter(str(path), fourcc, 10.0, (64, 48))
+    if not writer.isOpened():
+        pytest.skip("OpenCV VideoWriter MJPG unavailable in this environment")
+    for i in range(frames):
+        img = np.zeros((48, 64, 3), dtype=np.uint8)
+        img[:] = ((i * 20) % 255, 40, 90)
+        writer.write(img)
+    writer.release()
+    return path
+
+
+class _OrdinaryAdapter(VisionAdapter):
+    name = "ordinary-test"
+
+    def detect(self, image_bgr, frame_index: int = 0):
+        return [Detection("ordinary", 0.95)]
+
+
+def test_run_synthetic_mode_with_file_uses_upload(app, client, tmp_path):
+    video = _tiny_video(tmp_path / "src" / "hallway.avi")
+    _login(client)
+    resp = client.post(
+        "/run",
+        data={
+            "mode": "synthetic",
+            "video": (BytesIO(video.read_bytes()), "hallway.avi"),
+        },
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "authorized upload — hallway.avi" in body
+    assert "hallway.avi" in body
+    assert "Synthetic Demo" not in body
+    assert "Authorized video file upload" in body
+    assert "form mode was synthetic" in body
+    frames = re.search(r"Frames processed:\s*(\d+)", body)
+    assert frames and int(frames.group(1)) > 0
+    saved = Path(app.config["UPLOAD_DIR"]) / "hallway.avi"
+    assert saved.is_file()
+    alerts = app.extensions["alert_store"].list_alerts()
+    assert all("authorized upload — hallway.avi" in a.source_label for a in alerts)
+    assert all("Synthetic" not in a.source_label for a in alerts)
+
+
+def test_run_camera_mode_with_file_uses_upload(app, client, tmp_path):
+    video = _tiny_video(tmp_path / "src" / "gate.avi", frames=12)
+    _login(client)
+    resp = client.post(
+        "/run",
+        data={
+            "mode": "camera",
+            "camera_id": "demo-file-01",
+            "video": (BytesIO(video.read_bytes()), "gate.avi"),
+        },
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "authorized upload — gate.avi" in body
+    assert "form mode was camera" in body
+    frames = re.search(r"Frames processed:\s*(\d+)", body)
+    assert frames and int(frames.group(1)) > 0
+    alerts = app.extensions["alert_store"].list_alerts()
+    assert all("authorized upload" in a.source_label for a in alerts)
+
+
+def test_upload_quiet_run_explains_zero_alerts(app, client, tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "vision.detector.create_adapter", lambda *a, **k: _OrdinaryAdapter()
+    )
+    video = _tiny_video(tmp_path / "src" / "ordinary.avi", frames=12)
+    _login(client)
+    before = len(app.extensions["alert_store"].list_alerts())
+    resp = client.post(
+        "/run",
+        data={
+            "mode": "upload",
+            "video": (BytesIO(video.read_bytes()), "ordinary.avi"),
+        },
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "authorized upload — ordinary.avi" in body
+    assert "no elevated-risk frames" in body
+    assert "ordinary" in body
+    assert "Top predicted categories" in body
+    frames = re.search(r"Frames processed:\s*(\d+)", body)
+    assert frames and int(frames.group(1)) > 0
+    assert len(app.extensions["alert_store"].list_alerts()) == before
+
+
+def test_run_synthetic_without_file_still_uses_mock(app, client):
+    _login(client)
+    resp = client.post("/run", data={"mode": "synthetic"}, follow_redirects=True)
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "Synthetic Demo" in body
+    alerts = app.extensions["alert_store"].list_alerts()
+    assert alerts
+    assert all("Synthetic" in a.source_label for a in alerts)
+
+
+def test_factory_creates_upload_dir(app):
+    upload_dir = Path(app.config["UPLOAD_DIR"])
+    assert upload_dir.is_dir()

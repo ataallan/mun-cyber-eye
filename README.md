@@ -31,7 +31,7 @@ Sign in with either:
 
 1. Sign in  
 2. **Cameras** → confirm the seeded Demo Lab File camera, or add an authorized file / RTSP source  
-3. **Run Pipeline** → pick that camera (or all enabled) — MOCK / Phase 3 activity demo still work  
+3. **Run Pipeline** → pick that camera (or all enabled) — MOCK / Phase 3 activity demo still work. To process your own clip, select **Authorized video file upload** (or attach a file — the form auto-selects upload so Synthetic MOCK is not used). Zero-alert runs still report frames processed.
 4. Open an alert → `camera_id` + `location_label` from the registry, then acknowledge / dismiss / escalate  
 5. Optional: **Recipients** + `RESEND_API_KEY` to email authorized operators  
 
@@ -150,6 +150,7 @@ alerts/          SQLite store, structured schema, notify adapters
 app/             Flask console (templates, static, auth)
 data/activity/   Labeled frames (train/val/test/<category>)
 data/checkpoints/activity_demo.joblib
+data/uploads/    Operator-supplied authorized clips (gitignored)
 docs/            ARCHITECTURE.md, ETHICS_AND_SAFETY.md, PHASE3.md, PHASE4.md, PHASE5.md
 pipeline.py      End-to-end orchestration
 run.py           Entrypoint

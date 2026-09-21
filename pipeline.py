@@ -8,9 +8,10 @@ from __future__ import annotations
 import logging
 import os
 import uuid
-from dataclasses import dataclass
+from collections import Counter
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import cv2
 
@@ -36,6 +37,7 @@ class PipelineResult:
     camera_id: str = ""
     location_label: str = ""
     error: Optional[str] = None
+    category_counts: Dict[str, int] = field(default_factory=dict)
 
 
 class CyberEyePipeline:
@@ -129,11 +131,13 @@ class CyberEyePipeline:
     ) -> PipelineResult:
         alerts: List[Alert] = []
         count = 0
+        category_counts: Counter[str] = Counter()
         run_correlation = self.correlation_id or str(uuid.uuid4())
         for frame in frame_iter:
             count += 1
             detections = self.adapter.detect(frame.image_bgr, frame_index=frame.index)
             risk = self.engine.assess(detections)
+            category_counts[risk.category.value] += 1
 
             if not risk.should_alert:
                 continue
@@ -216,6 +220,7 @@ class CyberEyePipeline:
                 location_label if location_label is not None else self.location_label
             )
             or "",
+            category_counts=dict(category_counts),
         )
 
     def _save_snapshot(
@@ -268,7 +273,9 @@ def demo_synthetic_run(
                 source_label="Authorized Camera — Synthetic Demo",
             )
         )
-    return pipeline.run_frames(synthetic)
+    return pipeline.run_frames(
+        synthetic, source_label="Authorized Camera — Synthetic Demo"
+    )
 
 
 def demo_activity_run(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections import Counter
 from functools import wraps
 from pathlib import Path
 
@@ -379,17 +380,54 @@ def recipient_active(recipient_id: int):
     return redirect(url_for("main.recipients"))
 
 
-def _pipeline_result_summary(results) -> dict:
+QUIET_RUN_MESSAGE = (
+    "Video was analyzed; no elevated-risk frames under current heuristics / "
+    "model (ordinary). That is expected for many real videos until models "
+    "are trained on your site."
+)
+
+
+def _attached_upload():
+    upload = request.files.get("video")
+    if upload is None:
+        return None
+    if not (upload.filename or "").strip():
+        return None
+    return upload
+
+
+def _save_uploaded_video(upload) -> tuple[Path, str]:
+    raw = (upload.filename or "").strip()
+    safe = secure_filename(raw) or "upload.bin"
+    dest = Path(current_app.config["UPLOAD_DIR"])
+    dest.mkdir(parents=True, exist_ok=True)
+    path = dest / safe
+    upload.save(path)
+    return path, safe
+
+
+def _upload_source_label(filename: str) -> str:
+    return f"authorized upload — {filename}"
+
+
+def _pipeline_result_summary(results, *, mode: str = "", filename: str = "") -> dict:
     rows = results if isinstance(results, list) else [results]
     frames = sum(r.frames_processed for r in rows)
     alerts = sum(len(r.alerts_created) for r in rows)
     backends = sorted({r.backend for r in rows if r.backend})
     errors = [r for r in rows if getattr(r, "error", None)]
+    counts: Counter[str] = Counter()
+    for row in rows:
+        counts.update(getattr(row, "category_counts", None) or {})
     return {
         "frames": frames,
         "alerts": alerts,
         "backend": ", ".join(backends) if backends else "",
         "source": rows[0].source_label if len(rows) == 1 else f"{len(rows)} camera(s)",
+        "mode": mode,
+        "filename": filename,
+        "quiet": frames > 0 and alerts == 0,
+        "categories": sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])),
         "cameras": [
             {
                 "id": r.camera_id,
@@ -403,6 +441,40 @@ def _pipeline_result_summary(results) -> dict:
         ],
         "failures": len(errors),
     }
+
+
+def _flash_run_outcome(summary: dict) -> None:
+    backend = summary.get("backend") or "unknown"
+    frames = summary.get("frames") or 0
+    alerts = summary.get("alerts") or 0
+    filename = summary.get("filename") or ""
+    if summary.get("failures"):
+        flash(
+            f"Processed {frames} frames; "
+            f"{alerts} alert(s) queued for human review. "
+            f"{summary['failures']} camera(s) reported an honest error "
+            "(offline or missing credentials) — no fake detections.",
+            "warn",
+        )
+    elif filename:
+        flash(
+            f"Ran authorized video file upload ({filename}). "
+            f"Vision backend: {backend}. "
+            f"Processed {frames} frames; {alerts} alert(s) queued for human review.",
+            "ok",
+        )
+    else:
+        flash(
+            f"Processed {frames} frames via {backend}; "
+            f"{alerts} alert(s) queued for human review.",
+            "ok",
+        )
+    if summary.get("quiet"):
+        flash(QUIET_RUN_MESSAGE, "ok")
+        cats = summary.get("categories") or []
+        if cats:
+            top = ", ".join(f"{label} × {n}" for label, n in cats[:4])
+            flash(f"Top predicted categories: {top}.", "ok")
 
 
 def _run_registered_selection(camera_id: str, store, notifier, snapshot_dir: str):
@@ -512,7 +584,6 @@ def run_pipeline():
     result_summary = None
     cameras = _cameras().list_cameras()
     if request.method == "POST":
-        mode = request.form.get("mode", "synthetic")
         store = _store()
         notifier = _notifier()
         root = Path(current_app.config["PROJECT_ROOT"])
@@ -529,42 +600,17 @@ def run_pipeline():
         os.environ["ACTIVITY_CHECKPOINT"] = current_app.config["ACTIVITY_CHECKPOINT"]
         snapshot_dir = current_app.config["SNAPSHOT_DIR"]
 
+        upload = _attached_upload()
+        requested_mode = (request.form.get("mode") or "synthetic").strip() or "synthetic"
+        mode = "upload" if upload is not None else requested_mode
+
         try:
-            if mode == "synthetic":
-                result = demo_synthetic_run(
-                    store,
-                    frames=16,
-                    notifier=notifier,
-                    snapshot_dir=snapshot_dir,
-                )
-                result_summary = _pipeline_result_summary(result)
-            elif mode == "activity":
-                result = demo_activity_run(
-                    store,
-                    checkpoint=current_app.config["ACTIVITY_CHECKPOINT"],
-                    notifier=notifier,
-                    snapshot_dir=snapshot_dir,
-                )
-                result_summary = _pipeline_result_summary(result)
-            elif mode == "camera":
-                camera_id = (request.form.get("camera_id") or "").strip()
-                if not camera_id:
-                    flash("Select a registered camera, or all enabled cameras.", "error")
-                    return redirect(url_for("main.run_pipeline"))
-                results = _run_registered_selection(
-                    camera_id, store, notifier, snapshot_dir
-                )
-                result_summary = _pipeline_result_summary(results)
-            else:
-                upload = request.files.get("video")
-                if not upload or not upload.filename:
+            if mode == "upload":
+                if upload is None:
                     flash("Select an authorized video file, or use synthetic demo.", "error")
                     return redirect(url_for("main.run_pipeline"))
-                safe = secure_filename(upload.filename)
-                dest = Path(snapshot_dir).parent / "uploads"
-                dest.mkdir(parents=True, exist_ok=True)
-                path = dest / safe
-                upload.save(path)
+                path, safe = _save_uploaded_video(upload)
+                source_label = _upload_source_label(safe)
                 adapter = create_adapter(current_app.config["VISION_BACKEND"])
                 pipe = CyberEyePipeline(
                     store=store,
@@ -578,24 +624,48 @@ def run_pipeline():
                     path,
                     sample_fps=current_app.config["SAMPLE_FPS"],
                     max_frames=current_app.config["MAX_FRAMES_PER_RUN"],
-                    source_label=current_app.config["DEFAULT_CAMERA_LABEL"],
+                    source_label=source_label,
                 )
-                result_summary = _pipeline_result_summary(result)
-
-            if result_summary.get("failures"):
-                flash(
-                    f"Processed {result_summary['frames']} frames; "
-                    f"{result_summary['alerts']} alert(s) queued for human review. "
-                    f"{result_summary['failures']} camera(s) reported an honest error "
-                    "(offline or missing credentials) — no fake detections.",
-                    "warn",
+                result_summary = _pipeline_result_summary(
+                    result, mode="upload", filename=safe
                 )
+                if requested_mode != "upload":
+                    flash(
+                        f"Attached video “{safe}” — processed as Authorized video file "
+                        f"upload (form mode was {requested_mode}; the file takes "
+                        "precedence so MOCK is not used).",
+                        "ok",
+                    )
+            elif mode == "synthetic":
+                result = demo_synthetic_run(
+                    store,
+                    frames=16,
+                    notifier=notifier,
+                    snapshot_dir=snapshot_dir,
+                )
+                result_summary = _pipeline_result_summary(result, mode="synthetic")
+            elif mode == "activity":
+                result = demo_activity_run(
+                    store,
+                    checkpoint=current_app.config["ACTIVITY_CHECKPOINT"],
+                    notifier=notifier,
+                    snapshot_dir=snapshot_dir,
+                )
+                result_summary = _pipeline_result_summary(result, mode="activity")
+            elif mode == "camera":
+                camera_id = (request.form.get("camera_id") or "").strip()
+                if not camera_id:
+                    flash("Select a registered camera, or all enabled cameras.", "error")
+                    return redirect(url_for("main.run_pipeline"))
+                results = _run_registered_selection(
+                    camera_id, store, notifier, snapshot_dir
+                )
+                result_summary = _pipeline_result_summary(results, mode="camera")
             else:
-                flash(
-                    f"Processed {result_summary['frames']} frames via {result_summary['backend']}; "
-                    f"{result_summary['alerts']} alert(s) queued for human review.",
-                    "ok",
-                )
+                flash("Select an authorized video file, or use synthetic demo.", "error")
+                return redirect(url_for("main.run_pipeline"))
+
+            _flash_run_outcome(result_summary)
         except Exception as exc:
             flash(f"Pipeline error: {exc}", "error")
 

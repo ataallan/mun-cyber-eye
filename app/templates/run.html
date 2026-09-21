@@ -5,7 +5,7 @@
   <h1>Run detection pipeline</h1>
   <p class="muted">Pick a registered authorized camera, run all enabled cameras sequentially, or keep the synthetic MOCK / Phase 3 activity demo. Webcam capture is refused unless <code>ALLOW_WEBCAM=1</code>. Offline or unconfigured cameras are reported honestly — no fake detections.</p>
 
-  <form method="post" enctype="multipart/form-data" class="form">
+  <form method="post" enctype="multipart/form-data" class="form" id="run-form">
     <fieldset>
       <legend>Mode</legend>
       <label class="radio">
@@ -22,7 +22,7 @@
         Registered camera (file / RTSP / webcam)
       </label>
       <label class="radio">
-        <input type="radio" name="mode" value="upload">
+        <input type="radio" name="mode" value="upload" id="mode-upload">
         Authorized video file upload (uses activity checkpoint when present, else YOLO/MOCK)
       </label>
     </fieldset>
@@ -40,20 +40,36 @@
       · true parallel streaming is not in this prototype</p>
     {% endif %}
     <label>Video file (optional)
-      <input type="file" name="video" accept="video/*,.mp4,.avi,.mov,.mkv">
+      <input type="file" name="video" id="video-file" accept="video/*,.mp4,.avi,.mov,.mkv" onchange="window.cybereyeSelectUpload && window.cybereyeSelectUpload();" oninput="window.cybereyeSelectUpload && window.cybereyeSelectUpload();">
     </label>
+    <p class="fineprint" id="upload-hint">Choosing a file selects <strong>Authorized video file upload</strong> (the server also treats any attached filename as upload, so Synthetic MOCK cannot run silently).</p>
     <button class="btn btn-primary" type="submit">Run</button>
   </form>
 
   {% if result %}
-  <div class="result-box">
+  <div class="result-box{% if result.quiet %} result-quiet{% endif %}">
     <h2>Last run</h2>
     <ul>
+      <li>Mode: <code>{{ result.mode or '—' }}</code></li>
       <li>Frames processed: {{ result.frames }}</li>
       <li>Alerts created: {{ result.alerts }}</li>
-      <li>Vision backend: <code>{{ result.backend }}</code></li>
-      <li>Source: {{ result.source }}</li>
+      <li>Vision backend: <code>{{ result.backend or '—' }}</code></li>
+      <li>Source: {{ result.source or '—' }}{% if result.filename %} (<code>{{ result.filename }}</code>){% endif %}</li>
+      {% if result.categories %}
+      <li>Predicted categories:
+        {% for label, n in result.categories %}
+          <code>{{ label }}</code> × {{ n }}{% if not loop.last %}, {% endif %}
+        {% endfor %}
+      </li>
+      {% endif %}
     </ul>
+    {% if result.quiet %}
+    <div class="quiet-run">
+      <p>Video was analyzed; no elevated-risk frames under current heuristics / model (ordinary). That is expected for many real videos until models are trained on your site.</p>
+      <p class="fineprint">{{ result.frames }} frame(s) were sampled from {% if result.filename %}<code>{{ result.filename }}</code>{% else %}{{ result.source }}{% endif %}. Zero alerts means the model stayed on <code>ordinary</code> — not that the file was ignored.</p>
+      <a class="btn btn-primary" href="{{ url_for('main.dashboard') }}">Open dashboard</a>
+    </div>
+    {% endif %}
     {% if result.cameras %}
     <table class="table">
       <thead>
@@ -83,4 +99,31 @@
   </div>
   {% endif %}
 </section>
+<script>
+(function () {
+  var fileInput = document.getElementById("video-file");
+  var uploadRadio = document.getElementById("mode-upload");
+  var form = document.getElementById("run-form");
+  var hint = document.getElementById("upload-hint");
+  function selectUploadIfFile() {
+    if (fileInput && uploadRadio && fileInput.files && fileInput.files.length) {
+      uploadRadio.checked = true;
+      if (hint) {
+        hint.textContent =
+          "Attached file will run as Authorized video file upload: " +
+          fileInput.files[0].name +
+          " (Synthetic MOCK is not used).";
+      }
+    }
+  }
+  window.cybereyeSelectUpload = selectUploadIfFile;
+  if (fileInput) {
+    fileInput.addEventListener("change", selectUploadIfFile);
+    fileInput.addEventListener("input", selectUploadIfFile);
+  }
+  if (form) {
+    form.addEventListener("submit", selectUploadIfFile);
+  }
+})();
+</script>
 {% endblock %}
