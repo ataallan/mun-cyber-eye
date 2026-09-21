@@ -100,6 +100,7 @@ class CyberEyePipeline:
         activity_data_root: Optional[str | Path] = None,
         camera_place_type: Optional[str] = None,
         object_mode: Optional[str] = None,
+        notify_extra_recipients: Optional[List[str]] = None,
     ) -> None:
         self.store = store
         self.adapter = adapter or create_adapter()
@@ -115,6 +116,7 @@ class CyberEyePipeline:
         )
         self.camera_place_type = camera_place_type or ""
         self.object_mode = (object_mode or os.getenv("OBJECTS_BACKEND", "auto")).strip().lower()
+        self.notify_extra_recipients = list(notify_extra_recipients or [])
 
     def run_video(
         self,
@@ -392,7 +394,11 @@ class CyberEyePipeline:
                 correlation_id=run_correlation,
             )
             if self.notifier:
-                alert = self.notifier.deliver(alert, actor="system")
+                alert = self.notifier.deliver(
+                    alert,
+                    actor="system",
+                    extra_recipients=self.notify_extra_recipients,
+                )
             alerts.append(alert)
             logger.info(
                 "Alert %s [%s/%s] conf=%.2f frame=%s",
@@ -445,6 +451,7 @@ def demo_synthetic_run(
     frames: int = 16,
     notifier: Optional[NotificationService] = None,
     snapshot_dir: str | Path = "data/snapshots",
+    notify_extra_recipients: Optional[List[str]] = None,
 ) -> PipelineResult:
     """Run MOCK detections over blank frames — no video file required."""
     import numpy as np
@@ -458,6 +465,7 @@ def demo_synthetic_run(
         notifier=notifier,
         snapshot_dir=snapshot_dir,
         object_mode="mock",
+        notify_extra_recipients=notify_extra_recipients,
     )
     synthetic = []
     for i in range(frames):
@@ -485,6 +493,7 @@ def demo_activity_run(
     per_class: int = 2,
     notifier: Optional[NotificationService] = None,
     snapshot_dir: str | Path = "data/snapshots",
+    notify_extra_recipients: Optional[List[str]] = None,
 ) -> PipelineResult:
     """Run the Phase 3 activity adapter on synthetic class-typical frames.
 
@@ -505,7 +514,11 @@ def demo_activity_run(
         adapter = MockVisionAdapter()
 
     pipeline = CyberEyePipeline(
-        store=store, adapter=adapter, notifier=notifier, snapshot_dir=snapshot_dir
+        store=store,
+        adapter=adapter,
+        notifier=notifier,
+        snapshot_dir=snapshot_dir,
+        notify_extra_recipients=notify_extra_recipients,
     )
     synthetic = []
     idx = 0

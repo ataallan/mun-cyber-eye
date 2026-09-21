@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Accounts · {{ product_name }}{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Accounts</h1>
+  <p class="muted">Assign many cameras to each console account. Alert mail uses each account’s security email (or login email). This is notify-only.</p>
+  <p class="fineprint">Your own assignments: <a href="{{ url_for('main.my_cameras') }}">My cameras</a>.</p>
+
+  {% if accounts %}
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Username</th>
+        <th>Login email</th>
+        <th>Security email</th>
+        <th>Role</th>
+        <th>Cameras</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for u in accounts %}
+      <tr>
+        <td class="mono">{{ u.username }}{% if not u.active %} <span class="badge status-dismissed">inactive</span>{% endif %}</td>
+        <td class="mono">{{ u.email or '—' }}</td>
+        <td class="mono">{{ u.security_email or '—' }}</td>
+        <td>{{ u.role }}</td>
+        <td>{{ camera_counts.get(u.id, 0) }}</td>
+        <td><a class="btn btn-ghost" href="{{ url_for('main.account_edit', user_id=u.id) }}">Cameras</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No console accounts yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

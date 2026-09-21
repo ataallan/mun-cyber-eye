@@ -120,6 +120,9 @@ class Camera:
     last_seen_at: Optional[str] = None
     last_error: Optional[str] = None
     place_type: str = ""
+    owner_user_id: str = ""
+    owner_username: str = ""
+    notify_email: str = ""
 
     def effective_fps(self) -> float:
         if self.sample_interval is not None and float(self.sample_interval) > 0:
@@ -191,6 +194,24 @@ class CameraStore:
                 """
             )
             self._ensure_column(conn, "cameras", "place_type", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "cameras", "owner_user_id", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "cameras", "owner_username", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "cameras", "notify_email", "TEXT NOT NULL DEFAULT ''")
+            conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS camera_accounts (
+                    camera_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    username TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (camera_id, user_id),
+                    FOREIGN KEY (camera_id) REFERENCES cameras(id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_camera_accounts_user
+                    ON camera_accounts(user_id);
+                """
+            )
+            self._backfill_camera_accounts(conn)
 
     @staticmethod
     def _ensure_column(
@@ -199,6 +220,31 @@ class CameraStore:
         cols = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
         if column not in cols:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+
+    @staticmethod
+    def _backfill_camera_accounts(conn: sqlite3.Connection) -> None:
+        """Copy legacy single-owner columns into the many-to-many table."""
+        rows = conn.execute(
+            """
+            SELECT id, owner_user_id, owner_username, created_at
+            FROM cameras
+            WHERE TRIM(COALESCE(owner_user_id, '')) != ''
+            """
+        ).fetchall()
+        for row in rows:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO camera_accounts
+                    (camera_id, user_id, username, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    row["id"],
+                    row["owner_user_id"],
+                    row["owner_username"] or "",
+                    row["created_at"],
+                ),
+            )
 
     def count(self) -> int:
         with self._conn() as conn:
@@ -236,6 +282,9 @@ class CameraStore:
         notes: str = "",
         camera_id: Optional[str] = None,
         place_type: str = "",
+        owner_user_id: str = "",
+        owner_username: str = "",
+        notify_email: str = "",
     ) -> Camera:
         camera = Camera(
             id=camera_id or str(uuid.uuid4()),
@@ -250,6 +299,9 @@ class CameraStore:
             created_at=_utc_now(),
             updated_at=_utc_now(),
             place_type=validate_place_type(place_type),
+            owner_user_id=(owner_user_id or "").strip(),
+            owner_username=(owner_username or "").strip(),
+            notify_email=_normalize_notify_emails(notify_email),
         )
         self.remember_custom_place(camera.place_type, place_type)
         with self._conn() as conn:
@@ -258,8 +310,9 @@ class CameraStore:
                 INSERT INTO cameras (
                     id, name, location_label, source_type, uri, enabled,
                     sample_fps, sample_interval, notes, created_at, updated_at,
-                    last_seen_at, last_error, place_type
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)
+                    last_seen_at, last_error, place_type, owner_user_id,
+                    owner_username, notify_email
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?)
                 """,
                 (
                     camera.id,
@@ -274,8 +327,25 @@ class CameraStore:
                     camera.created_at,
                     camera.updated_at,
                     camera.place_type,
+                    camera.owner_user_id,
+                    camera.owner_username,
+                    camera.notify_email,
                 ),
             )
+            if camera.owner_user_id:
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO camera_accounts
+                        (camera_id, user_id, username, created_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        camera.id,
+                        camera.owner_user_id,
+                        camera.owner_username,
+                        camera.created_at,
+                    ),
+                )
         return camera
 
     def update(
@@ -291,6 +361,9 @@ class CameraStore:
         sample_interval: Optional[float] = None,
         notes: Optional[str] = None,
         place_type: Optional[str] = None,
+        owner_user_id: Optional[str] = None,
+        owner_username: Optional[str] = None,
+        notify_email: Optional[str] = None,
         clear_interval: bool = False,
     ) -> Camera:
         existing = self.get(camera_id)
@@ -335,6 +408,21 @@ class CameraStore:
                 if place_type is None
                 else validate_place_type(place_type)
             ),
+            owner_user_id=(
+                existing.owner_user_id
+                if owner_user_id is None
+                else owner_user_id.strip()
+            ),
+            owner_username=(
+                existing.owner_username
+                if owner_username is None
+                else owner_username.strip()
+            ),
+            notify_email=(
+                existing.notify_email
+                if notify_email is None
+                else _normalize_notify_emails(notify_email)
+            ),
         )
         if place_type is not None:
             self.remember_custom_place(updated.place_type, place_type)
@@ -344,7 +432,8 @@ class CameraStore:
                 UPDATE cameras SET
                     name = ?, location_label = ?, source_type = ?, uri = ?,
                     enabled = ?, sample_fps = ?, sample_interval = ?, notes = ?,
-                    updated_at = ?, place_type = ?
+                    updated_at = ?, place_type = ?, owner_user_id = ?,
+                    owner_username = ?, notify_email = ?
                 WHERE id = ?
                 """,
                 (
@@ -358,6 +447,9 @@ class CameraStore:
                     updated.notes,
                     updated.updated_at,
                     updated.place_type,
+                    updated.owner_user_id,
+                    updated.owner_username,
+                    updated.notify_email,
                     updated.id,
                 ),
             )
@@ -399,6 +491,136 @@ class CameraStore:
         loaded = self.get(camera_id)
         assert loaded is not None
         return loaded
+
+    def list_accounts_for_camera(self, camera_id: str) -> list[dict[str, str]]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT user_id, username, created_at
+                FROM camera_accounts
+                WHERE camera_id = ?
+                ORDER BY username COLLATE NOCASE ASC
+                """,
+                (camera_id,),
+            ).fetchall()
+        return [
+            {
+                "user_id": row["user_id"],
+                "username": row["username"] or "",
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
+
+    def accounts_by_camera(self) -> dict[str, list[dict[str, str]]]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT camera_id, user_id, username, created_at
+                FROM camera_accounts
+                ORDER BY username COLLATE NOCASE ASC
+                """
+            ).fetchall()
+        out: dict[str, list[dict[str, str]]] = {}
+        for row in rows:
+            out.setdefault(row["camera_id"], []).append(
+                {
+                    "user_id": row["user_id"],
+                    "username": row["username"] or "",
+                    "created_at": row["created_at"],
+                }
+            )
+        return out
+
+    def list_camera_ids_for_user(self, user_id: str) -> list[str]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT camera_id FROM camera_accounts
+                WHERE user_id = ?
+                ORDER BY camera_id COLLATE NOCASE ASC
+                """,
+                (user_id,),
+            ).fetchall()
+        return [row["camera_id"] for row in rows]
+
+    def set_accounts_for_camera(
+        self, camera_id: str, accounts: list[tuple[str, str]]
+    ) -> list[dict[str, str]]:
+        """Replace every account linked to one camera (many accounts allowed)."""
+        if self.get(camera_id) is None:
+            raise KeyError(f"Camera not found: {camera_id}")
+        now = _utc_now()
+        unique: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        for user_id, username in accounts:
+            uid = (user_id or "").strip()
+            if not uid or uid in seen:
+                continue
+            seen.add(uid)
+            unique.append((uid, (username or "").strip()))
+        with self._conn() as conn:
+            conn.execute(
+                "DELETE FROM camera_accounts WHERE camera_id = ?", (camera_id,)
+            )
+            for user_id, username in unique:
+                conn.execute(
+                    """
+                    INSERT INTO camera_accounts
+                        (camera_id, user_id, username, created_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (camera_id, user_id, username, now),
+                )
+        self._sync_owner_columns(camera_id)
+        return self.list_accounts_for_camera(camera_id)
+
+    def set_cameras_for_user(
+        self, user_id: str, username: str, camera_ids: list[str]
+    ) -> list[str]:
+        """Attach/detach many cameras on one account (account-centric)."""
+        uid = (user_id or "").strip()
+        if not uid:
+            raise ValueError("User id is required.")
+        wanted = []
+        seen: set[str] = set()
+        for camera_id in camera_ids:
+            cid = (camera_id or "").strip()
+            if not cid or cid in seen:
+                continue
+            if self.get(cid) is None:
+                raise KeyError(f"Camera not found: {cid}")
+            seen.add(cid)
+            wanted.append(cid)
+        existing = set(self.list_camera_ids_for_user(uid))
+        now = _utc_now()
+        with self._conn() as conn:
+            conn.execute(
+                "DELETE FROM camera_accounts WHERE user_id = ?", (uid,)
+            )
+            for cid in wanted:
+                conn.execute(
+                    """
+                    INSERT INTO camera_accounts
+                        (camera_id, user_id, username, created_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (cid, uid, (username or "").strip(), now),
+                )
+        affected = existing.union(wanted)
+        for cid in affected:
+            self._sync_owner_columns(cid)
+        return self.list_camera_ids_for_user(uid)
+
+    def _sync_owner_columns(self, camera_id: str) -> None:
+        """Keep first linked account on the camera row for list/form display."""
+        accounts = self.list_accounts_for_camera(camera_id)
+        first = accounts[0] if accounts else None
+        self.update(
+            camera_id,
+            owner_user_id=first["user_id"] if first else "",
+            owner_username=first["username"] if first else "",
+        )
 
     def health(self) -> dict[str, Any]:
         cameras = self.list_cameras()
@@ -513,6 +735,9 @@ class CameraStore:
             last_seen_at=row["last_seen_at"],
             last_error=row["last_error"],
             place_type=row["place_type"] if "place_type" in row.keys() else "",
+            owner_user_id=_row_text(row, "owner_user_id"),
+            owner_username=_row_text(row, "owner_username"),
+            notify_email=_row_text(row, "notify_email"),
         )
 
 
@@ -655,7 +880,83 @@ def place_type_from_form(form: Any) -> str:
     return choice
 
 
-def camera_from_form(form: Any, *, existing: Optional[Camera] = None) -> dict[str, Any]:
+def _row_text(row: sqlite3.Row, key: str, default: str = "") -> str:
+    if key not in row.keys():
+        return default
+    value = row[key]
+    return default if value is None else str(value)
+
+
+def _normalize_notify_emails(raw: str) -> str:
+    """Store extra notify emails as a de-duplicated comma-separated list."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for part in (raw or "").replace(";", ",").split(","):
+        email = part.strip().lower()
+        if email and "@" in email and email not in seen:
+            seen.add(email)
+            out.append(email)
+    return ", ".join(out)
+
+
+def _form_list(form: Any, key: str) -> list[str]:
+    if hasattr(form, "getlist"):
+        values = form.getlist(key)
+    else:
+        raw = form.get(key) if hasattr(form, "get") else None
+        values = raw if isinstance(raw, list) else ([raw] if raw else [])
+    return [str(v).strip() for v in values if str(v).strip()]
+
+
+def linked_accounts_from_form(
+    form: Any, user_store: Any | None = None
+) -> list[tuple[str, str]]:
+    """Resolve many console accounts from camera-form checkboxes."""
+    ids = _form_list(form, "account_user_ids")
+    if not ids:
+        one = (form.get("owner_user_id") or "").strip()
+        if one:
+            ids = [one]
+    accounts: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for uid in ids:
+        if uid in seen:
+            continue
+        seen.add(uid)
+        if user_store is None:
+            accounts.append((uid, (form.get("owner_username") or "").strip()))
+            continue
+        user = user_store.get_by_id(uid)
+        if user is None:
+            raise ValueError("Selected camera account was not found.")
+        accounts.append((user.id, user.username))
+    return accounts
+
+
+def owner_fields_from_form(form: Any, user_store: Any | None = None) -> dict[str, str]:
+    """First linked account + extra notify emails (legacy owner columns)."""
+    extra = _normalize_notify_emails(form.get("notify_email") or "")
+    accounts = linked_accounts_from_form(form, user_store)
+    if not accounts:
+        return {
+            "owner_user_id": "",
+            "owner_username": "",
+            "notify_email": extra,
+        }
+    user_id, username = accounts[0]
+    return {
+        "owner_user_id": user_id,
+        "owner_username": username,
+        "notify_email": extra,
+    }
+
+
+def camera_from_form(
+    form: Any,
+    *,
+    existing: Optional[Camera] = None,
+    user_store: Any | None = None,
+) -> dict[str, Any]:
     """Parse a Flask form into CameraStore create/update kwargs (no raw dump)."""
     payload: dict[str, Any] = {
         "name": (form.get("name") or "").strip(),
@@ -665,6 +966,7 @@ def camera_from_form(form: Any, *, existing: Optional[Camera] = None) -> dict[st
         "enabled": (form.get("enabled") or "0") == "1",
         "place_type": place_type_from_form(form),
     }
+    payload.update(owner_fields_from_form(form, user_store))
     fps_raw = (form.get("sample_fps") or "").strip()
     if fps_raw:
         payload["sample_fps"] = float(fps_raw)

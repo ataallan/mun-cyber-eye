@@ -101,6 +101,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             "RESEND_FROM", "Mun Cyber Technologies <info@muncyber.com>"
         ),
         ALERT_EMAIL_RECIPIENTS=os.getenv("ALERT_EMAIL_RECIPIENTS", ""),
+        SECURITY_ALERT_EMAIL=os.getenv("SECURITY_ALERT_EMAIL", ""),
         ALERT_WEBHOOK_URL=os.getenv("ALERT_WEBHOOK_URL", ""),
         ALERT_WEBHOOK_SECRET=os.getenv("ALERT_WEBHOOK_SECRET", ""),
         ALERT_NOTIFY_ON_CREATE=os.getenv("ALERT_NOTIFY_ON_CREATE", "1") != "0",
@@ -193,6 +194,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         resend_from=app.config.get("RESEND_FROM")
         or "Mun Cyber Technologies <info@muncyber.com>",
         email_recipients_env=app.config.get("ALERT_EMAIL_RECIPIENTS") or "",
+        security_alert_email=app.config.get("SECURITY_ALERT_EMAIL") or "",
         webhook_url=app.config.get("ALERT_WEBHOOK_URL") or "",
         webhook_secret=app.config.get("ALERT_WEBHOOK_SECRET") or "",
         max_attempts=int(app.config.get("ALERT_NOTIFY_MAX_ATTEMPTS") or 3),
@@ -200,7 +202,6 @@ def create_app(test_config: dict | None = None) -> Flask:
     )
     app.extensions["alert_store"] = store
     app.extensions["notify_config"] = notify_config
-    app.extensions["notifier"] = NotificationService(store, notify_config)
 
     user_store = UserStore(app.config["AUTH_DB_PATH"])
     _seed_env_users(user_store, app.config)
@@ -210,6 +211,12 @@ def create_app(test_config: dict | None = None) -> Flask:
     if app.config.get("SEED_DEMO_CAMERAS", True):
         camera_store.seed_demo_cameras(root)
     app.extensions["camera_store"] = camera_store
+    app.extensions["notifier"] = NotificationService(
+        store,
+        notify_config,
+        camera_store=camera_store,
+        user_store=user_store,
+    )
 
     from alerts.schema import category_display_name
 

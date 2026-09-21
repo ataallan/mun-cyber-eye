@@ -5,7 +5,7 @@ Local operator accounts for the Flask console. **AI detects and alerts. Humans v
 ## Sign-in options
 
 1. **Create account** at `/register` (also `/create-account`) — new users receive the `operator` role.
-2. **Bootstrap admin** from `.env`: `ADMIN_USERNAME` / `ADMIN_PASSWORD` (defaults `operator` / `changeme`). On first boot the app inserts that user into SQLite (or syncs the password when `ADMIN_SYNC_PASSWORD=1`, the prototype default). Optional `OPERATOR_USERNAME` / `OPERATOR_PASSWORD` is seeded the same way as an `operator`.
+2. **Bootstrap admin** from `.env`: `ADMIN_USERNAME` / `ADMIN_PASSWORD` (defaults `operator` / `changeme`) and **`ADMIN_EMAIL`** (default `{ADMIN_USERNAME}@localhost`). On first boot the app inserts that user into SQLite (or syncs the password and email when `ADMIN_SYNC_PASSWORD=1`, the prototype default). Optional `OPERATOR_USERNAME` / `OPERATOR_PASSWORD` / `OPERATOR_EMAIL` is seeded the same way as an `operator`. Alert notify prefers each user’s optional `security_email`, then login email.
 
 Login checks the hashed password in the `users` table. After seed, the database is the source of truth. Session keys remain `user` (username) and `role`.
 
@@ -30,7 +30,11 @@ Optional Resend delivery uses `RESEND_API_KEY` and `RESEND_FROM` (`alerts/notify
 
 ## Data
 
-`users` lives in `AUTH_DB_PATH` (default `data/auth.db`), separate from the Phase 4-style operators email directory and from `alerts`. Fields: `id`, `username`, `email`, `password_hash` (Werkzeug), `role` (`admin` \| `operator`), `active`, `created_at`, `reset_token`, `reset_expires`.
+`users` lives in `AUTH_DB_PATH` (default `data/auth.db`), separate from the Phase 4-style operators email directory and from `alerts`. Fields: `id`, `username`, `email`, `password_hash` (Werkzeug), `role` (`admin` \| `operator`), `active`, `created_at`, `reset_token`, `reset_expires`, `security_email` (optional alert address).
+
+Register collects login email and optional security email. Seeded admin login email is `ADMIN_EMAIL`. Attach cameras on **My cameras** / **Accounts**. A linked account with no security or login email is skipped on notify — see [CAMERA_OWNER_NOTIFY.md](CAMERA_OWNER_NOTIFY.md).
+
+Optional site fallback (not a personal inbox): `SECURITY_ALERT_EMAIL` (default empty). Used only when no camera account and no signed-in user apply.
 
 ## Safety
 

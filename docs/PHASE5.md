@@ -39,6 +39,9 @@ SQLite (`CAMERA_DB_PATH`, default `data/cameras.db`):
 | `sample_fps` | Target sample rate |
 | `sample_interval` | Optional seconds between samples (overrides FPS) |
 | `notes` | Authorization scope, SOP, secret name |
+| `owner_user_id` / `owner_username` | Display of the first linked account (source of truth is `camera_accounts`) |
+| `notify_email` | Optional extra notify addresses for this camera only |
+| `camera_accounts` | Many-to-many camera ↔ console account links |
 | `last_seen_at` | Last successful ingest |
 | `last_error` | Last honest failure (offline, timeout, missing secret, webcam refused) |
 

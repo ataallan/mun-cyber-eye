@@ -157,6 +157,15 @@ body {
   padding: 0.65rem 0.75rem;
 }
 fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 0.85rem; }
+fieldset legend { color: var(--text); font-weight: 600; padding: 0 0.35rem; }
+.checklist {
+  display: grid;
+  gap: 0.35rem;
+  max-height: 16rem;
+  overflow: auto;
+  margin-top: 0.5rem;
+}
+.checklist label.check { margin: 0; }
 .radio { display: flex; gap: 0.5rem; align-items: center; margin: 0.35rem 0; color: var(--text); }
 
 .btn {
