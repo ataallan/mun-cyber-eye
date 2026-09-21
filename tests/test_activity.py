@@ -25,7 +25,10 @@ def test_canonical_categories_include_game_dance_confrontation():
         "potential_fall",
         "potential_weapon_object",
     )
-    assert set(ACTIVITY_CATEGORIES) == {c.value for c in ActivityCategory}
+    assert set(ACTIVITY_CATEGORIES) == {
+        c.value for c in ActivityCategory if c != ActivityCategory.POTENTIAL_GUNSHOT
+    }
+    assert ActivityCategory.POTENTIAL_GUNSHOT.value not in ACTIVITY_CATEGORIES
     assert canonicalize_category("confrontation") == "potential_fight"
     assert canonicalize_category("fight") == "potential_fight"
     assert canonicalize_category("altercation") == "potential_fight"

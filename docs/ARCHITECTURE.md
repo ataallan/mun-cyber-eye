@@ -21,8 +21,9 @@ Camera registry (SQLite)  →  authorized file / RTSP / webcam / MOCK
                             ← else YOLO if installed
                             ← else honest MOCK
         ↓
-   Risk engine (risk/)      ← ordinary | game_or_play (+ optional sport_context) | dance | potential_fight | potential_fall | potential_weapon_object
-                            ← scene place_type + kit-color assists; body-aggression proxies; optional gated face assist (off by default)
+   Risk engine (risk/)      ← ordinary | game_or_play (+ optional sport_context) | dance | potential_fight | potential_fall | potential_weapon_object | potential_gunshot (video proxy, not a sklearn class)
+                            ← scene place_type + kit-color assists; optional YOLO object inventory; body-aggression proxies; optional gated face assist (off by default)
+                            ← fall manner; gunshot video proxy (audio off by default); aimed-firearm geometry; thrown-object-toward-person
         ↓
  Alert store (alerts/)      ← SQLite + structured schema + camera_id + location_label
         ↓
@@ -38,13 +39,13 @@ Camera registry (SQLite)  →  authorized file / RTSP / webcam / MOCK
 | Module | Role |
 |--------|------|
 | `ingest/` | Camera registry; file sampler; RTSP with timeout; webcam gated by `ALLOW_WEBCAM` |
-| `vision/` | Pluggable detectors (`ActivityVisionAdapter`, `YoloVisionAdapter`, `MockVisionAdapter`) plus train/eval, sports catalog, scene-place / kit assists, aggression / optional face assists |
+| `vision/` | Pluggable detectors (`ActivityVisionAdapter`, `YoloVisionAdapter`, `MockVisionAdapter`) plus train/eval, sports catalog, scene-place / kit assists, object/structure catalog + YOLO inventory, aggression / optional face assists, fall manner, gunshot video proxy, aimed-firearm geometry, thrown-object assist |
 | `risk/` | Phase 3 category labels or Phase 2 heuristics → `low` / `elevated` / `high`; sport + setting vs fight policy |
 | `alerts/` | SQLite persistence, structured payload, recipients, delivery adapters |
 | `app/` | Dark-theme Flask console for review and authorized notification |
 | `data/activity/` | Labeled train/val/test frames |
 | `data/checkpoints/` | Default `activity_demo.joblib` |
-| `docs/` | Architecture, ethics & safety, Phase 3, sports/aggression, scene context, Phase 4, Phase 5 |
+| `docs/` | Architecture, ethics & safety, Phase 3, sports/aggression, scene context, objects, gunshots/falls/aimed/thrown, Phase 4, Phase 5 |
 | `pipeline.py` | End-to-end orchestration |
 | `run.py` | Console entrypoint |
 
@@ -77,6 +78,7 @@ Phase 3 training and metrics are documented in [PHASE3.md](PHASE3.md).
 - `data/snapshots/` — JPEG frames attached to alerts  
 - `data/uploads/` — operator-supplied authorized video files (gitignored)  
 - `data/activity/` — labeled activity frames (`train` / `val` / `test`)  
+- `data/objects/` — labeled object/structure frames (sibling of activity)  
 - `data/checkpoints/activity_demo.joblib` — default activity model  
 - `data/active_checkpoint.json` — console-activated checkpoint pointer (not a secret)  
 - Paths configurable via `.env`
@@ -95,4 +97,4 @@ Phase 3 training and metrics are documented in [PHASE3.md](PHASE3.md).
 
 Phase 2 = working HITL prototype on controlled sources. Phase 3 = trainable activity categories with documented metrics and fallback. Phase 4 = structured alerts and secure notification to authorized personnel. Phase 5 = camera registry and live ingest (file / RTSP / gated webcam) that still feeds human review. Later phases add reviewer-agreement studies, controlled pilots, and lawful integrations — always with human oversight.
 
-Live ingest details: [PHASE5.md](PHASE5.md). Sports / aggression assists: [SPORTS_AND_AGGRESSION.md](SPORTS_AND_AGGRESSION.md). Scene / setting assist: [SCENE_CONTEXT.md](SCENE_CONTEXT.md).
+Live ingest details: [PHASE5.md](PHASE5.md). Sports / aggression assists: [SPORTS_AND_AGGRESSION.md](SPORTS_AND_AGGRESSION.md). Scene / setting assist: [SCENE_CONTEXT.md](SCENE_CONTEXT.md). Object / structure inventory: [OBJECTS_AND_STRUCTURES.md](OBJECTS_AND_STRUCTURES.md). Dangerous objects / use intensity: [DANGEROUS_OBJECTS.md](DANGEROUS_OBJECTS.md). Gunshots, falls, aimed firearms, thrown objects: [GUNSHOTS_AND_FALLS.md](GUNSHOTS_AND_FALLS.md).

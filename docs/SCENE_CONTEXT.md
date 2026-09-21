@@ -36,6 +36,7 @@ Priority:
 1. **Camera registry** — when an operator sets `place_type` (and a free-text `location_label` such as “North corridor”), the pipeline **stamps** that catalog id. This is the authoritative feed label.
 2. **Labeled training folders** — `scene__basketball_court/`, `game_or_play__scene__street/`, or a catalog sport folder that implies a default place (`basketball` → `basketball_court`). A lightweight color-signature index matches new frames to those folders when present.
 3. **Heuristic OpenCV proxies** (demo / MOCK) — court-color painters, street-like gray verticals, corridor vanishing-line proxy, warm indoor wash, tan courtyard. These are **synthetic**. Real CCTV will often stay `unknown`. That is intentional.
+4. **Object inventory (weak prior)** — detected catalog objects may add a **small** lean (`fridge`/`sink` → `house_interior`; `bench`/`gate` → outdoor/community) when place is still unknown. Confidence stays below the 0.50 fight-vs-play threshold so this cannot flip an alert on its own. Camera stamps still win. See [OBJECTS_AND_STRUCTURES.md](OBJECTS_AND_STRUCTURES.md).
 
 `source` on the assessment is `camera` | `folder` | `heuristic` | `none`.
 
@@ -78,9 +79,10 @@ See [SPORTS_AND_AGGRESSION.md](SPORTS_AND_AGGRESSION.md).
 ## Console
 
 - **Cameras** — optional Place type dropdown + location/venue notes. Demo file camera is stamped `gymnasium`; the RTSP stub is `street`.
-- **Run Pipeline → Last run** — `place_type`, kit cues, `sport_context`, and aggression together.
-- **Alert detail** — scene place and kit metadata in the rationale / payload.
-- **Admin train** — place dropdown and `scene__*` zip paths; inventory lists place-folder counts.
+- **Run Pipeline → Last run** — `place_type`, kit cues, `sport_context`, object/structure counts, aggression, fall manner, gunshot proxy, aimed-firearm, and thrown-object cues together.
+- **Alert detail** — scene place, kit metadata, nearby objects, fall manner, gunshot proxy, weapon use / aimed-at-person, and thrown-object cue when present.
+- **Admin train** — place dropdown and `scene__*` zip paths; inventory lists place-folder counts; **Extract frames from video** for activity, sport, place, or object class.
+- **Cameras** — unchanged except docs: object inventory is pipeline metadata, not a camera field.
 
 ## Limits (again)
 

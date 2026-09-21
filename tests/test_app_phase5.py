@@ -52,6 +52,9 @@ def test_health_reports_phase_5_and_cameras(client):
     assert data["cameras"]["total"] >= 2
     assert data["cameras"]["enabled"] >= 1
     assert data["place_catalog_size"] >= 20
+    assert data["objects_catalog_size"] >= 40
+    assert data["dangerous_objects_catalog_size"] >= 10
+    assert data["gunshot_audio_enabled"] is False
 
 
 def test_cameras_requires_auth(client):
@@ -181,6 +184,10 @@ def test_run_synthetic_shows_game_dance_without_threat_alerts(app, client):
     assert "Kit cues" in body
     assert "Body-aggression" in body
     assert "Face cue status" in body
+    assert "Fall manner" in body
+    assert "Gunshot video proxy" in body
+    assert "object_thrown_at_person" in body
+    assert "firearm_aimed_at_person" in body
     assert "disabled" in body
     categories = {a.category for a in app.extensions["alert_store"].list_alerts()}
     assert "game_or_play" not in categories

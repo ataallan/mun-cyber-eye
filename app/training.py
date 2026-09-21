@@ -11,6 +11,9 @@ import zipfile
 from pathlib import Path
 from typing import Any, Iterable
 
+import cv2
+
+from ingest.sampler import FrameSampler
 from vision.activity import inspect_checkpoint, load_checkpoint
 from vision.checkpoint_config import (
     read_active_checkpoint,
@@ -26,6 +29,16 @@ from vision.dataset import (
     parse_folder_label,
     parse_folder_tags,
 )
+from vision.dangerous_objects import (
+    describe_dangerous_dataset,
+    ensure_dangerous_tree,
+    validate_dangerous_id,
+)
+from vision.objects_catalog import (
+    describe_objects_dataset,
+    ensure_objects_tree,
+    validate_object_id,
+)
 from vision.scene_context import validate_place_type
 from vision.sports_catalog import resolve_sport
 from vision.eval_activity import evaluate_checkpoint
@@ -33,12 +46,21 @@ from vision.metrics import format_metrics_report
 from vision.train_activity import train_activity_model
 
 DEMO_CHECKPOINT_NAME = "activity_demo.joblib"
+OBJECT_CHECKPOINT_DEFAULT = "objects_custom.joblib"
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024
+MAX_VIDEO_UPLOAD_BYTES = 64 * 1024 * 1024
 MAX_ZIP_MEMBERS = 400
+VIDEO_SUFFIXES = {".mp4", ".avi", ".mov", ".mkv"}
+VIDEO_EXTRACT_KINDS = ("activity", "sport", "place", "object", "dangerous")
+MAX_VIDEO_EXTRACT_FRAMES = 240
 
 
 def data_root_from_config(config: dict) -> Path:
     return Path(config["ACTIVITY_DATA_ROOT"])
+
+
+def objects_root_from_config(config: dict) -> Path:
+    return Path(config["OBJECTS_DATA_ROOT"])
 
 
 def checkpoints_dir_from_config(config: dict) -> Path:
@@ -53,6 +75,25 @@ def dataset_inventory(config: dict) -> dict:
     root = data_root_from_config(config)
     ensure_dataset_tree(root)
     return describe_dataset(root)
+
+
+def objects_inventory(config: dict) -> dict:
+    root = objects_root_from_config(config)
+    root.mkdir(parents=True, exist_ok=True)
+    return describe_objects_dataset(root)
+
+
+def dangerous_root_from_config(config: dict) -> Path:
+    return Path(
+        config.get("DANGEROUS_DATA_ROOT")
+        or Path(config["OBJECTS_DATA_ROOT"]).parent / "dangerous"
+    )
+
+
+def dangerous_inventory(config: dict) -> dict:
+    root = dangerous_root_from_config(config)
+    root.mkdir(parents=True, exist_ok=True)
+    return describe_dangerous_dataset(root)
 
 
 def list_checkpoint_files(config: dict) -> list[Path]:
@@ -333,3 +374,200 @@ def save_labeled_zip(
             "or scene__<place_type> / catalog sport folders."
         )
     return saved
+
+
+def _safe_upload_name(name: str) -> str:
+    base = Path(name or "").name
+    if not base or base in {".", ".."}:
+        raise ValueError("Invalid filename.")
+    if ".." in base.replace("\\", "/"):
+        raise ValueError(f"Rejected path traversal: {name}")
+    safe = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in base)
+    if not safe or safe.startswith("."):
+        raise ValueError(f"Invalid filename: {name}")
+    return safe
+
+
+def _assert_under(path: Path, root: Path) -> Path:
+    resolved = path.resolve()
+    root_res = root.resolve()
+    if resolved != root_res and root_res not in resolved.parents:
+        raise ValueError("Rejected path traversal outside the dataset directory.")
+    return resolved
+
+
+def resolve_label_dest(
+    config: dict,
+    *,
+    kind: str,
+    split: str,
+    category: str = "",
+    sport_context: str = "",
+    place_type: str = "",
+    object_id: str = "",
+) -> tuple[Path, str]:
+    """Return (directory, folder_label) for extracted or uploaded labels."""
+    split = (split or "train").strip().lower() or "train"
+    if split not in SPLITS:
+        raise ValueError("Split must be train, val, or test.")
+    kind = (kind or "activity").strip().lower()
+    if kind not in VIDEO_EXTRACT_KINDS:
+        raise ValueError(
+            "Kind must be activity, sport, place, object, or dangerous (catalog class)."
+        )
+    if kind == "object":
+        oid = validate_object_id(object_id)
+        root = ensure_objects_tree(objects_root_from_config(config), [oid])
+        dest = _assert_under(root / split / oid, root)
+        dest.mkdir(parents=True, exist_ok=True)
+        return dest, f"object:{oid}"
+    if kind == "dangerous":
+        oid = validate_dangerous_id(object_id)
+        root = ensure_dangerous_tree(dangerous_root_from_config(config), [oid])
+        dest = _assert_under(root / split / oid, root)
+        dest.mkdir(parents=True, exist_ok=True)
+        return dest, f"dangerous:{oid}"
+
+    if kind == "sport":
+        folder = folder_label_for_upload("game_or_play", sport_context, "")
+    elif kind == "place":
+        folder = folder_label_for_upload(category or "ordinary", "", place_type)
+    else:
+        folder = folder_label_for_upload(category, "", "")
+    root = ensure_dataset_tree(data_root_from_config(config))
+    dest = labeled_dest_folder(root, split, folder)
+    dest = _assert_under(dest, root)
+    dest.mkdir(parents=True, exist_ok=True)
+    return dest, folder
+
+
+def extract_video_frames(
+    config: dict,
+    upload,
+    *,
+    kind: str,
+    split: str = "train",
+    category: str = "",
+    sport_context: str = "",
+    place_type: str = "",
+    object_id: str = "",
+    sample_fps: float = 2.0,
+    max_frames: int = 60,
+) -> dict[str, Any]:
+    """Sample an authorized video into labeled JPEG frames via FrameSampler.
+
+    Videos are not trained on directly — the sklearn activity trainer still
+    learns from images. Frames land under data/activity/... or
+    data/objects/train/<object_id>/.
+    """
+    if upload is None or not getattr(upload, "filename", None):
+        raise ValueError("Choose an authorized mp4 / avi / mov / mkv video.")
+    raw_name = upload.filename or ""
+    safe = _safe_upload_name(raw_name)
+    suffix = Path(safe).suffix.lower()
+    if suffix not in VIDEO_SUFFIXES:
+        raise ValueError(
+            f"Unsupported video type: {safe}. Use mp4, avi, mov, or mkv."
+        )
+    payload = upload.read()
+    if not payload:
+        raise ValueError("Video file is empty.")
+    if len(payload) > MAX_VIDEO_UPLOAD_BYTES:
+        raise ValueError(
+            f"Video exceeds the {MAX_VIDEO_UPLOAD_BYTES // (1024 * 1024)} MB limit."
+        )
+
+    try:
+        fps = float(sample_fps)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Sample FPS must be a number.") from exc
+    fps = max(0.1, min(fps, 15.0))
+    try:
+        cap = int(max_frames)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Max frames must be an integer.") from exc
+    cap = max(1, min(cap, MAX_VIDEO_EXTRACT_FRAMES))
+
+    dest_dir, folder = resolve_label_dest(
+        config,
+        kind=kind,
+        split=split,
+        category=category,
+        sport_context=sport_context,
+        place_type=place_type,
+        object_id=object_id,
+    )
+
+    upload_dir = Path(config.get("UPLOAD_DIR") or dest_dir.parent)
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    video_path = upload_dir / safe
+    video_path.write_bytes(payload)
+
+    try:
+        sampler = FrameSampler(
+            video_path,
+            sample_fps=fps,
+            max_frames=cap,
+            source_label=f"authorized labeling video — {safe}",
+        )
+        written = 0
+        stem = Path(safe).stem[:40] or "frame"
+        for frame in sampler.frames():
+            name = f"{stem}_f{frame.index:05d}.jpg"
+            out = dest_dir / name
+            _assert_under(out, dest_dir.parent.parent)
+            ok = cv2.imwrite(str(out), frame.image_bgr)
+            if not ok:
+                raise ValueError(f"Failed to write sampled frame {name}.")
+            written += 1
+    except FileNotFoundError as exc:
+        raise ValueError(str(exc)) from exc
+    except RuntimeError as exc:
+        raise ValueError(str(exc) or "Unable to open the video.") from exc
+
+    if written == 0:
+        raise ValueError(
+            "No frames could be sampled from that video. "
+            "Check the file is a valid authorized clip."
+        )
+    return {
+        "frames": written,
+        "folder": folder,
+        "dest": str(dest_dir),
+        "split": split,
+        "kind": kind,
+        "sample_fps": fps,
+        "max_frames": cap,
+        "source": safe,
+    }
+
+
+def run_object_training(
+    config: dict,
+    *,
+    model_type: str = "forest",
+    output_name: str = OBJECT_CHECKPOINT_DEFAULT,
+    seed: int = 7,
+) -> tuple[Path, dict, dict]:
+    from vision.train_objects import train_object_model
+
+    if model_type not in {"forest", "logreg"}:
+        raise ValueError("Model type must be forest or logreg.")
+    dest = resolve_under_checkpoints(
+        output_name,
+        checkpoints_dir_from_config(config),
+        default_name=OBJECT_CHECKPOINT_DEFAULT,
+    )
+    if dest.name == DEMO_CHECKPOINT_NAME:
+        raise ValueError("Object training must not overwrite the activity demo checkpoint.")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        bundle, metrics = train_object_model(
+            data_root=objects_root_from_config(config),
+            output=dest,
+            model_type=model_type,
+            seed=seed,
+        )
+    except SystemExit as exc:
+        raise ValueError(str(exc) or "Object training failed.") from exc
+    return dest, metrics, bundle

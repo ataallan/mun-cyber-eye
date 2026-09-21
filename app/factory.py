@@ -76,6 +76,12 @@ def create_app(test_config: dict | None = None) -> Flask:
         ACTIVITY_DATA_ROOT=os.getenv(
             "ACTIVITY_DATA_ROOT", str(root / "data" / "activity")
         ),
+        OBJECTS_DATA_ROOT=os.getenv(
+            "OBJECTS_DATA_ROOT", str(root / "data" / "objects")
+        ),
+        DANGEROUS_DATA_ROOT=os.getenv(
+            "DANGEROUS_DATA_ROOT", str(root / "data" / "dangerous")
+        ),
         CHECKPOINTS_DIR=os.getenv(
             "CHECKPOINTS_DIR", str(root / "data" / "checkpoints")
         ),
@@ -104,6 +110,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         RESET_TOKEN_MINUTES=int(os.getenv("RESET_TOKEN_MINUTES", "45")),
         AUTH_SHOW_RESET_URL=_env_flag("AUTH_SHOW_RESET_URL", "0"),
         ENABLE_FACE_AGGRESSION=_env_flag("ENABLE_FACE_AGGRESSION", "0"),
+        ENABLE_GUNSHOT_AUDIO=_env_flag("ENABLE_GUNSHOT_AUDIO", "0"),
         ALERT_ON_INTENSE_SPORT=_env_flag("ALERT_ON_INTENSE_SPORT", "0"),
     )
     test_overrides = set(test_config or {})
@@ -116,6 +123,14 @@ def create_app(test_config: dict | None = None) -> Flask:
         if "UPLOAD_DIR" not in test_config and test_config.get("SNAPSHOT_DIR"):
             app.config["UPLOAD_DIR"] = str(
                 Path(app.config["SNAPSHOT_DIR"]).parent / "uploads"
+            )
+        if "OBJECTS_DATA_ROOT" not in test_config and test_config.get("ACTIVITY_DATA_ROOT"):
+            app.config["OBJECTS_DATA_ROOT"] = str(
+                Path(app.config["ACTIVITY_DATA_ROOT"]).parent / "objects"
+            )
+        if "DANGEROUS_DATA_ROOT" not in test_config and test_config.get("ACTIVITY_DATA_ROOT"):
+            app.config["DANGEROUS_DATA_ROOT"] = str(
+                Path(app.config["ACTIVITY_DATA_ROOT"]).parent / "dangerous"
             )
 
     def _abs(path_value: str) -> str:
@@ -133,6 +148,12 @@ def create_app(test_config: dict | None = None) -> Flask:
     )
     app.config["ACTIVITY_DATA_ROOT"] = _abs(
         app.config.get("ACTIVITY_DATA_ROOT") or str(root / "data" / "activity")
+    )
+    app.config["OBJECTS_DATA_ROOT"] = _abs(
+        app.config.get("OBJECTS_DATA_ROOT") or str(root / "data" / "objects")
+    )
+    app.config["DANGEROUS_DATA_ROOT"] = _abs(
+        app.config.get("DANGEROUS_DATA_ROOT") or str(root / "data" / "dangerous")
     )
     app.config["CHECKPOINTS_DIR"] = _abs(
         app.config.get("CHECKPOINTS_DIR") or str(root / "data" / "checkpoints")
@@ -162,6 +183,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     Path(app.config["SNAPSHOT_DIR"]).mkdir(parents=True, exist_ok=True)
     Path(app.config["UPLOAD_DIR"]).mkdir(parents=True, exist_ok=True)
     Path(app.config["ACTIVITY_DATA_ROOT"]).mkdir(parents=True, exist_ok=True)
+    Path(app.config["OBJECTS_DATA_ROOT"]).mkdir(parents=True, exist_ok=True)
     Path(app.config["CHECKPOINTS_DIR"]).mkdir(parents=True, exist_ok=True)
     Path(app.config["ACTIVE_CHECKPOINT_FILE"]).parent.mkdir(parents=True, exist_ok=True)
 

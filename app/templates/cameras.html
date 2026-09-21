@@ -3,7 +3,7 @@
 {% block content %}
 <section class="card">
   <h1>Authorized cameras</h1>
-  <p class="muted">Register only feeds you are authorized to monitor. AI detects and alerts; humans verify and decide. Offline cameras and missing credentials are reported honestly — the pipeline will not invent detections.</p>
+  <p class="muted">Register only feeds you are authorized to monitor. AI detects and alerts; humans verify and decide. Offline cameras and missing credentials are reported honestly — the pipeline will not invent detections. Home/community object inventory (when YOLO is installed) is assistive metadata on Last run / alerts; cameras themselves are unchanged.</p>
   <p class="fineprint">Webcam ingest is {{ "enabled (ALLOW_WEBCAM=1)" if allow_webcam else "refused (ALLOW_WEBCAM=0)" }}. RTSP passwords are masked here; prefer <code>env:VAR_NAME</code> secret references.</p>
 
   <div class="toolbar">

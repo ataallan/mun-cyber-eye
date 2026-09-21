@@ -1,11 +1,13 @@
-"""Combine sport, scene-place, kit, body-aggression, and optional face assists.
+"""Combine sport, scene-place, kit, body-aggression, fall, gunshot, weapon, and face assists.
 
 Single enrichment point so MOCK, YOLO, and the activity adapter share
 the same metadata contract without double-counting cues.
 
 Place type is a catalog setting (court / street / corridor / house / …),
 not recognition of a named arena. Kit cues are clothing-color clusters,
-not identity or guilt.
+not identity or guilt. Fall manner is not a medical diagnosis. Gunshot
+video proxies are not ballistic proof. Aimed-firearm geometry is not
+proof of a real gun or intent.
 """
 
 from __future__ import annotations
@@ -23,6 +25,12 @@ from vision.aggression import (
 )
 from vision.detector import Detection
 from vision.face_aggression import FaceAggressionResult, analyze_face_aggression
+from vision.fall_assist import FallAssessment, analyze_fall_manner, person_boxes_from_detections
+from vision.gunshot_assist import (
+    GunshotAssessment,
+    analyze_gunshot_proxy,
+    detections_from_gunshot,
+)
 from vision.scene_context import (
     KitCues,
     PlaceAssessment,
@@ -32,12 +40,16 @@ from vision.scene_context import (
     place_display_name,
 )
 from vision.sports_catalog import infer_sport_context, resolve_sport, sport_display_name
+from vision.throw_assist import ThrowAssessment, analyze_throw, detections_from_throw, tracks_from_detections
+from vision.weapon_assist import WeaponAssessment, analyze_weapon_use, detections_from_weapon
 
 
 @dataclass
 class AssistState:
     prev_bgr: Optional[np.ndarray] = None
     prev_motion: Optional[float] = None
+    prev_person_boxes: list = field(default_factory=list)
+    prev_object_tracks: list = field(default_factory=list)
 
 
 @dataclass
@@ -49,6 +61,10 @@ class SceneAssist:
     face: FaceAggressionResult = field(default_factory=FaceAggressionResult)
     place: PlaceAssessment = field(default_factory=PlaceAssessment)
     kit: KitCues = field(default_factory=KitCues)
+    fall: FallAssessment = field(default_factory=FallAssessment)
+    gunshot: GunshotAssessment = field(default_factory=GunshotAssessment)
+    weapon: WeaponAssessment = field(default_factory=WeaponAssessment)
+    throw: ThrowAssessment = field(default_factory=ThrowAssessment)
 
     def to_extras(self) -> dict:
         extras: dict = {
@@ -62,6 +78,21 @@ class SceneAssist:
             "place_source": self.place.source,
             "team_kit_similarity": round(float(self.kit.team_kit_similarity), 3),
             "jersey_like_colors": bool(self.kit.jersey_like_colors),
+            "fall": self.fall.to_dict(),
+            "fall_manner": self.fall.manner,
+            "fall_confidence": round(float(self.fall.confidence), 3),
+            "gunshot": self.gunshot.to_dict(),
+            "weapon": self.weapon.to_dict(),
+            "weapon_use_intensity": round(float(self.weapon.use_intensity), 3),
+            "weapon_use_tier": self.weapon.use_tier,
+            "use_intensity_label": self.weapon.use_intensity_label,
+            "weapon_class": self.weapon.weapon_class,
+            "harm_potential": self.weapon.harm_potential,
+            "weapon_id": self.weapon.weapon_id,
+            "aimed_at_person": bool(self.weapon.aimed_at_person),
+            "throw": self.throw.to_dict(),
+            "thrown_at_person": bool(self.throw.thrown_at_person),
+            "throw_confidence": round(float(self.throw.confidence), 3),
         }
         if self.sport_context:
             extras["sport_context"] = self.sport_context
@@ -138,6 +169,19 @@ def _existing_place(detections: Sequence[Detection]) -> Optional[PlaceAssessment
     return best
 
 
+def _catalog_object_ids(detections: Sequence[Detection]) -> list[str]:
+    from vision.objects_catalog import map_detector_label
+
+    ids: list[str] = []
+    for det in detections:
+        extras = det.extras or {}
+        raw = extras.get("catalog_object_id") or det.label
+        entry = map_detector_label(str(raw)) if raw else None
+        if entry is not None:
+            ids.append(entry.id)
+    return ids
+
+
 def _activity_labels(detections: Sequence[Detection]) -> set[str]:
     from vision.dataset import canonicalize_category
 
@@ -195,12 +239,14 @@ def enrich_detections(
     # then labeled folders, then heuristic. Do not invent a sports venue
     # on threat-class frames from a color wash.
     allow_heuristic = not bool(activity_labels & _THREAT_ACTIVITY)
+    object_ids = _catalog_object_ids(dets)
     if camera_place_type:
         place = infer_scene_place(
             image_bgr,
             camera_place_type=camera_place_type,
             data_root=data_root,
             allow_heuristic=False,
+            object_ids=object_ids,
         )
     else:
         place = _existing_place(dets) or infer_scene_place(
@@ -208,6 +254,7 @@ def enrich_detections(
             camera_place_type=None,
             data_root=data_root,
             allow_heuristic=allow_heuristic,
+            object_ids=object_ids,
         )
     _ = location_label  # operator free-text only; never used as a famous arena
 
@@ -218,6 +265,23 @@ def enrich_detections(
         prev_motion=state.prev_motion,
     )
     face = analyze_face_aggression(image_bgr, enabled=enable_face)
+    fall = analyze_fall_manner(
+        dets,
+        aggression=aggression,
+        prev_person_boxes=state.prev_person_boxes or None,
+    )
+    gunshot = analyze_gunshot_proxy(
+        image_bgr,
+        dets,
+        aggression=aggression,
+        prev_bgr=state.prev_bgr,
+    )
+    weapon = analyze_weapon_use(
+        dets,
+        aggression=aggression,
+        prev_tracks=state.prev_object_tracks or None,
+    )
+    thrown = analyze_throw(dets, prev_tracks=state.prev_object_tracks or None)
 
     assist = SceneAssist(
         sport_context=sport_id,
@@ -227,6 +291,10 @@ def enrich_detections(
         face=face,
         place=place,
         kit=kit,
+        fall=fall,
+        gunshot=gunshot,
+        weapon=weapon,
+        throw=thrown,
     )
     extras = assist.to_extras()
 
@@ -270,8 +338,29 @@ def enrich_detections(
             extra.extras.update(extras)
             merged.append(extra)
             existing_labels.add(extra.label.lower())
+    for extra in detections_from_gunshot(gunshot, bbox=bbox):
+        if extra.label.lower() not in existing_labels:
+            extra.extras.update(extras)
+            merged.append(extra)
+            existing_labels.add(extra.label.lower())
+    for extra in detections_from_weapon(weapon, bbox=bbox):
+        if extra.label.lower() not in existing_labels:
+            extra.extras.update(extras)
+            merged.append(extra)
+            existing_labels.add(extra.label.lower())
+    for extra in detections_from_throw(thrown, bbox=bbox):
+        if extra.label.lower() not in existing_labels:
+            extra.extras.update(extras)
+            merged.append(extra)
+            existing_labels.add(extra.label.lower())
 
     if image_bgr is not None and getattr(image_bgr, "size", 0) > 0:
         state.prev_bgr = np.array(image_bgr, copy=True)
         state.prev_motion = aggression.motion_intensity
+        boxes = person_boxes_from_detections(dets)
+        if boxes:
+            state.prev_person_boxes = boxes
+        tracks = tracks_from_detections(dets)
+        if tracks:
+            state.prev_object_tracks = tracks
     return merged, assist

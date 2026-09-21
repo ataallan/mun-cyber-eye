@@ -116,8 +116,14 @@ If YOLO is missing and no activity checkpoint loads, the app uses honest **MOCK*
 | Phase 3 activity model (OpenCV + sklearn) | Real **if** checkpoint loads |
 | Sports catalog + optional `sport_context` | Real (assistive labels / demo court proxies — not “knows most sports”) |
 | Scene place types + kit-color cues | Real (catalog + camera stamp / folders / synthetic proxies — not full scene understanding; uniforms ≠ identity) |
+| Home / community object inventory | Assistive (YOLO→catalog when ultralytics is installed; else honest `unavailable`; MOCK objects only on synthetic demo) |
 | Body-aggression OpenCV proxies | Real (motion / proximity / raised-arm; assistive) |
 | Face-expression assist | Optional, **off** (`ENABLE_FACE_AGGRESSION=0`); never identity or criminal labels |
+| Fall manner subtype | Assistive (`sudden_collapse` / `accidental_fall` / `unknown_fall` on `potential_fall`) |
+| Gunshot video proxy | Assistive (`potential_gunshot`); audio stub off (`ENABLE_GUNSHOT_AUDIO=0`) — never invents a bang |
+| Aimed firearm-like object | Assistive (`firearm_aimed_at_person`); never sport-softened; one person = brandish only |
+| Dangerous objects + use intensity | Assistive catalog (`edged` / `blunt` / `firearm_like` / `improvised`) with `none`–`possible_strike`; indicator only |
+| Thrown object toward person | Assistive (`object_thrown_at_person` / `thrown_projectile`); sport-ball pass may stay play; street brick/bottle does not |
 | Train / eval (accuracy, P/R/F1 per class) | Real (CLI + Admin → Train models) |
 | Demo activity checkpoint | Bundled (`data/checkpoints/activity_demo.joblib`, synthetic data) |
 | Ultralytics YOLO adapter | Real **if** installed |
@@ -141,8 +147,9 @@ If YOLO is missing and no activity checkpoint loads, the app uses honest **MOCK*
 | `potential_fight` | potential confrontation | Yes — human review |
 | `potential_fall` | potential fall | Yes — human review |
 | `potential_weapon_object` | potential weapon-like object | Yes — human review |
+| `potential_gunshot` | potential gunshot (video proxy) | Yes — human review (risk-engine only; not a sklearn class) |
 
-Aliases `confrontation`, `fight`, and `altercation` map to `potential_fight`. Folder names such as `game_or_play__basketball` add an optional `sport_context`. Set `ALERT_ON_GAME_OR_DANCE=1` only if operators should also be paged for game/dance predictions. Intense sport (high motion + named sport) stays log-only unless `ALERT_ON_INTENSE_SPORT=1`. Face-expression assist is off (`ENABLE_FACE_AGGRESSION=0`) and never identifies anyone. The bundled demo model is synthetic and will not generalize to real CCTV until retrained on labeled site video; it does **not** know most sports or reliably read facial aggression. See [docs/SPORTS_AND_AGGRESSION.md](docs/SPORTS_AND_AGGRESSION.md).
+Aliases `confrontation`, `fight`, and `altercation` map to `potential_fight`. Folder names such as `game_or_play__basketball` add an optional `sport_context`. Set `ALERT_ON_GAME_OR_DANCE=1` only if operators should also be paged for game/dance predictions. Intense sport (high motion + named sport) stays log-only unless `ALERT_ON_INTENSE_SPORT=1`. Face-expression assist is off (`ENABLE_FACE_AGGRESSION=0`) and never identifies anyone. Gunshot **audio** is off (`ENABLE_GUNSHOT_AUDIO=0`) and never invents a bang. Aimed-firearm and harmful thrown-object cues are not sport-softened; a sports-ball pass on a court may stay `game_or_play`. The bundled demo model is synthetic and will not generalize to real CCTV until retrained on labeled site video; it does **not** know most sports or reliably read facial aggression. See [docs/SPORTS_AND_AGGRESSION.md](docs/SPORTS_AND_AGGRESSION.md) and [docs/GUNSHOTS_AND_FALLS.md](docs/GUNSHOTS_AND_FALLS.md).
 
 ### Risk levels
 
@@ -159,9 +166,10 @@ risk/            Risk engine (model labels or heuristics)
 alerts/          SQLite store, structured schema, notify adapters
 app/             Flask console (templates, static, auth)
 data/activity/   Labeled frames (train/val/test/<category>)
+data/objects/    Labeled object/structure frames (sibling tree)
 data/checkpoints/activity_demo.joblib
 data/uploads/    Operator-supplied authorized clips (gitignored)
-docs/            ARCHITECTURE.md, ETHICS_AND_SAFETY.md, PHASE3.md, PHASE3b.md, SPORTS_AND_AGGRESSION.md, PHASE4.md, PHASE5.md
+docs/            ARCHITECTURE.md, ETHICS_AND_SAFETY.md, PHASE3.md, PHASE3b.md, SPORTS_AND_AGGRESSION.md, SCENE_CONTEXT.md, OBJECTS_AND_STRUCTURES.md, DANGEROUS_OBJECTS.md, GUNSHOTS_AND_FALLS.md, PHASE4.md, PHASE5.md
 pipeline.py      End-to-end orchestration
 run.py           Entrypoint
 tests/           pytest (risk + alerts + notify + mock + activity + cameras)
@@ -177,6 +185,9 @@ tests/           pytest (risk + alerts + notify + mock + activity + cameras)
 - [Authentication](docs/AUTH.md)
 - [Sports context and aggression assists](docs/SPORTS_AND_AGGRESSION.md)
 - [Admin model training](docs/ADMIN_TRAINING.md)
+- [Object and structure catalog](docs/OBJECTS_AND_STRUCTURES.md)
+- [Dangerous objects and use intensity](docs/DANGEROUS_OBJECTS.md)
+- [Gunshots, falls, aimed firearms, thrown objects](docs/GUNSHOTS_AND_FALLS.md)
 - [Ethics and safety](docs/ETHICS_AND_SAFETY.md)
 
 ## Mission (from proposal)

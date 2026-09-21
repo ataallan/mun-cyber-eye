@@ -617,18 +617,82 @@ def _collect_folder_signatures(
                 _collect_folder_signatures(path, buckets, depth + 1)
 
 
+OBJECT_PRIOR_CONFIDENCE = 0.46
+OBJECT_PRIOR_BUMP = 0.06
+
+
+def place_prior_from_objects(object_ids: Optional[Sequence[str]]) -> Optional[PlaceAssessment]:
+    """Weak place lean from catalog object presence.
+
+    Fridge/sink → house_interior; bench/gate → outdoor/community. Confidence
+    stays below the 0.50 policy threshold so this cannot flip fight-vs-play
+    on its own. Camera stamps and labeled folders still win.
+    """
+    from vision.objects_catalog import OBJECT_PLACE_PRIOR, map_detector_label
+
+    votes: dict[str, int] = {}
+    for raw in object_ids or []:
+        entry = map_detector_label(str(raw))
+        oid = entry.id if entry is not None else str(raw).strip().lower()
+        place = OBJECT_PLACE_PRIOR.get(oid)
+        if not place:
+            continue
+        votes[place] = votes.get(place, 0) + 1
+    if not votes:
+        return None
+    place_id = max(votes.items(), key=lambda kv: (kv[1], kv[0]))[0]
+    return PlaceAssessment(
+        place_type=place_id,
+        confidence=OBJECT_PRIOR_CONFIDENCE,
+        display=place_display_name(place_id),
+        source="objects",
+        note=(
+            "Weak prior from detected home/community objects — not proof of "
+            "the setting and not a named address. Humans verify. "
+            "Place type is a catalog setting — not a named arena or address, "
+            "and not a determination of what happened."
+        ),
+    )
+
+
+def _apply_object_place_prior(
+    assessment: PlaceAssessment,
+    object_ids: Optional[Sequence[str]],
+) -> PlaceAssessment:
+    prior = place_prior_from_objects(object_ids)
+    if prior is None:
+        return assessment
+    if assessment.place_type in {"", "unknown"} or assessment.source == "none":
+        return prior
+    if assessment.place_type == prior.place_type:
+        bumped = min(0.70, float(assessment.confidence) + OBJECT_PRIOR_BUMP)
+        return PlaceAssessment(
+            place_type=assessment.place_type,
+            confidence=bumped,
+            display=assessment.display or place_display_name(assessment.place_type),
+            source=assessment.source,
+            note=(assessment.note or "")
+            + " Object inventory gave a small same-place boost.",
+        )
+    # Conflicting objects never override camera / folder / heuristic.
+    return assessment
+
+
 def infer_scene_place(
     image_bgr: np.ndarray,
     *,
     camera_place_type: Optional[str] = None,
     data_root: str | Path | None = None,
     allow_heuristic: bool = True,
+    object_ids: Optional[Sequence[str]] = None,
 ) -> PlaceAssessment:
     """Resolve place type.
 
     When the operator set ``camera.place_type``, that stamp wins (they know
     the feed). Otherwise labeled ``scene__*`` / sport folders are tried, then
-    synthetic OpenCV proxies. Never invents a specific arena name.
+    synthetic OpenCV proxies. Detected catalog objects may add a **small**
+    home vs outdoor lean when place is still unknown. Never invents a
+    specific arena name.
     """
     note_generic = (
         "Place type is a catalog setting — not a named arena or address, "
@@ -660,10 +724,17 @@ def infer_scene_place(
                 note="Matched labeled scene / sport training folders. " + note_generic,
             )
 
+    heuristic = PlaceAssessment(
+        place_type="unknown",
+        confidence=0.0,
+        display="Unknown",
+        source="none",
+        note="No camera stamp, folder match, or distinctive heuristic. " + note_generic,
+    )
     if allow_heuristic:
         hid, hconf = infer_place_heuristic(image_bgr)
         if hid and hconf >= 0.55:
-            return PlaceAssessment(
+            heuristic = PlaceAssessment(
                 place_type=hid,
                 confidence=hconf,
                 display=place_display_name(hid),
@@ -675,13 +746,7 @@ def infer_scene_place(
                 ),
             )
 
-    return PlaceAssessment(
-        place_type="unknown",
-        confidence=0.0,
-        display="Unknown",
-        source="none",
-        note="No camera stamp, folder match, or distinctive heuristic. " + note_generic,
-    )
+    return _apply_object_place_prior(heuristic, object_ids)
 
 
 def kit_sport_confidence_boost(kit: KitCues, sport_confidence: float) -> float:

@@ -3,7 +3,7 @@
 {% block content %}
 <section class="hero">
   <h1>Model training</h1>
-  <p class="muted">Train and activate the Phase 3 activity checkpoint from labeled frames. The CLI remains available; this page is the same <code>train_activity_model</code> path without SSH.</p>
+  <p class="muted">Train and activate the Phase 3 activity checkpoint from labeled frames. Upload a video to sample JPEG frames into a label folder — videos are sampled to frames; the sklearn activity trainer still learns from images. The CLI remains available; this page is the same <code>train_activity_model</code> path without SSH.</p>
 </section>
 
 <div class="callout callout-safety" role="status">
@@ -156,6 +156,80 @@
   {% endif %}
 </section>
 
+<section class="card">
+  <h2>Object / structure catalog</h2>
+  <p class="muted">Counts from <code>{{ objects_dataset.root }}</code> (<code>data/objects/{train,val,test}/&lt;object_id&gt;/</code>). Home furniture and community structures are an assistive inventory — YOLO maps overlapping COCO labels; unlabeled ids need operator frames. The activity trainer does not learn these folders.</p>
+  {% if objects_dataset.n_images %}
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Object</th>
+        <th>Group</th>
+        {% for split in splits %}<th>{{ split }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+    {% for entry in objects %}
+      {% set total = objects_dataset.totals[entry.id] if objects_dataset.totals is defined else 0 %}
+      {% if total %}
+      <tr>
+        <td>{{ entry.display_name }} <span class="mono muted">({{ entry.id }})</span></td>
+        <td>{{ entry.group }}</td>
+        {% for split in splits %}
+        <td>{{ objects_dataset.splits[split][entry.id] if objects_dataset.splits[split] is defined else 0 }}</td>
+        {% endfor %}
+      </tr>
+      {% endif %}
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="fineprint">No labeled object frames yet. Extract a video into an object class below, or add JPEGs under <code>data/objects/train/&lt;object_id&gt;/</code>.</p>
+  {% endif %}
+  <p class="fineprint">{{ objects|length }} catalog classes
+    · {{ objects_dataset.n_classes_with_images or 0 }} with images
+    · {{ objects_dataset.n_images or 0 }} frames.
+    Runtime detection uses YOLO when installed; otherwise Last run reports <code>objects_backend=unavailable</code> and does not invent a refrigerator.</p>
+</section>
+
+<section class="card">
+  <h2>Dangerous / weapon-like catalog</h2>
+  <p class="muted">Counts from <code>{{ dangerous_dataset.root }}</code> (<code>data/dangerous/{train,val,test}/&lt;id&gt;/</code>). Separate from furniture so an idle chair is not a weapon. Use intensity is a pipeline assist, not a sklearn class. Toys, tools, and phones false-fire. Humans verify.</p>
+  {% if dangerous_dataset.n_images %}
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Class</th>
+        <th>Type</th>
+        <th>Harm</th>
+        {% for split in splits %}<th>{{ split }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+    {% for entry in dangerous_objects %}
+      {% set total = dangerous_dataset.totals[entry.id] if dangerous_dataset.totals is defined else 0 %}
+      {% if total %}
+      <tr>
+        <td>{{ entry.display_name }} <span class="mono muted">({{ entry.id }})</span></td>
+        <td>{{ entry.weapon_class }}</td>
+        <td>{{ entry.harm_potential }}</td>
+        {% for split in splits %}
+        <td>{{ dangerous_dataset.splits[split][entry.id] if dangerous_dataset.splits[split] is defined else 0 }}</td>
+        {% endfor %}
+      </tr>
+      {% endif %}
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="fineprint">No labeled dangerous-object frames yet. Extract a video into a catalog class below, or add JPEGs under <code>data/dangerous/train/&lt;id&gt;/</code>. Activity class <code>potential_weapon_object</code> is a separate six-class folder.</p>
+  {% endif %}
+  <p class="fineprint">{{ dangerous_objects|length }} catalog classes
+    · {{ dangerous_dataset.n_classes_with_images or 0 }} with images
+    · {{ dangerous_dataset.n_images or 0 }} frames.
+    Runtime use-against-person intensity is an indicator only — not proof of assault or intent.</p>
+</section>
+
 {% if last_metrics or last_eval or metric_reports %}
 <section class="card result-box">
   <h2>Latest report</h2>
@@ -193,6 +267,23 @@
       Confirm overwrite of <code>activity_demo.joblib</code> (bundled demo)
     </label>
     <button class="btn btn-primary" type="submit">Train from labeled data</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Train object model</h2>
+  <p class="muted">Optional CPU sklearn classifier on <code>data/objects/</code> frames. Needs at least two catalog classes with a few images each. Runtime inventory still prefers YOLO; this checkpoint is not used to invent objects on real uploads. Does not replace or break activity training.</p>
+  <form method="post" action="{{ url_for('main.admin_train_objects') }}" class="form">
+    <label>Model type
+      <select name="model_type">
+        <option value="forest" selected>forest (RandomForest)</option>
+        <option value="logreg">logreg (LogisticRegression)</option>
+      </select>
+    </label>
+    <label>Output filename (under <code>data/checkpoints/</code>)
+      <input type="text" name="output_name" value="objects_custom.joblib" autocomplete="off">
+    </label>
+    <button class="btn btn-ghost" type="submit">Train object model</button>
   </form>
 </section>
 
@@ -280,6 +371,101 @@
     <button class="btn btn-primary" type="submit">Upload labeled frames</button>
   </form>
 </section>
+
+<section class="card">
+  <h2>Extract frames from video</h2>
+  <p class="muted">Upload an <strong>authorized</strong> mp4 / avi / mov / mkv. The existing <code>FrameSampler</code> writes JPEGs into the chosen label folder. Videos are sampled to frames; the sklearn activity trainer still learns from images. Path traversal is rejected. Object-class frames go to <code>data/objects/train/&lt;object_id&gt;/</code>. Dangerous-object frames go to <code>data/dangerous/train/&lt;id&gt;/</code>. Activity class <code>potential_weapon_object</code> remains available under “activity class”.</p>
+  <form method="post" action="{{ url_for('main.admin_train_extract_video') }}" enctype="multipart/form-data" class="form" id="extract-video-form">
+    <label>Label kind
+      <select name="kind" id="extract-kind">
+        <option value="activity">activity class</option>
+        <option value="sport">game or play + sport</option>
+        <option value="place">scene / place type</option>
+        <option value="object">object / structure class</option>
+        <option value="dangerous">dangerous / weapon-like class</option>
+      </select>
+    </label>
+    <label id="extract-category-wrap">Activity category
+      <select name="category">
+        {% for cat in categories %}
+        <option value="{{ cat }}">{{ cat }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label id="extract-sport-wrap">Sport context
+      <select name="sport_context">
+        <option value="">choose a sport</option>
+        {% for sport in sports %}
+        <option value="{{ sport.id }}">{{ sport.display_name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label id="extract-place-wrap">Place type
+      <select name="place_type">
+        <option value="">choose a place</option>
+        {% for place in places %}
+        <option value="{{ place.id }}">{{ place.display_name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label id="extract-object-wrap">Object class
+      <select name="object_id">
+        <option value="">choose an object</option>
+        {% for entry in objects %}
+        <option value="{{ entry.id }}">{{ entry.display_name }} ({{ entry.group }})</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label id="extract-dangerous-wrap">Dangerous object
+      <select name="dangerous_id">
+        <option value="">choose a catalog class</option>
+        {% for entry in dangerous_objects %}
+        <option value="{{ entry.id }}">{{ entry.display_name }} ({{ entry.weapon_class }} · {{ entry.harm_potential }})</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Split
+      <select name="split">
+        <option value="train" selected>train</option>
+        <option value="val">val</option>
+        <option value="test">test</option>
+      </select>
+    </label>
+    <label>Sample FPS
+      <input type="number" name="sample_fps" min="0.1" max="15" step="0.1" value="2">
+    </label>
+    <label>Max frames
+      <input type="number" name="max_frames" min="1" max="240" step="1" value="60">
+    </label>
+    <label>Video file
+      <input type="file" name="video" accept="video/mp4,video/x-msvideo,video/quicktime,video/x-matroska,.mp4,.avi,.mov,.mkv" required>
+    </label>
+    <p class="fineprint">Authorized sources only. After extract, use <strong>Train from labeled data</strong> for activity classes, or <strong>Train object model</strong> when enough object images exist.</p>
+    <button class="btn btn-primary" type="submit">Extract frames from video</button>
+  </form>
+</section>
+<script>
+(function () {
+  var kind = document.getElementById("extract-kind");
+  var cat = document.getElementById("extract-category-wrap");
+  var sport = document.getElementById("extract-sport-wrap");
+  var place = document.getElementById("extract-place-wrap");
+  var obj = document.getElementById("extract-object-wrap");
+  var dang = document.getElementById("extract-dangerous-wrap");
+  function sync() {
+    var v = kind ? kind.value : "activity";
+    if (cat) cat.style.display = (v === "activity" || v === "place") ? "" : "none";
+    if (sport) sport.style.display = v === "sport" ? "" : "none";
+    if (place) place.style.display = v === "place" ? "" : "none";
+    if (obj) obj.style.display = v === "object" ? "" : "none";
+    if (dang) dang.style.display = v === "dangerous" ? "" : "none";
+  }
+  if (kind) {
+    kind.addEventListener("change", sync);
+    sync();
+  }
+})();
+</script>
 {% else %}
 <section class="card">
   <h2>Admin actions</h2>

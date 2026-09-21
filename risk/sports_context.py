@@ -78,6 +78,26 @@ class SceneContext:
     team_kit_similarity: float = 0.0
     jersey_like_colors: bool = False
     kit_note: str = ""
+    fall_manner: str = ""
+    fall_confidence: float = 0.0
+    fall_display: str = ""
+    gunshot_proxy: bool = False
+    gunshot_confidence: float = 0.0
+    gunshot_audio_status: str = "disabled"
+    aimed_at_person: bool = False
+    weapon_use_intensity: float = 0.0
+    weapon_use_tier: str = ""
+    use_intensity_label: str = ""
+    weapon_class: str = ""
+    harm_potential: str = ""
+    weapon_id: str = ""
+    weapon_cues: List[str] = field(default_factory=list)
+    thrown_at_person: bool = False
+    throw_confidence: float = 0.0
+    throw_label: str = ""
+    throw_harmful: bool = False
+    throw_sport_projectile: bool = False
+    throw_cues: List[str] = field(default_factory=list)
 
     @property
     def sports_venue(self) -> bool:
@@ -225,6 +245,100 @@ def collect_scene_context(detections: Sequence[Detection]) -> SceneContext:
             # Using it here would make sport-softening impossible whenever
             # close_proximity / rapid_motion are present.
 
+        fall = extras.get("fall") if isinstance(extras.get("fall"), dict) else extras
+        raw_manner = extras.get("fall_manner") or (
+            fall.get("fall_manner") if isinstance(fall, dict) else ""
+        )
+        if raw_manner:
+            ctx.fall_manner = str(raw_manner)
+            try:
+                ctx.fall_confidence = max(
+                    ctx.fall_confidence,
+                    float(
+                        extras.get("fall_confidence")
+                        or (fall.get("fall_confidence") if isinstance(fall, dict) else 0)
+                        or 0
+                    ),
+                )
+            except (TypeError, ValueError):
+                pass
+            ctx.fall_display = str(
+                extras.get("fall_display")
+                or (fall.get("fall_display") if isinstance(fall, dict) else "")
+                or ctx.fall_display
+            )
+
+        gunshot = extras.get("gunshot") if isinstance(extras.get("gunshot"), dict) else extras
+        if extras.get("event_type") == "possible_gunshot" or str(det.label).lower() == "possible_gunshot_video_proxy":
+            ctx.gunshot_proxy = True
+        if isinstance(gunshot, dict) and gunshot.get("video_proxy"):
+            ctx.gunshot_proxy = True
+            try:
+                ctx.gunshot_confidence = max(
+                    ctx.gunshot_confidence, float(gunshot.get("confidence") or 0)
+                )
+            except (TypeError, ValueError):
+                pass
+        if isinstance(gunshot, dict) and gunshot.get("audio_status"):
+            ctx.gunshot_audio_status = str(gunshot.get("audio_status"))
+
+        weapon = extras.get("weapon") if isinstance(extras.get("weapon"), dict) else extras
+        if extras.get("aimed_at_person") or str(det.label).lower() in {
+            "firearm_aimed_at_person",
+            "weapon_pointed_at_person",
+        }:
+            ctx.aimed_at_person = True
+        if isinstance(weapon, dict):
+            if weapon.get("aimed_at_person"):
+                ctx.aimed_at_person = True
+            try:
+                ctx.weapon_use_intensity = max(
+                    ctx.weapon_use_intensity,
+                    float(weapon.get("use_intensity") or extras.get("weapon_use_intensity") or 0),
+                )
+            except (TypeError, ValueError):
+                pass
+            ctx.weapon_use_tier = str(
+                weapon.get("use_tier") or extras.get("weapon_use_tier") or ctx.weapon_use_tier
+            )
+            ctx.use_intensity_label = str(
+                weapon.get("use_intensity_label")
+                or extras.get("use_intensity_label")
+                or ctx.use_intensity_label
+            )
+            ctx.weapon_class = str(
+                weapon.get("weapon_class") or extras.get("weapon_class") or ctx.weapon_class
+            )
+            ctx.harm_potential = str(
+                weapon.get("harm_potential") or extras.get("harm_potential") or ctx.harm_potential
+            )
+            ctx.weapon_id = str(
+                weapon.get("weapon_id") or extras.get("weapon_id") or ctx.weapon_id
+            )
+            extra_wc = weapon.get("cues") or []
+            if isinstance(extra_wc, (list, tuple)):
+                ctx.weapon_cues.extend(str(c) for c in extra_wc)
+
+        thrown = extras.get("throw") if isinstance(extras.get("throw"), dict) else extras
+        if extras.get("thrown_at_person") or str(det.label).lower() == "object_thrown_at_person":
+            ctx.thrown_at_person = True
+        if isinstance(thrown, dict) and thrown.get("thrown_at_person"):
+            ctx.thrown_at_person = True
+            try:
+                ctx.throw_confidence = max(
+                    ctx.throw_confidence, float(thrown.get("confidence") or 0)
+                )
+            except (TypeError, ValueError):
+                pass
+            ctx.throw_label = str(thrown.get("object_label") or ctx.throw_label)
+            ctx.throw_harmful = bool(thrown.get("harmful") or ctx.throw_harmful)
+            ctx.throw_sport_projectile = bool(
+                thrown.get("sport_projectile") or ctx.throw_sport_projectile
+            )
+            extra_tc = thrown.get("cues") or []
+            if isinstance(extra_tc, (list, tuple)):
+                ctx.throw_cues.extend(str(c) for c in extra_tc)
+
     # de-dupe cues, keep order
     seen: set[str] = set()
     ordered: list[str] = []
@@ -244,13 +358,15 @@ def collect_scene_context(detections: Sequence[Detection]) -> SceneContext:
 def should_soften_fight(ctx: SceneContext) -> bool:
     """True when sport / sports-venue context should suppress fight heuristics.
 
-    Soften when sport_context is at least decent **and** body-aggression
-    is not high. A strong sports venue plus a named sport softens more
-    readily. Street play still softens unless aggression is extreme.
-    Strong aggression during sport is handled as intense play
-    (stay game_or_play) rather than a heuristic fight alert — except
-    street + extreme aggression, which leans fight for human review.
+    Aimed-at-person firearm cues are never softened (unlike a bat on a field
+    at low use-intensity).
     """
+    if ctx.aimed_at_person or ctx.gunshot_proxy:
+        return False
+    if ctx.use_intensity_label == "possible_strike" and ctx.weapon_class:
+        return False
+    if ctx.thrown_at_person and ctx.throw_harmful and not ctx.throw_sport_projectile:
+        return False
     if ctx.street_setting and ctx.sport_context and ctx.aggression_very_high:
         return False
     if ctx.sports_venue and ctx.sport_context and not ctx.aggression_very_high:

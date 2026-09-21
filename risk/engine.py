@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Optional, Sequence
 
+from vision.dangerous_objects import detector_signal_labels, weapon_should_soften_sport
 from vision.dataset import canonicalize_category
 from vision.detector import Detection
 
@@ -29,6 +30,7 @@ class ActivityCategory(str, Enum):
     POTENTIAL_FIGHT = "potential_fight"
     POTENTIAL_FALL = "potential_fall"
     POTENTIAL_WEAPON_OBJECT = "potential_weapon_object"
+    POTENTIAL_GUNSHOT = "potential_gunshot"
 
 
 # ordinary / game / dance are log-only unless ALERT_ON_GAME_OR_DANCE is enabled
@@ -67,6 +69,22 @@ class RiskResult:
     team_kit_similarity: float = 0.0
     jersey_like_colors: bool = False
     kit_note: str = ""
+    fall_manner: str = ""
+    fall_confidence: float = 0.0
+    fall_display: str = ""
+    gunshot_proxy: bool = False
+    gunshot_confidence: float = 0.0
+    gunshot_audio_status: str = "disabled"
+    aimed_at_person: bool = False
+    weapon_use_intensity: float = 0.0
+    weapon_use_tier: str = ""
+    use_intensity_label: str = ""
+    weapon_class: str = ""
+    harm_potential: str = ""
+    weapon_id: str = ""
+    thrown_at_person: bool = False
+    throw_confidence: float = 0.0
+    throw_label: str = ""
 
 
 def _env_flag(name: str, default: str = "0") -> bool:
@@ -104,17 +122,8 @@ class RiskEngine:
         "aggressive_motion",
     }
     FALL_SIGNALS = {"person_down", "horizontal_pose", "fall"}
-    WEAPON_SIGNALS = {
-        "knife",
-        "gun",
-        "firearm",
-        "pistol",
-        "rifle",
-        "raised_object",
-        "suspicious_object",
-        "scissors",
-        "baseball bat",
-    }
+    WEAPON_SIGNALS = detector_signal_labels()
+    GUNSHOT_SIGNALS = {"possible_gunshot_video_proxy", "potential_gunshot"}
 
     def assess(self, detections: Sequence[Detection]) -> RiskResult:
         labels = [d.label.lower() for d in detections]
@@ -124,6 +133,21 @@ class RiskEngine:
             key = d.label.lower()
             conf_by_label[key] = max(conf_by_label.get(key, 0.0), d.confidence)
         ctx = collect_scene_context(detections)
+
+        # Aimed firearm-like object toward a person: never sport-softened.
+        if ctx.aimed_at_person:
+            return self._stamp(self._aimed_firearm_alert(ctx, detections), ctx)
+
+        gunshot_hits = set(labels) & self.GUNSHOT_SIGNALS
+        if ctx.gunshot_proxy or gunshot_hits:
+            conf = max(
+                ctx.gunshot_confidence,
+                self._avg_conf(conf_by_label, gunshot_hits, floor=0.4) if gunshot_hits else 0.4,
+            )
+            return self._stamp(self._gunshot_alert(conf, ctx), ctx)
+
+        if ctx.thrown_at_person and not self._throw_softens(ctx):
+            return self._stamp(self._thrown_alert(ctx), ctx)
 
         # Phase 3: explicit activity-category detections (and aliases) take priority.
         activity_hits: list[tuple[Detection, ActivityCategory]] = []
@@ -148,24 +172,22 @@ class RiskEngine:
         weapon_hits = label_set & self.WEAPON_SIGNALS
         people = [d for d in detections if d.label.lower() == "person"]
 
-        # Priority: weapon-object > fight > fall > ordinary
-        if weapon_hits:
-            conf = self._avg_conf(conf_by_label, weapon_hits, floor=0.55)
-            level = RiskLevel.HIGH if conf >= 0.65 else RiskLevel.ELEVATED
-            return self._stamp(
-                RiskResult(
-                    category=ActivityCategory.POTENTIAL_WEAPON_OBJECT,
-                    risk_level=level,
-                    confidence=round(conf, 3),
-                    rationale=(
-                        "Possible weapon-like or dangerous object indicators detected. "
-                        "Requires human verification — not a determination of weapon possession."
+        # Priority: weapon-object (unless sport-bat low intensity) > fight > fall
+        if weapon_hits or self._weapon_present(ctx):
+            if not self._weapon_sport_softens(ctx):
+                conf = self._avg_conf(conf_by_label, weapon_hits, floor=0.55) if weapon_hits else max(
+                    ctx.weapon_use_intensity, 0.55
+                )
+                if ctx.use_intensity_label == "possible_strike" or ctx.aimed_at_person:
+                    conf = max(conf, 0.78)
+                return self._stamp(
+                    self._dangerous_object_alert(
+                        ctx,
+                        sorted(weapon_hits | {p.label for p in people} | {ctx.weapon_id or ""} - {""}),
+                        confidence=conf,
                     ),
-                    contributing_labels=sorted(weapon_hits | {p.label for p in people}),
-                    should_alert=True,
-                ),
-                ctx,
-            )
+                    ctx,
+                )
 
         fight_pattern = len(fight_hits) >= 2 or (
             "strike_motion" in fight_hits and len(people) >= 2
@@ -235,6 +257,7 @@ class RiskEngine:
                     rationale=(
                         "Pose/orientation indicators consistent with a potential fall or "
                         "person down. Human verification required."
+                        + self._fall_manner_suffix(ctx)
                     ),
                     contributing_labels=sorted(fall_hits | {p.label for p in people}),
                     should_alert=True,
@@ -295,6 +318,12 @@ class RiskEngine:
             ) + "."
 
         if category == ActivityCategory.GAME_OR_PLAY:
+            if ctx.aimed_at_person:
+                return self._aimed_firearm_alert(ctx, [])
+            if ctx.thrown_at_person and not self._throw_softens(ctx):
+                return self._thrown_alert(ctx)
+            if self._weapon_present(ctx) and not self._weapon_sport_softens(ctx):
+                return self._dangerous_object_alert(ctx, [category.value])
             return self._combine_game_and_aggression(conf, score_txt, ctx)
 
         if (
@@ -337,11 +366,19 @@ class RiskEngine:
             )
 
         if category == ActivityCategory.POTENTIAL_WEAPON_OBJECT:
-            level = RiskLevel.HIGH if conf >= 0.65 else RiskLevel.ELEVATED
+            if self._weapon_sport_softens(ctx):
+                return self._sport_vs_fight(
+                    confidence=max(conf, ctx.sport_confidence, 0.5),
+                    labels=[category.value, ctx.sport_context or "game_or_play"],
+                    context=ctx,
+                    score_txt=score_txt,
+                )
+            level = RiskLevel.HIGH if conf >= 0.65 or ctx.use_intensity_label == "possible_strike" else RiskLevel.ELEVATED
             rationale = (
                 "Phase 3 activity model flagged a potential weapon-like or dangerous "
                 "object pattern. Requires human verification — not a determination "
                 "of weapon possession."
+                + self._weapon_suffix(ctx)
                 + score_txt
             )
         elif category == ActivityCategory.POTENTIAL_FIGHT:
@@ -359,6 +396,7 @@ class RiskEngine:
                 "Phase 3 activity model flagged pose/orientation patterns "
                 "consistent with a potential fall or person down. Human "
                 "verification required."
+                + self._fall_manner_suffix(ctx)
                 + score_txt
             )
 
@@ -625,6 +663,169 @@ class RiskEngine:
             "No alert queued. Human operators may still review the live source."
         )
 
+    def _weapon_present(self, ctx: SceneContext) -> bool:
+        if ctx.aimed_at_person:
+            return True
+        if ctx.weapon_id and ctx.use_intensity_label and ctx.use_intensity_label != "none":
+            return True
+        return bool(ctx.weapon_class and ctx.weapon_use_intensity > 0)
+
+    def _weapon_sport_softens(self, ctx: SceneContext) -> bool:
+        return weapon_should_soften_sport(
+            weapon_id=ctx.weapon_id or "",
+            sport_context=ctx.sport_context,
+            sports_venue=ctx.sports_venue,
+            sport_decent=ctx.sport_decent,
+            use_intensity=ctx.weapon_use_intensity,
+            use_intensity_label=ctx.use_intensity_label or "",
+            aimed_at_person=ctx.aimed_at_person,
+            gunshot_proxy=ctx.gunshot_proxy,
+        )
+
+    def _dangerous_object_alert(
+        self,
+        ctx: SceneContext,
+        labels: list[str],
+        confidence: Optional[float] = None,
+    ) -> RiskResult:
+        conf = max(
+            0.55,
+            float(confidence or 0),
+            ctx.weapon_use_intensity,
+        )
+        high = (
+            ctx.harm_potential == "high"
+            or ctx.use_intensity_label in {"possible_strike", "threatening_motion"}
+            or ctx.aimed_at_person
+            or conf >= 0.65
+        )
+        what = ctx.weapon_id or "dangerous object"
+        klass = ctx.weapon_class or "unknown"
+        harm = ctx.harm_potential or "unknown"
+        intensity_label = ctx.use_intensity_label or ctx.weapon_use_tier or "none"
+        return RiskResult(
+            category=ActivityCategory.POTENTIAL_WEAPON_OBJECT,
+            risk_level=RiskLevel.HIGH if high else RiskLevel.ELEVATED,
+            confidence=round(min(0.95, conf), 3),
+            rationale=(
+                f"Possible weapon-like or dangerous object ({what}, class {klass}, "
+                f"harm_potential {harm}). Use-against-person intensity "
+                f"{ctx.weapon_use_intensity:.2f} ({intensity_label}) — indicator only, "
+                "not proof of assault or intent. Toys, tools, and phones false-fire. "
+                "Requires human verification — not a determination of weapon possession."
+                + self._weapon_suffix(ctx)
+            ),
+            contributing_labels=sorted({lab for lab in labels if lab}),
+            should_alert=True,
+        )
+
+    def _throw_softens(self, ctx: SceneContext) -> bool:
+        from vision.throw_assist import ThrowAssessment, throw_should_soften
+
+        assessment = ThrowAssessment(
+            thrown_at_person=ctx.thrown_at_person,
+            confidence=ctx.throw_confidence,
+            harmful=ctx.throw_harmful,
+            sport_projectile=ctx.throw_sport_projectile,
+        )
+        return throw_should_soften(
+            assessment,
+            sport_context=ctx.sport_context,
+            sports_venue=ctx.sports_venue,
+            aimed_at_person=ctx.aimed_at_person,
+            aggression_high=ctx.aggression_high,
+            confrontation_setting=ctx.confrontation_setting
+            or ctx.strong_confrontation_setting,
+        )
+
+    def _aimed_firearm_alert(
+        self, ctx: SceneContext, detections: Sequence[Detection]
+    ) -> RiskResult:
+        labels = sorted({d.label.lower() for d in detections})
+        return RiskResult(
+            category=ActivityCategory.POTENTIAL_WEAPON_OBJECT,
+            risk_level=RiskLevel.HIGH,
+            confidence=round(max(0.78, ctx.weapon_use_intensity, 0.7), 3),
+            rationale=(
+                "Possible firearm-like object pointed toward a person — verify. "
+                "Not proof of a real firearm or intent. "
+                "Sport context does not suppress this cue. Humans must review. "
+                "The system does not enforce or dispatch."
+            ),
+            contributing_labels=labels,
+            should_alert=True,
+        )
+
+    def _gunshot_alert(self, confidence: float, ctx: SceneContext) -> RiskResult:
+        conf = max(0.36, min(0.85, float(confidence) or ctx.gunshot_confidence or 0.4))
+        level = RiskLevel.HIGH if conf >= 0.55 else RiskLevel.ELEVATED
+        return RiskResult(
+            category=ActivityCategory.POTENTIAL_GUNSHOT,
+            risk_level=level,
+            confidence=round(conf, 3),
+            rationale=(
+                "Possible gunshot video proxy (localized flash / dive / firearm-like "
+                "object) — verify, not a confirmed gunshot. Not forensic ballistic "
+                "proof. Fireworks, reflections, and camera artifacts false-fire. "
+                f"Audio status: {ctx.gunshot_audio_status or 'disabled'}. "
+                "Humans review. The system does not dispatch or enforce."
+            ),
+            contributing_labels=["possible_gunshot_video_proxy"],
+            should_alert=True,
+        )
+
+    def _thrown_alert(self, ctx: SceneContext) -> RiskResult:
+        conf = max(0.45, float(ctx.throw_confidence) or 0.5)
+        level = RiskLevel.HIGH if ctx.throw_harmful or conf >= 0.65 else RiskLevel.ELEVATED
+        what = ctx.throw_label or "object"
+        return RiskResult(
+            category=ActivityCategory.POTENTIAL_WEAPON_OBJECT,
+            risk_level=level,
+            confidence=round(conf, 3),
+            rationale=(
+                f"Possible object thrown toward a person ({what}) — verify. "
+                "Not proof of assault. Distinct from an aimed firearm and from a "
+                "static brandish. Humans must review. No enforcement."
+            ),
+            contributing_labels=sorted(
+                {"object_thrown_at_person", what} | set(ctx.throw_cues)
+            ),
+            should_alert=True,
+        )
+
+    @staticmethod
+    def _fall_manner_suffix(ctx: SceneContext) -> str:
+        if not ctx.fall_manner:
+            return (
+                " Fall manner unknown (weak cues). Vision cannot medically "
+                "diagnose syncope vs assault vs trip."
+            )
+        display = ctx.fall_display or ctx.fall_manner.replace("_", " ")
+        return (
+            f" Fall manner assist: {display} "
+            f"(confidence {ctx.fall_confidence:.2f}). Not a medical diagnosis "
+            "of syncope, assault, or a trip."
+        )
+
+    @staticmethod
+    def _weapon_suffix(ctx: SceneContext) -> str:
+        bits = []
+        if ctx.aimed_at_person:
+            bits.append(" Aimed-at-person cue is present.")
+        if ctx.thrown_at_person:
+            bits.append(" Thrown-object-toward-person cue is present.")
+        if ctx.weapon_use_tier or ctx.use_intensity_label:
+            bits.append(
+                f" Use intensity {ctx.weapon_use_intensity:.2f} "
+                f"({ctx.use_intensity_label or ctx.weapon_use_tier})."
+            )
+        if ctx.weapon_class:
+            bits.append(
+                f" Weapon class {ctx.weapon_class}, harm_potential "
+                f"{ctx.harm_potential or 'unknown'}."
+            )
+        return "".join(bits)
+
     @staticmethod
     def _stamp(result: RiskResult, ctx: SceneContext) -> RiskResult:
         result.sport_context = ctx.sport_context
@@ -641,6 +842,22 @@ class RiskEngine:
         result.team_kit_similarity = ctx.team_kit_similarity
         result.jersey_like_colors = ctx.jersey_like_colors
         result.kit_note = ctx.kit_note
+        result.fall_manner = ctx.fall_manner
+        result.fall_confidence = ctx.fall_confidence
+        result.fall_display = ctx.fall_display
+        result.gunshot_proxy = ctx.gunshot_proxy
+        result.gunshot_confidence = ctx.gunshot_confidence
+        result.gunshot_audio_status = ctx.gunshot_audio_status
+        result.aimed_at_person = ctx.aimed_at_person
+        result.weapon_use_intensity = ctx.weapon_use_intensity
+        result.weapon_use_tier = ctx.weapon_use_tier
+        result.use_intensity_label = ctx.use_intensity_label
+        result.weapon_class = ctx.weapon_class
+        result.harm_potential = ctx.harm_potential
+        result.weapon_id = ctx.weapon_id
+        result.thrown_at_person = ctx.thrown_at_person
+        result.throw_confidence = ctx.throw_confidence
+        result.throw_label = ctx.throw_label
         return result
 
     @staticmethod

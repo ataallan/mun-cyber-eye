@@ -23,6 +23,7 @@ from ingest.errors import IngestError
 from ingest.sampler import FrameSampler, SampledFrame
 from ingest.source import iter_camera_frames
 from risk.engine import RiskEngine
+from vision.object_inventory import collect_object_inventory, merge_inventory_detections
 from vision.assists import AssistState, enrich_detections
 from vision.detector import Detection, VisionAdapter, create_adapter
 
@@ -49,6 +50,24 @@ class FrameAssessment:
     place_source: str = "none"
     team_kit_similarity: float = 0.0
     jersey_like_colors: bool = False
+    objects_seen: list[dict] = field(default_factory=list)
+    objects_backend: str = "unavailable"
+    fall_manner: str = ""
+    fall_confidence: float = 0.0
+    fall_display: str = ""
+    gunshot_proxy: bool = False
+    gunshot_confidence: float = 0.0
+    gunshot_audio_status: str = "disabled"
+    aimed_at_person: bool = False
+    weapon_use_intensity: float = 0.0
+    weapon_use_tier: str = ""
+    use_intensity_label: str = ""
+    weapon_class: str = ""
+    harm_potential: str = ""
+    weapon_id: str = ""
+    thrown_at_person: bool = False
+    throw_label: str = ""
+    throw_confidence: float = 0.0
 
 
 @dataclass
@@ -62,6 +81,9 @@ class PipelineResult:
     error: Optional[str] = None
     category_counts: Dict[str, int] = field(default_factory=dict)
     assessments: List[FrameAssessment] = field(default_factory=list)
+    objects_backend: str = "unavailable"
+    object_counts: Dict[str, int] = field(default_factory=dict)
+    objects_note: str = ""
 
 
 class CyberEyePipeline:
@@ -77,6 +99,7 @@ class CyberEyePipeline:
         correlation_id: Optional[str] = None,
         activity_data_root: Optional[str | Path] = None,
         camera_place_type: Optional[str] = None,
+        object_mode: Optional[str] = None,
     ) -> None:
         self.store = store
         self.adapter = adapter or create_adapter()
@@ -91,6 +114,7 @@ class CyberEyePipeline:
             activity_data_root or os.getenv("ACTIVITY_DATA_ROOT", "data/activity")
         )
         self.camera_place_type = camera_place_type or ""
+        self.object_mode = (object_mode or os.getenv("OBJECTS_BACKEND", "auto")).strip().lower()
 
     def run_video(
         self,
@@ -169,9 +193,22 @@ class CyberEyePipeline:
         category_counts: Counter[str] = Counter()
         run_correlation = self.correlation_id or str(uuid.uuid4())
         assist_state = AssistState()
+        object_counts: Counter[str] = Counter()
+        objects_backend = "unavailable"
+        objects_note = ""
         for frame in frame_iter:
             count += 1
             detections = self.adapter.detect(frame.image_bgr, frame_index=frame.index)
+            inventory = collect_object_inventory(
+                frame.image_bgr,
+                detections,
+                frame_index=frame.index,
+                mode=self.object_mode,
+                adapter_name=getattr(self.adapter, "name", "") or "",
+            )
+            objects_backend = inventory.backend
+            objects_note = inventory.note
+            detections = merge_inventory_detections(detections, inventory)
             stamp_place = (
                 camera_place_type
                 if camera_place_type is not None
@@ -189,6 +226,9 @@ class CyberEyePipeline:
             )
             risk = self.engine.assess(detections)
             category_counts[risk.category.value] += 1
+            frame_objects = [obj.to_dict() for obj in inventory.objects]
+            for obj in inventory.objects:
+                object_counts[obj.object_id] += 1
             assessments.append(
                 FrameAssessment(
                     frame_index=frame.index,
@@ -207,6 +247,24 @@ class CyberEyePipeline:
                     place_source=risk.place_source or "none",
                     team_kit_similarity=risk.team_kit_similarity,
                     jersey_like_colors=bool(risk.jersey_like_colors),
+                    objects_seen=frame_objects,
+                    objects_backend=inventory.backend,
+                    fall_manner=risk.fall_manner or "",
+                    fall_confidence=risk.fall_confidence,
+                    fall_display=risk.fall_display or "",
+                    gunshot_proxy=bool(risk.gunshot_proxy),
+                    gunshot_confidence=risk.gunshot_confidence,
+                    gunshot_audio_status=risk.gunshot_audio_status or "disabled",
+                    aimed_at_person=bool(risk.aimed_at_person),
+                    weapon_use_intensity=risk.weapon_use_intensity,
+                    weapon_use_tier=risk.weapon_use_tier or "",
+                    use_intensity_label=risk.use_intensity_label or "",
+                    weapon_class=risk.weapon_class or "",
+                    harm_potential=risk.harm_potential or "",
+                    weapon_id=risk.weapon_id or "",
+                    thrown_at_person=bool(risk.thrown_at_person),
+                    throw_label=risk.throw_label or "",
+                    throw_confidence=risk.throw_confidence,
                 )
             )
 
@@ -275,6 +333,44 @@ class CyberEyePipeline:
             )
             if scores:
                 metadata["activity_scores"] = scores
+            metadata["objects_backend"] = inventory.backend
+            if frame_objects:
+                metadata["objects"] = frame_objects
+            elif inventory.backend == "unavailable":
+                metadata["objects"] = []
+                metadata["objects_note"] = inventory.note
+            if risk.fall_manner or risk.category == "potential_fall":
+                metadata["fall_manner"] = risk.fall_manner or "unknown_fall"
+                metadata["fall_confidence"] = risk.fall_confidence
+                metadata["fall_display"] = risk.fall_display
+            metadata["gunshot"] = {
+                "video_proxy": bool(risk.gunshot_proxy),
+                "confidence": risk.gunshot_confidence,
+                "audio_status": risk.gunshot_audio_status or "disabled",
+            }
+            if risk.aimed_at_person or risk.weapon_use_tier or risk.weapon_id or risk.weapon_class:
+                metadata["weapon"] = {
+                    "aimed_at_person": bool(risk.aimed_at_person),
+                    "use_intensity": risk.weapon_use_intensity,
+                    "use_intensity_label": risk.use_intensity_label or risk.weapon_use_tier,
+                    "use_tier": risk.weapon_use_tier,
+                    "weapon_class": risk.weapon_class,
+                    "harm_potential": risk.harm_potential,
+                    "weapon_id": risk.weapon_id,
+                    "cue": (
+                        "firearm_aimed_at_person"
+                        if risk.aimed_at_person
+                        else risk.use_intensity_label or risk.weapon_use_tier
+                    ),
+                }
+            if risk.thrown_at_person:
+                metadata["throw"] = {
+                    "thrown_at_person": True,
+                    "object_label": risk.throw_label,
+                    "use_tier": "thrown_projectile",
+                    "confidence": risk.throw_confidence,
+                    "cue": "object_thrown_at_person",
+                }
 
             alert = self.store.create_alert(
                 source_label=frame.source_label or source_label,
@@ -319,6 +415,9 @@ class CyberEyePipeline:
             or "",
             category_counts=dict(category_counts),
             assessments=assessments,
+            objects_backend=objects_backend,
+            object_counts=dict(object_counts),
+            objects_note=objects_note,
         )
 
     def _save_snapshot(
@@ -354,7 +453,11 @@ def demo_synthetic_run(
 
     adapter = MockVisionAdapter()
     pipeline = CyberEyePipeline(
-        store=store, adapter=adapter, notifier=notifier, snapshot_dir=snapshot_dir
+        store=store,
+        adapter=adapter,
+        notifier=notifier,
+        snapshot_dir=snapshot_dir,
+        object_mode="mock",
     )
     synthetic = []
     for i in range(frames):
@@ -511,6 +614,8 @@ def run_registered_cameras(
                     camera_id=camera.id,
                     location_label=camera.location_label,
                     error=message,
+                    objects_backend="unavailable",
+                    objects_note="Camera produced no frames; no objects invented.",
                 )
             )
     return results

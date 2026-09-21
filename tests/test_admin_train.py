@@ -81,6 +81,7 @@ def test_operator_forbidden_from_train_actions(client, app, tmp_path):
     assert ">Train models</a>" not in body
     assert "Model training" in body
     assert "Train from labeled data" not in body
+    assert "Extract frames from video" not in body
 
     denied = client.post(
         "/admin/train/run",
