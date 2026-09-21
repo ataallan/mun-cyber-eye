@@ -10,7 +10,7 @@
   {% if needs_setup %}
   <p class="muted">No accounts exist yet. <a href="{{ url_for('main.register') }}">Create the first admin account</a> with a password you choose. This product does not ship a default password.</p>
   {% else %}
-  <p class="muted">Review alerts from authorized cameras. AI detects and alerts. Humans verify and decide.</p>
+  <p class="muted">Review alerts from authorized cameras. After approval, customer accounts confirm a one-time code sent to their login email. AI detects and alerts. Humans verify and decide.</p>
   {% endif %}
   <form method="post" class="form">
     {% if next %}

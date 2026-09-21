@@ -38,16 +38,27 @@ from ingest.cameras import (
 from .auth import (
     CUSTOMER_ROLES,
     INACTIVE_LOGIN_MESSAGE,
+    LOGIN_CODE_EMAIL_NOTE,
+    LOGIN_CODE_MINUTES_DEFAULT,
+    LOGIN_CODE_RESEND_SECONDS_DEFAULT,
+    PENDING_2FA_NEXT_KEY,
     PENDING_LOGIN_MESSAGE,
+    LoginCodeCooldown,
     account_notify_email,
     approver_required,
+    begin_login_code_challenge,
+    clear_login_code_challenge,
     console_session_guard,
+    peek_demo_login_code,
     developer_required,
     guest_only,
     login_required,
+    pending_login_code_username,
     public_register_role,
     safe_next_url,
+    stash_demo_login_code,
     start_session,
+    two_factor_required_for,
     validate_email,
     validate_password,
     validate_username,
@@ -130,6 +141,162 @@ def _reset_url(token: str) -> str:
     return url_for("main.reset_password", token=token, _external=True)
 
 
+def _login_code_email(username: str, code: str, minutes: int) -> tuple[str, str]:
+    text = (
+        f"Mun Cyber Eye sign-in code\n\n"
+        f"Hello {username},\n\n"
+        f"Your one-time sign-in code is: {code}\n\n"
+        f"This code expires in {minutes} minutes and can be used once.\n"
+        "If you did not try to sign in, you can ignore this message.\n"
+        "AI detects and alerts. Humans verify and decide.\n"
+    )
+    html = (
+        f"<p>Hello {username},</p>"
+        f"<p>Your Mun Cyber Eye one-time sign-in code is:</p>"
+        f"<p style=\"font-size:1.4rem;letter-spacing:0.2em\"><strong>{code}</strong></p>"
+        f"<p>This code expires in {minutes} minutes and can be used once.</p>"
+        f"<p>If you did not try to sign in, you can ignore this message.</p>"
+        f"<p>AI detects and alerts. Humans verify and decide.</p>"
+    )
+    return html, text
+
+
+def _show_demo_login_code() -> bool:
+    return bool(
+        current_app.config.get("AUTH_SHOW_LOGIN_CODE") or current_app.testing
+    )
+
+
+def _login_code_ttl_minutes() -> int:
+    try:
+        return int(current_app.config.get("LOGIN_CODE_MINUTES", LOGIN_CODE_MINUTES_DEFAULT))
+    except (TypeError, ValueError):
+        return LOGIN_CODE_MINUTES_DEFAULT
+
+
+def _login_code_resend_seconds() -> int:
+    try:
+        return int(
+            current_app.config.get(
+                "LOGIN_CODE_RESEND_SECONDS", LOGIN_CODE_RESEND_SECONDS_DEFAULT
+            )
+        )
+    except (TypeError, ValueError):
+        return LOGIN_CODE_RESEND_SECONDS_DEFAULT
+
+
+def _challenge_user_or_redirect():
+    username = pending_login_code_username()
+    if session.get("user"):
+        return None, redirect(url_for("main.dashboard"))
+    if not username:
+        flash("Sign in with your password first.", "error")
+        return None, redirect(url_for("main.login"))
+    user = _users().get_by_username(username)
+    if user is None or not user.can_access_console():
+        clear_login_code_challenge()
+        if user is not None and not user.approved:
+            flash(PENDING_LOGIN_MESSAGE, "error")
+        else:
+            flash(INACTIVE_LOGIN_MESSAGE, "error")
+        return None, redirect(url_for("main.login"))
+    if not two_factor_required_for(user):
+        return None, _complete_console_login(user)
+    return user, None
+
+
+def _issue_login_code(user, *, resend: bool = False) -> str:
+    """Create a hashed code and try Resend. Never claim email was sent on failure.
+
+    Returns ``ok``, ``cooldown``, or ``error``.
+    """
+    minutes = _login_code_ttl_minutes()
+    try:
+        code = _users().create_login_code(
+            user.id,
+            ttl_minutes=minutes,
+            min_resend_seconds=_login_code_resend_seconds(),
+        )
+    except LoginCodeCooldown as exc:
+        flash(str(exc), "error")
+        return "cooldown"
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return "error"
+
+    current_app.logger.info(
+        "Sign-in code for %s (local demo / logs only): %s",
+        user.username,
+        code,
+    )
+
+    notify = current_app.extensions["notify_config"]
+    emailed = False
+    if notify.resend_configured:
+        html, text = _login_code_email(user.username, code, minutes)
+        ok, detail = send_resend_email(
+            api_key=notify.resend_api_key,
+            from_addr=notify.resend_from,
+            to=user.email,
+            subject="Your Mun Cyber Eye sign-in code",
+            html=html,
+            text=text,
+            user_agent=notify.user_agent,
+        )
+        if ok:
+            emailed = True
+            if resend:
+                flash(
+                    "A new sign-in code was sent to the login email on this account. "
+                    "It expires soon and can be used once.",
+                    "ok",
+                )
+            else:
+                flash(
+                    "A sign-in code was sent to the login email on this account. "
+                    "It expires soon and can be used once.",
+                    "ok",
+                )
+        else:
+            current_app.logger.error("Sign-in code email failed: %s", detail)
+            flash(
+                "Email delivery failed. A sign-in code was not emailed. "
+                f"{detail}",
+                "error",
+            )
+    else:
+        flash(
+            "Email delivery is not configured (RESEND_API_KEY). "
+            "A sign-in code was not emailed.",
+            "error",
+        )
+
+    if _show_demo_login_code():
+        stash_demo_login_code(code)
+        if not emailed:
+            flash(
+                "Local demo: a one-time sign-in code is shown below and written "
+                "to the console log.",
+                "ok",
+            )
+    elif not emailed:
+        flash(
+            "If this is a local demo, check the application console log for a "
+            "one-time sign-in code.",
+            "ok",
+        )
+    return "ok"
+
+
+def _complete_console_login(user):
+    nxt = session.get(PENDING_2FA_NEXT_KEY) or ""
+    start_session(user)
+    flash("Signed in. Alerts require human verification.", "ok")
+    if nxt.startswith("/") and not nxt.startswith("//"):
+        return redirect(nxt)
+    return redirect(safe_next_url())
+
+
 def _password_reset_email(username: str, reset_url: str, minutes: int) -> tuple[str, str]:
     text = (
         f"Mun Cyber Eye password reset\n\n"
@@ -154,11 +321,24 @@ def _password_reset_email(username: str, reset_url: str, minutes: int) -> tuple[
 @guest_only
 def login():
     needs_setup = _users().count() == 0
+    if request.method == "GET" and pending_login_code_username() and not session.get("user"):
+        return redirect(url_for("main.login_code"))
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
         user, status = _users().attempt_login(username, password)
         if status == "ok" and user:
+            if two_factor_required_for(user):
+                begin_login_code_challenge(user, safe_next_url())
+                issued = _issue_login_code(user)
+                if issued == "error":
+                    clear_login_code_challenge()
+                    return render_template(
+                        "login.html",
+                        next=request.args.get("next") or request.form.get("next") or "",
+                        needs_setup=needs_setup,
+                    )
+                return redirect(url_for("main.login_code"))
             start_session(user)
             flash("Signed in. Alerts require human verification.", "ok")
             return redirect(safe_next_url())
@@ -329,6 +509,63 @@ def reset_password():
         return redirect(url_for("main.login"))
 
     return render_template("reset_password.html", token=token, username=user.username)
+
+
+def _render_login_code(user, *, demo_login_code: str = ""):
+    minutes = _login_code_ttl_minutes()
+    return render_template(
+        "login_code.html",
+        username=user.username,
+        login_email=user.email,
+        minutes=minutes,
+        demo_login_code=demo_login_code,
+        email_note=LOGIN_CODE_EMAIL_NOTE,
+    )
+
+
+@bp.route("/login-code", methods=["GET", "POST"])
+def login_code():
+    user, bounced = _challenge_user_or_redirect()
+    if bounced is not None:
+        return bounced
+    assert user is not None
+
+    if request.method == "POST":
+        code = request.form.get("code", "")
+        try:
+            _users().verify_login_code(user.id, code)
+        except ValueError as exc:
+            message = str(exc)
+            flash(message, "error")
+            if "Sign in again" in message or "approved" in message.lower():
+                clear_login_code_challenge()
+                return redirect(url_for("main.login"))
+            return _render_login_code(user, demo_login_code=peek_demo_login_code())
+        return _complete_console_login(user)
+
+    return _render_login_code(user, demo_login_code=peek_demo_login_code())
+
+
+@bp.route("/login-code/resend", methods=["POST"])
+def resend_login_code():
+    user, bounced = _challenge_user_or_redirect()
+    if bounced is not None:
+        return bounced
+    assert user is not None
+    _issue_login_code(user, resend=True)
+    return redirect(url_for("main.login_code"))
+
+
+@bp.route("/login-code/cancel", methods=["POST"])
+def cancel_login_code():
+    username = pending_login_code_username()
+    if username:
+        found = _users().get_by_username(username)
+        if found is not None:
+            _users().clear_login_code(found.id)
+    clear_login_code_challenge()
+    flash("Sign-in code canceled. Enter your password to start again.", "ok")
+    return redirect(url_for("main.login"))
 
 
 @bp.route("/logout")

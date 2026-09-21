@@ -26,7 +26,7 @@ python run.py
 
 Open **http://127.0.0.1:5055**
 
-There is **no default password**. On a fresh install, use **Create account** — the first account becomes site admin (choose a strong password) and is auto-approved. Later accounts are operators and stay pending until a site admin or developer approves them on **Accounts**. Unapproved users cannot sign in to cameras or alerts. Site admin runs cameras and review; **Train models** is Mun Cyber developer-only (empty `DEVELOPER_*` on customer installs).
+There is **no default password**. On a fresh install, use **Create account** — the first account becomes site admin (choose a strong password) and is auto-approved. Later accounts are operators and stay pending until a site admin or developer approves them on **Accounts**. Unapproved users cannot sign in to cameras or alerts and never receive a sign-in code. After approval, customer admin/operator sign-in asks for a one-time code sent to the **login email** (`CUSTOMER_2FA_REQUIRED=1`; set `0` for local demos that skip it). Site admin runs cameras and review; **Train models** is Mun Cyber developer-only (empty `DEVELOPER_*` on customer installs; developers skip email 2FA by default).
 
 1. Create account / sign in  
 2. **Cameras** → confirm the seeded Demo Lab File camera, or add an authorized file / RTSP source  
@@ -38,7 +38,7 @@ Webcam capture stays off unless `ALLOW_WEBCAM=1`. A missing RTSP secret or dead 
 
 Without a Resend key the console still works. Delivery is marked `queued` / `undelivered` — never reported as sent.
 
-Forgot password: if `RESEND_API_KEY` and `RESEND_FROM` are set, a time-limited reset link is emailed. If they are not set, the console says email is not configured (it will not claim a message was sent). Local demos can read the reset URL from the application log, or set `AUTH_SHOW_RESET_URL=1`. Details: [docs/AUTH.md](docs/AUTH.md).
+Forgot password: if `RESEND_API_KEY` and `RESEND_FROM` are set, a time-limited reset link is emailed. If they are not set, the console says email is not configured (it will not claim a message was sent). Local demos can read the reset URL from the application log, or set `AUTH_SHOW_RESET_URL=1`. Sign-in codes after approval use the same honesty rules (`AUTH_SHOW_LOGIN_CODE=1` for local demos). Details: [docs/AUTH.md](docs/AUTH.md).
 
 ### Tests
 
