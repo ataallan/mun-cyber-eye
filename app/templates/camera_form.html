@@ -53,6 +53,26 @@
       <input type="checkbox" name="enabled" value="1" {% if not camera or camera.enabled %}checked{% endif %}>
       Enabled
     </label>
+    <fieldset>
+      <legend>Accounts linked to this camera</legend>
+      <p class="fineprint">One camera can notify many accounts. Prefer <a href="{{ url_for('main.my_cameras') }}">My cameras</a>{% if session.get('role') == 'admin' %} or admin <a href="{{ url_for('main.accounts') }}">Accounts</a>{% endif %} to attach many cameras on one account.</p>
+      {% if console_users %}
+      <div class="checklist">
+        {% for u in console_users %}
+        <label class="check">
+          <input type="checkbox" name="account_user_ids" value="{{ u.id }}" {% if u.id in (linked_account_ids or []) %}checked{% endif %}>
+          <span>{{ u.username }} · {{ u.security_email or u.email or 'no email' }}{% if not u.active %} (inactive){% endif %}</span>
+        </label>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="muted">No console users yet.</p>
+      {% endif %}
+    </fieldset>
+    <label>Extra notify emails (optional, this camera)
+      <input type="text" name="notify_email" value="{{ camera.notify_email if camera else '' }}" placeholder="security@example.com">
+    </label>
+    <p class="fineprint">Merged with linked accounts (security email or login email), the signed-in account on interactive runs, Recipients directory, and optional <code>ALERT_EMAIL_RECIPIENTS</code>. Duplicates are dropped. Never a hardcoded personal inbox.</p>
     <label>Notes
       <textarea name="notes" rows="3" placeholder="Authorization scope, site SOP, secret name…">{{ camera.notes if camera else '' }}</textarea>
     </label>

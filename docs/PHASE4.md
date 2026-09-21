@@ -14,7 +14,7 @@ Outbound email and webhooks notify authorized personnel. They do **not** lock do
 | Resend email adapter | `alerts/notify.py` (`EmailAdapter`) |
 | SIEM/SOAR webhook adapter | `alerts/notify.py` (`WebhookAdapter`) |
 | Delivery + retry log | `delivery_log` table, `NotificationService` |
-| Authorized recipients | `.env` `ALERT_EMAIL_RECIPIENTS` + `operators` table |
+| Authorized recipients | Linked **camera accounts** (security or login email) + optional Recipients / `ALERT_EMAIL_RECIPIENTS` + optional `SECURITY_ALERT_EMAIL` fallback |
 | Alert detail + resend | `app/templates/alert_detail.html` |
 | Recipient management UI | `/recipients` (admin / operator) |
 | Tests | `tests/test_alert_schema.py`, `tests/test_notify.py`, `tests/test_delivery.py`, `tests/test_app_phase4.py` |
@@ -72,12 +72,16 @@ Retries: each channel is tried up to `ALERT_NOTIFY_MAX_ATTEMPTS` (default 3) on 
 
 ## Recipients
 
-Authorized emails come from two sources and are merged (unique, lowercased):
+Authorized emails are merged (unique, lowercased):
 
-1. `ALERT_EMAIL_RECIPIENTS` — comma-separated list in `.env`
-2. `operators` table — managed at **Recipients** by `admin` or `operator` sessions
+1. **Every account linked to the camera** — `security_email` if set, else login `email`. Assign many cameras on **My cameras** / admin **Accounts**.
+2. Signed-in session user’s security or login email on interactive **Run Pipeline** / resend (Flask routes only)
+3. Recipients directory + `ALERT_EMAIL_RECIPIENTS` when non-empty + optional per-camera extras
+4. `SECURITY_ALERT_EMAIL` only when (1) and (2) are empty (optional; default empty)
 
-Inactive directory rows are skipped. Environment recipients cannot be deleted from the UI.
+Inactive directory rows are skipped. Environment recipients cannot be deleted from the UI. Do not put a personal Gmail address in `.env` examples or seeds.
+
+Short note: [CAMERA_OWNER_NOTIFY.md](CAMERA_OWNER_NOTIFY.md).
 
 Roles:
 
@@ -97,13 +101,15 @@ Unauthenticated users cannot manage recipients.
 ```bash
 RESEND_API_KEY=re_xxxxxxxx
 RESEND_FROM=Mun Cyber Technologies <info@muncyber.com>
-ALERT_EMAIL_RECIPIENTS=you@your-domain.com
+ALERT_EMAIL_RECIPIENTS=security@example.com
+# optional site fallback when no camera account and no signed-in user
+# SECURITY_ALERT_EMAIL=security@example.com
 ```
 
    Or sign in and add the same address on **Recipients**.
 
-4. Start the console (`python run.py`), sign in, **Run Pipeline → Synthetic demo**.
-5. Open an alert. Delivery should be `sent` (or `partial` if only email is configured and succeeds). The inbox should show the structured message with the safety banner.
+4. Start the console (`python run.py`), sign in, open **My cameras**, attach cameras and optionally set a security email, then **Run Pipeline**.
+5. Open an alert. Delivery should be `sent` (or `partial` if only email is configured and succeeds). The inbox should show the structured message with camera, place, category, and the safety banner. `metadata.notified_emails` lists the union that was attempted.
 6. Use **Resend to authorized recipients** to record another attempt. The delivery log shows HTTP success or the provider error body.
 
 Without a key, the same walkthrough still works: delivery stays `queued` with `RESEND_API_KEY not configured; email not sent`. That is intentional.

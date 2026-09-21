@@ -30,9 +30,15 @@ from vision.dangerous_objects import all_dangerous_objects, dangerous_display_na
 from vision.objects_catalog import all_objects, object_display_name
 from vision.scene_context import all_places, place_display_name, validate_place_type
 from vision.sports_catalog import all_sports, sport_display_name
-from ingest.cameras import camera_from_form, mask_uri, place_type_from_form
+from ingest.cameras import (
+    camera_from_form,
+    linked_accounts_from_form,
+    mask_uri,
+    place_type_from_form,
+)
 
 from .auth import (
+    account_notify_email,
     admin_required,
     guest_only,
     login_required,
@@ -78,6 +84,37 @@ def _users():
 
 def _cameras():
     return current_app.extensions["camera_store"]
+
+
+def _console_users():
+    return _users().list_users(active_only=False)
+
+
+def _session_notify_emails() -> list[str]:
+    """Signed-in account alert address (security_email or login email)."""
+    username = (session.get("user") or "").strip()
+    if not username:
+        return []
+    user = _users().get_by_username(username)
+    if user is None or not user.active:
+        return []
+    email = account_notify_email(user)
+    return [email] if email else []
+
+
+def _current_user():
+    username = (session.get("user") or "").strip()
+    if not username:
+        return None
+    return _users().get_by_username(username)
+
+
+def _save_account_cameras(user, form) -> None:
+    camera_ids = form.getlist("camera_ids") if hasattr(form, "getlist") else []
+    _cameras().set_cameras_for_user(user.id, user.username, camera_ids)
+    security = form.get("security_email")
+    if security is not None:
+        _users().set_security_email(user.id, security)
 
 
 def _reset_url(token: str) -> str:
@@ -130,23 +167,27 @@ def register():
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         email = request.form.get("email", "").strip()
+        security_email = request.form.get("security_email", "").strip()
         password = request.form.get("password", "")
         confirm = request.form.get("confirm_password", "")
         err = (
             validate_username(username)
             or validate_email(email)
+            or (validate_email(security_email) if security_email else None)
             or validate_password(password, confirm)
         )
         if err:
             flash(err, "error")
             return render_template("register.html")
         try:
-            _users().create_user(
+            user = _users().create_user(
                 username=username,
                 email=email,
                 password=password,
                 role="operator",
             )
+            if security_email:
+                _users().set_security_email(user.id, security_email)
         except ValueError as exc:
             flash(str(exc), "error")
             return render_template("register.html")
@@ -332,7 +373,12 @@ def alert_resend(alert_id: str):
         flash("Alert not found.", "error")
         return redirect(url_for("main.dashboard"))
     actor = session.get("user", "unknown")
-    updated = _notifier().deliver(alert, actor=actor, force=True)
+    updated = _notifier().deliver(
+        alert,
+        actor=actor,
+        force=True,
+        extra_recipients=_session_notify_emails(),
+    )
     if updated.delivery_status in {"sent", "partial"}:
         flash_cat = "ok"
     elif updated.delivery_status in {"queued", "undelivered"}:
@@ -691,7 +737,13 @@ def _flash_run_outcome(summary: dict) -> None:
             flash(f"Top predicted categories: {top}.", "ok")
 
 
-def _run_registered_selection(camera_id: str, store, notifier, snapshot_dir: str):
+def _run_registered_selection(
+    camera_id: str,
+    store,
+    notifier,
+    snapshot_dir: str,
+    notify_extra_recipients=None,
+):
     from pipeline import CyberEyePipeline, run_registered_cameras
     from vision.detector import create_adapter
 
@@ -716,6 +768,7 @@ def _run_registered_selection(camera_id: str, store, notifier, snapshot_dir: str
         snapshot_dir=snapshot_dir,
         notifier=notifier,
         activity_data_root=current_app.config.get("ACTIVITY_DATA_ROOT"),
+        notify_extra_recipients=notify_extra_recipients,
     )
     return run_registered_cameras(
         pipe,
@@ -734,7 +787,9 @@ def cameras():
     return render_template(
         "cameras.html",
         cameras=_cameras().list_cameras(),
+        camera_accounts=_cameras().accounts_by_camera(),
         allow_webcam=bool(current_app.config.get("ALLOW_WEBCAM")),
+        console_users=_console_users(),
     )
 
 
@@ -743,8 +798,11 @@ def cameras():
 def camera_new():
     if request.method == "POST":
         try:
-            payload = camera_from_form(request.form)
+            payload = camera_from_form(request.form, user_store=_users())
             camera = _cameras().create(**payload)
+            _cameras().set_accounts_for_camera(
+                camera.id, linked_accounts_from_form(request.form, _users())
+            )
             flash(f"Authorized camera “{camera.name}” registered.", "ok")
             return redirect(url_for("main.cameras"))
         except (ValueError, TypeError) as exc:
@@ -755,6 +813,8 @@ def camera_new():
         masked_uri="",
         allow_webcam=bool(current_app.config.get("ALLOW_WEBCAM")),
         place_types=_cameras().list_place_choices(),
+        console_users=_console_users(),
+        linked_account_ids=set(),
     )
 
 
@@ -768,8 +828,13 @@ def camera_edit(camera_id: str):
         return redirect(url_for("main.cameras"))
     if request.method == "POST":
         try:
-            payload = camera_from_form(request.form, existing=camera)
+            payload = camera_from_form(
+                request.form, existing=camera, user_store=_users()
+            )
             store.update(camera_id, **payload)
+            store.set_accounts_for_camera(
+                camera_id, linked_accounts_from_form(request.form, _users())
+            )
             flash(f"Camera “{camera.name}” updated.", "ok")
             return redirect(url_for("main.cameras"))
         except (ValueError, TypeError, KeyError) as exc:
@@ -781,6 +846,10 @@ def camera_edit(camera_id: str):
         masked_uri=mask_uri(camera.uri),
         allow_webcam=bool(current_app.config.get("ALLOW_WEBCAM")),
         place_types=_cameras().list_place_choices(),
+        console_users=_console_users(),
+        linked_account_ids={
+            row["user_id"] for row in store.list_accounts_for_camera(camera.id)
+        },
     )
 
 
@@ -797,6 +866,64 @@ def camera_enabled(camera_id: str):
     return redirect(url_for("main.cameras"))
 
 
+@bp.route("/account", methods=["GET", "POST"])
+@login_required
+def my_cameras():
+    """Account-centric attach/detach for the signed-in user."""
+    user = _current_user()
+    if user is None:
+        return redirect(url_for("main.login"))
+    if request.method == "POST":
+        try:
+            _save_account_cameras(user, request.form)
+            flash("Camera assignments and security email saved.", "ok")
+            return redirect(url_for("main.my_cameras"))
+        except (ValueError, KeyError) as exc:
+            flash(str(exc), "error")
+        user = _users().get_by_id(user.id) or user
+    return render_template(
+        "account_cameras.html",
+        account=user,
+        cameras=_cameras().list_cameras(),
+        linked_ids=set(_cameras().list_camera_ids_for_user(user.id)),
+        self_edit=True,
+    )
+
+
+@bp.route("/accounts")
+@admin_required
+def accounts():
+    users = _users().list_users(active_only=False)
+    counts = {
+        user.id: len(_cameras().list_camera_ids_for_user(user.id)) for user in users
+    }
+    return render_template("accounts.html", accounts=users, camera_counts=counts)
+
+
+@bp.route("/accounts/<user_id>", methods=["GET", "POST"])
+@admin_required
+def account_edit(user_id: str):
+    user = _users().get_by_id(user_id)
+    if user is None:
+        flash("Account not found.", "error")
+        return redirect(url_for("main.accounts"))
+    if request.method == "POST":
+        try:
+            _save_account_cameras(user, request.form)
+            flash(f"Cameras and security email saved for {user.username}.", "ok")
+            return redirect(url_for("main.account_edit", user_id=user.id))
+        except (ValueError, KeyError) as exc:
+            flash(str(exc), "error")
+        user = _users().get_by_id(user.id) or user
+    return render_template(
+        "account_cameras.html",
+        account=user,
+        cameras=_cameras().list_cameras(),
+        linked_ids=set(_cameras().list_camera_ids_for_user(user.id)),
+        self_edit=False,
+    )
+
+
 @bp.route("/run", methods=["GET", "POST"])
 @login_required
 def run_pipeline():
@@ -806,6 +933,7 @@ def run_pipeline():
     if request.method == "POST":
         store = _store()
         notifier = _notifier()
+        actor_emails = _session_notify_emails()
         root = Path(current_app.config["PROJECT_ROOT"])
 
         import sys
@@ -843,6 +971,7 @@ def run_pipeline():
                     location_label=current_app.config.get("DEFAULT_LOCATION_LABEL"),
                     camera_id=current_app.config.get("DEFAULT_CAMERA_ID"),
                     activity_data_root=current_app.config.get("ACTIVITY_DATA_ROOT"),
+                    notify_extra_recipients=actor_emails,
                 )
                 result = pipe.run_video(
                     path,
@@ -866,6 +995,7 @@ def run_pipeline():
                     frames=16,
                     notifier=notifier,
                     snapshot_dir=snapshot_dir,
+                    notify_extra_recipients=actor_emails,
                 )
                 result_summary = _pipeline_result_summary(result, mode="synthetic")
             elif mode == "activity":
@@ -874,6 +1004,7 @@ def run_pipeline():
                     checkpoint=current_app.config["ACTIVITY_CHECKPOINT"],
                     notifier=notifier,
                     snapshot_dir=snapshot_dir,
+                    notify_extra_recipients=actor_emails,
                 )
                 result_summary = _pipeline_result_summary(result, mode="activity")
             elif mode == "camera":
@@ -882,7 +1013,11 @@ def run_pipeline():
                     flash("Select a registered camera, or all enabled cameras.", "error")
                     return redirect(url_for("main.run_pipeline"))
                 results = _run_registered_selection(
-                    camera_id, store, notifier, snapshot_dir
+                    camera_id,
+                    store,
+                    notifier,
+                    snapshot_dir,
+                    notify_extra_recipients=actor_emails,
                 )
                 result_summary = _pipeline_result_summary(results, mode="camera")
             else:

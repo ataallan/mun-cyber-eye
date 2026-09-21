@@ -412,6 +412,28 @@ class AlertStore:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def merge_alert_metadata(self, alert_id: str, patch: dict[str, Any]) -> Alert:
+        """Shallow-merge keys into the alert metadata JSON (audit / notify)."""
+        existing = self.get(alert_id)
+        if existing is None:
+            raise KeyError(f"Alert not found: {alert_id}")
+        try:
+            meta = json.loads(existing.metadata_json) if existing.metadata_json else {}
+        except json.JSONDecodeError:
+            meta = {}
+        if not isinstance(meta, dict):
+            meta = {}
+        meta.update(patch or {})
+        encoded = json.dumps(meta)
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE alerts SET metadata_json = ? WHERE id = ?",
+                (encoded, alert_id),
+            )
+        loaded = self.get(alert_id)
+        assert loaded is not None
+        return loaded
+
     def set_delivery_status(self, alert_id: str, status: str) -> Alert:
         if status not in self.VALID_DELIVERY:
             raise ValueError(f"Invalid delivery status: {status}")

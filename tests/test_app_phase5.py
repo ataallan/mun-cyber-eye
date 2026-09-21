@@ -195,6 +195,72 @@ def test_run_synthetic_shows_game_dance_without_threat_alerts(app, client):
     assert "potential_fight" in categories
 
 
+def test_camera_form_lists_console_users_and_assigns_owner(app, client):
+    _login(client)
+    admin = app.extensions["user_store"].get_by_username("operator")
+    assert admin is not None
+    form = client.get("/cameras/new")
+    body = form.get_data(as_text=True)
+    assert form.status_code == 200
+    assert "Accounts linked to this camera" in body
+    assert admin.email in body
+    assert "operator" in body
+    assert "My cameras" in body
+    created = client.post(
+        "/cameras/new",
+        data={
+            "name": "Owned hall",
+            "location_label": "North corridor",
+            "source_type": "file",
+            "uri": "MOCK",
+            "sample_fps": "2",
+            "enabled": "1",
+            "place_type": "corridor_hallway",
+            "account_user_ids": [admin.id],
+            "notify_email": "security@example.com",
+            "notes": "Authorized hall",
+        },
+        follow_redirects=True,
+    )
+    assert created.status_code == 200
+    listing = created.get_data(as_text=True)
+    assert "Owned hall" in listing
+    assert "operator" in listing
+    stored = [
+        c for c in app.extensions["camera_store"].list_cameras() if c.name == "Owned hall"
+    ]
+    assert stored
+    assert stored[0].owner_user_id == admin.id
+    assert stored[0].owner_username == "operator"
+    assert stored[0].notify_email == "security@example.com"
+    links = app.extensions["camera_store"].list_accounts_for_camera(stored[0].id)
+    assert {row["user_id"] for row in links} == {admin.id}
+    edit = client.get(f"/cameras/{stored[0].id}/edit")
+    edit_body = edit.get_data(as_text=True)
+    assert f'value="{admin.id}"' in edit_body
+    assert "checked" in edit_body
+    cleared = client.post(
+        f"/cameras/{stored[0].id}/edit",
+        data={
+            "name": "Owned hall",
+            "location_label": "North corridor",
+            "source_type": "file",
+            "uri": "",
+            "sample_fps": "2",
+            "enabled": "1",
+            "place_type": "corridor_hallway",
+            "notify_email": "",
+            "notes": "Authorized hall",
+        },
+        follow_redirects=True,
+    )
+    assert cleared.status_code == 200
+    refreshed = app.extensions["camera_store"].get(stored[0].id)
+    assert refreshed.owner_user_id == ""
+    assert refreshed.notify_email == ""
+    assert app.extensions["camera_store"].list_accounts_for_camera(refreshed.id) == []
+
+
 def test_camera_form_has_place_type_dropdown(client):
     _login(client)
     resp = client.get("/cameras/new")

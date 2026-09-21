@@ -14,7 +14,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
-from typing import Any, Callable, Iterable, List, Optional
+from typing import Any, Callable, Iterable, List, Optional, Sequence
 
 from .schema import SAFETY_BANNER, structured_payload
 from .store import Alert, AlertStore
@@ -81,6 +81,7 @@ class NotifyConfig:
     user_agent: str = DEFAULT_USER_AGENT
     enabled: bool = True
     sleep_fn: Callable[[float], None] = field(default=time.sleep)
+    security_alert_email: str = ""
 
     @classmethod
     def from_env(cls) -> "NotifyConfig":
@@ -94,6 +95,7 @@ class NotifyConfig:
             user_agent=os.getenv("ALERT_USER_AGENT", DEFAULT_USER_AGENT).strip()
             or DEFAULT_USER_AGENT,
             enabled=os.getenv("ALERT_NOTIFY_ON_CREATE", "1") != "0",
+            security_alert_email=os.getenv("SECURITY_ALERT_EMAIL", "").strip(),
         )
 
     @property
@@ -117,20 +119,49 @@ def parse_env_recipients(raw: str) -> List[str]:
 
 
 def merge_recipients(env_csv: str, db_emails: Iterable[str]) -> List[str]:
-    merged = parse_env_recipients(env_csv)
-    seen = set(merged)
-    for email in db_emails:
-        normalized = (email or "").strip().lower()
-        if normalized and "@" in normalized and normalized not in seen:
-            seen.add(normalized)
-            merged.append(normalized)
+    return merge_recipient_lists(parse_env_recipients(env_csv), db_emails)
+
+
+def merge_recipient_lists(*groups: Iterable[str]) -> List[str]:
+    """Deduplicate emails, preserving first-seen order across groups."""
+    merged: List[str] = []
+    seen: set[str] = set()
+    for group in groups:
+        for email in group:
+            normalized = (email or "").strip().lower()
+            if normalized and "@" in normalized and normalized not in seen:
+                seen.add(normalized)
+                merged.append(normalized)
     return merged
 
 
 def email_subject(payload: dict[str, Any]) -> str:
     severity = str(payload.get("severity") or "info").upper()
     category = payload.get("category_label") or payload.get("category") or "alert"
-    return f"[Mun Cyber Eye] {severity} {category} — human review required"
+    camera = (
+        payload.get("camera_name")
+        or payload.get("source")
+        or payload.get("camera_id")
+        or ""
+    )
+    place = (
+        payload.get("place_label")
+        or (payload.get("metadata") or {}).get("place_display")
+        or (payload.get("metadata") or {}).get("place_type")
+        or payload.get("location_label")
+        or ""
+    )
+    head = f"[Mun Cyber Eye] {severity} {category}"
+    extras: List[str] = []
+    camera_s = str(camera).strip()
+    place_s = str(place).strip()
+    if camera_s:
+        extras.append(camera_s)
+    if place_s and place_s not in extras:
+        extras.append(place_s)
+    if extras:
+        return f"{head} — {' · '.join(extras)} — human review required"
+    return f"{head} — human review required"
 
 
 def email_bodies(payload: dict[str, Any]) -> tuple[str, str]:
@@ -146,7 +177,9 @@ def email_bodies(payload: dict[str, Any]) -> tuple[str, str]:
         f"Category: {payload.get('category_label') or payload.get('category')}\n"
         f"Confidence: {payload.get('confidence')}\n"
         f"Location: {payload.get('location_label') or '—'}\n"
-        f"Camera: {payload.get('camera_id') or '—'}\n"
+        f"Place: {payload.get('place_label') or (payload.get('metadata') or {}).get('place_display') or (payload.get('metadata') or {}).get('place_type') or '—'}\n"
+        f"Camera: {payload.get('camera_name') or payload.get('camera_id') or '—'}\n"
+        f"Camera ID: {payload.get('camera_id') or '—'}\n"
         f"Source: {payload.get('source') or '—'}\n"
         f"Frame time: {payload.get('frame_time')} (#{payload.get('frame_index')})\n"
         f"Human status: {payload.get('human_status')}\n"
@@ -169,7 +202,9 @@ def email_bodies(payload: dict[str, Any]) -> tuple[str, str]:
     <tr><td style="color:#9aabc8;padding:4px 8px;">Category</td><td>{payload.get("category_label") or payload.get("category")}</td></tr>
     <tr><td style="color:#9aabc8;padding:4px 8px;">Confidence</td><td>{payload.get("confidence")}</td></tr>
     <tr><td style="color:#9aabc8;padding:4px 8px;">Location</td><td>{payload.get("location_label") or "—"}</td></tr>
-    <tr><td style="color:#9aabc8;padding:4px 8px;">Camera</td><td>{payload.get("camera_id") or "—"}</td></tr>
+    <tr><td style="color:#9aabc8;padding:4px 8px;">Place</td><td>{payload.get("place_label") or (payload.get("metadata") or {}).get("place_display") or (payload.get("metadata") or {}).get("place_type") or "—"}</td></tr>
+    <tr><td style="color:#9aabc8;padding:4px 8px;">Camera</td><td>{payload.get("camera_name") or payload.get("camera_id") or "—"}</td></tr>
+    <tr><td style="color:#9aabc8;padding:4px 8px;">Camera ID</td><td>{payload.get("camera_id") or "—"}</td></tr>
     <tr><td style="color:#9aabc8;padding:4px 8px;">Source</td><td>{payload.get("source") or "—"}</td></tr>
     <tr><td style="color:#9aabc8;padding:4px 8px;">Frame time</td><td>{payload.get("frame_time")} (#{payload.get("frame_index")})</td></tr>
     <tr><td style="color:#9aabc8;padding:4px 8px;">Created</td><td>{payload.get("created_at")}</td></tr>
@@ -330,15 +365,54 @@ class NotificationService:
         config: Optional[NotifyConfig] = None,
         email_adapter: Optional[EmailAdapter] = None,
         webhook_adapter: Optional[WebhookAdapter] = None,
+        camera_store: Any = None,
+        user_store: Any = None,
     ) -> None:
         self.store = store
         self.config = config or NotifyConfig.from_env()
         self.email = email_adapter or EmailAdapter(self.config)
         self.webhook = webhook_adapter or WebhookAdapter(self.config)
+        self.camera_store = camera_store
+        self.user_store = user_store
 
     def recipient_emails(self) -> List[str]:
         db_emails = [r["email"] for r in self.store.list_recipients(active_only=True)]
         return merge_recipients(self.config.email_recipients_env, db_emails)
+
+    def resolve_recipients(
+        self,
+        alert: Optional[Alert] = None,
+        extra_recipients: Optional[Iterable[str]] = None,
+    ) -> tuple[List[str], List[str]]:
+        """Union of linked accounts, session extras, optional globals.
+
+        1. Every account linked to the camera (security_email or login email)
+        2. Interactive extras (signed-in user) when the Flask route passes them
+        3. Recipients directory + ALERT_EMAIL_RECIPIENTS + per-camera extras
+        4. SECURITY_ALERT_EMAIL only when (1) and (2) are empty
+
+        Duplicates are dropped. Honest notes when a linked account cannot email.
+        """
+        notes: List[str] = []
+        camera = self._camera_for(alert)
+        account_emails, account_notes = self._linked_account_emails(camera)
+        notes.extend(account_notes)
+        session_emails = merge_recipient_lists(extra_recipients or [])
+        camera_extras = parse_env_recipients(
+            getattr(camera, "notify_email", "") or "" if camera is not None else ""
+        )
+        optional = merge_recipient_lists(camera_extras, self.recipient_emails())
+        fallback: List[str] = []
+        if not account_emails and not session_emails:
+            fallback = parse_env_recipients(self.config.security_alert_email)
+            if self.config.security_alert_email.strip() and not fallback:
+                notes.append("SECURITY_ALERT_EMAIL is set but is not a valid address; skipped")
+        return (
+            merge_recipient_lists(
+                account_emails, session_emails, optional, fallback
+            ),
+            notes,
+        )
 
     def deliver(
         self,
@@ -346,6 +420,7 @@ class NotificationService:
         *,
         actor: str = "system",
         force: bool = False,
+        extra_recipients: Optional[Iterable[str]] = None,
     ) -> Alert:
         if not self.config.enabled and not force:
             self.store.set_delivery_status(alert.id, "undelivered")
@@ -357,8 +432,16 @@ class NotificationService:
             )
             return self.store.get(alert.id) or alert
 
-        payload = structured_payload(alert)
-        results = self._run_channels(payload)
+        recipients, notes = self.resolve_recipients(alert, extra_recipients)
+        payload = self._enrich_payload(structured_payload(alert), alert)
+        self.store.merge_alert_metadata(
+            alert.id,
+            {
+                "notified_emails": recipients,
+                "notify_notes": notes,
+            },
+        )
+        results = self._run_channels(payload, recipients)
         status = combine_delivery_status(results)
         self.store.set_delivery_status(alert.id, status)
         for result in results:
@@ -371,18 +454,133 @@ class NotificationService:
                 error=result.error,
                 provider_id=result.provider_id,
             )
+        if notes:
+            for note in notes:
+                self.store.log_delivery(
+                    alert.id,
+                    channel="email",
+                    recipient="",
+                    status="skipped",
+                    attempt=1,
+                    error=note,
+                )
         summary = "; ".join(
             f"{r.channel}={r.status}" + (f" ({r.error})" if r.error and r.status != "success" else "")
             for r in results
         )
+        if notes:
+            summary = f"{summary}; " + "; ".join(notes)
         self.store.record_audit(alert.id, "notify" if actor == "system" else "resend", actor, summary)
         updated = self.store.get(alert.id) or alert
         logger.info("Alert %s delivery_status=%s %s", alert.id[:8], status, summary)
         return updated
 
-    def _run_channels(self, payload: dict[str, Any]) -> List[ChannelResult]:
+    def _camera_for(self, alert: Optional[Alert]) -> Any:
+        if alert is None or not self.camera_store:
+            return None
+        camera_id = (getattr(alert, "camera_id", None) or "").strip()
+        if not camera_id:
+            return None
+        try:
+            return self.camera_store.get(camera_id)
+        except Exception:
+            logger.warning("Camera lookup failed for %s", camera_id)
+            return None
+
+    def _linked_account_emails(self, camera: Any) -> tuple[List[str], List[str]]:
+        emails: List[str] = []
+        notes: List[str] = []
+        links = self._account_links(camera)
+        if not links:
+            return emails, notes
+        if self.user_store is None:
+            notes.append(
+                "Camera accounts are linked but the user directory is unavailable; "
+                "account emails skipped"
+            )
+            return emails, notes
+        for link in links:
+            user_id = (link.get("user_id") or "").strip()
+            username = (link.get("username") or "").strip()
+            label = username or user_id
+            user = None
+            if user_id:
+                user = self.user_store.get_by_id(user_id)
+            if user is None and username:
+                user = self.user_store.get_by_username(username)
+            if user is None:
+                notes.append(f"Camera account '{label}' was not found; skipped")
+                continue
+            if not getattr(user, "active", True):
+                notes.append(f"Camera account '{user.username}' is inactive; skipped")
+                continue
+            email = ""
+            if hasattr(user, "notify_address"):
+                email = user.notify_address()
+            else:
+                security = (getattr(user, "security_email", None) or "").strip()
+                login = (getattr(user, "email", None) or "").strip()
+                email = (security or login).lower()
+            if not email or "@" not in email:
+                notes.append(
+                    f"Camera account '{user.username}' has no security or login email; skipped"
+                )
+                continue
+            emails.append(email.lower())
+        return merge_recipient_lists(emails), notes
+
+    def _account_links(self, camera: Any) -> list[dict[str, str]]:
+        if camera is None:
+            return []
+        if self.camera_store and hasattr(self.camera_store, "list_accounts_for_camera"):
+            try:
+                links = self.camera_store.list_accounts_for_camera(camera.id)
+                if links:
+                    return links
+            except Exception:
+                logger.warning("Camera account lookup failed for %s", getattr(camera, "id", ""))
+        owner_id = (getattr(camera, "owner_user_id", None) or "").strip()
+        owner_name = (getattr(camera, "owner_username", None) or "").strip()
+        if owner_id or owner_name:
+            return [{"user_id": owner_id, "username": owner_name}]
+        return []
+
+    def _enrich_payload(self, payload: dict[str, Any], alert: Alert) -> dict[str, Any]:
+        camera = self._camera_for(alert)
+        meta = payload.get("metadata") or {}
+        if camera is not None:
+            payload["camera_name"] = camera.name or payload.get("camera_name") or ""
+            place = (
+                (getattr(camera, "place_type", None) or "").strip()
+                or meta.get("place_display")
+                or meta.get("place_type")
+                or camera.location_label
+                or payload.get("location_label")
+                or ""
+            )
+            payload["place_label"] = place
+            if camera.location_label and not payload.get("location_label"):
+                payload["location_label"] = camera.location_label
+        else:
+            payload.setdefault(
+                "camera_name",
+                payload.get("source") or payload.get("camera_id") or "",
+            )
+            payload.setdefault(
+                "place_label",
+                meta.get("place_display")
+                or meta.get("place_type")
+                or payload.get("location_label")
+                or "",
+            )
+        return payload
+
+    def _run_channels(
+        self, payload: dict[str, Any], recipients: Sequence[str]
+    ) -> List[ChannelResult]:
         results: List[ChannelResult] = []
-        results.append(self._with_retries(lambda: self.email.send(payload, self.recipient_emails()), "email"))
+        dest = list(recipients)
+        results.append(self._with_retries(lambda: self.email.send(payload, dest), "email"))
         results.append(self._with_retries(lambda: self.webhook.send(payload), "webhook"))
         return results
 

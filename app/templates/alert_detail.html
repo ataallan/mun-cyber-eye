@@ -89,6 +89,14 @@
         <dt>Correlation</dt><dd class="mono">{{ alert.correlation_id }}</dd>
         <dt>Snapshot</dt><dd class="mono">{{ alert.snapshot_path or '—' }}</dd>
         <dt>Delivery</dt><dd><span class="badge delivery-{{ alert.delivery_status }}">{{ alert.delivery_status }}</span></dd>
+        {% if payload.metadata and payload.metadata.notified_emails %}
+        <dt>Notified emails</dt>
+        <dd class="mono">{{ payload.metadata.notified_emails | join(', ') }}</dd>
+        {% endif %}
+        {% if payload.metadata and payload.metadata.notify_notes %}
+        <dt>Notify notes</dt>
+        <dd class="fineprint">{{ payload.metadata.notify_notes | join('; ') }}</dd>
+        {% endif %}
       </dl>
       <h2>Short rationale</h2>
       <p>{{ alert.short_rationale or alert.rationale }}</p>
@@ -125,7 +133,7 @@
 
   <section class="actions">
     <h2>Outbound delivery</h2>
-    <p class="muted">Console review is primary. Email (Resend) and webhook are optional channels. Missing keys are marked queued or undelivered — never reported as sent.</p>
+    <p class="muted">Console review is primary. Email (Resend) and webhook are optional channels. Recipients are every account linked to the camera (security or login email), the signed-in account on interactive run/resend, Recipients directory, and optional <code>ALERT_EMAIL_RECIPIENTS</code>. Missing keys are marked queued or undelivered — never reported as sent.</p>
     {% if can_resend %}
     <form method="post" action="{{ url_for('main.alert_resend', alert_id=alert.id) }}" class="form inline-form">
       <div class="btn-row">

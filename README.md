@@ -70,12 +70,16 @@ Console review is primary. Email and webhook are pluggable delivery channels.
 # .env — never invent success if the key is empty
 RESEND_API_KEY=re_xxxxxxxx
 RESEND_FROM=Mun Cyber Technologies <info@muncyber.com>
-ALERT_EMAIL_RECIPIENTS=you@your-domain.com
+ALERT_EMAIL_RECIPIENTS=security@example.com
+# optional fallback only when no camera account and no signed-in user
+# SECURITY_ALERT_EMAIL=security@example.com
 # optional SIEM/SOAR
 ALERT_WEBHOOK_URL=
 ```
 
-The Resend adapter uses stdlib `urllib` with an explicit `User-Agent` so Cloudflare does not block the request. Full demo steps: [docs/PHASE4.md](docs/PHASE4.md).
+Alert email is the union of **accounts linked to the camera** (each user’s security email or login email), the signed-in account on interactive Run Pipeline, optional Recipients / `ALERT_EMAIL_RECIPIENTS`, and optional `SECURITY_ALERT_EMAIL` as a last-resort fallback. Assign many cameras on **My cameras**. Missing keys stay `queued` / `undelivered`. See [docs/CAMERA_OWNER_NOTIFY.md](docs/CAMERA_OWNER_NOTIFY.md) and [docs/PHASE4.md](docs/PHASE4.md).
+
+The Resend adapter uses stdlib `urllib` with an explicit `User-Agent` so Cloudflare does not block the request.
 
 ### Phase 3 activity recognition
 
@@ -132,7 +136,7 @@ If YOLO is missing and no activity checkpoint loads, the app uses honest **MOCK*
 | Structured SQLite alerts + audit log | Real |
 | Snapshot attachment | Real |
 | Flask dark console + session auth | Real (SQLite users, register, forgot/reset password) |
-| Authorized recipient directory | Real (`.env` + `operators` table) |
+| Authorized recipient directory | Real (linked camera accounts + optional `.env` / `operators` extras) |
 | Resend email / webhook delivery | Real **if** configured; otherwise honest `queued` / `undelivered` |
 | Delivery + ack tracking | Real (`delivery_log` + Phase 2 audit) |
 | Autonomous enforcement | **Not implemented** (by design) |

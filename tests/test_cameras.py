@@ -18,6 +18,81 @@ def store(tmp_path):
     return CameraStore(tmp_path / "cameras.db")
 
 
+def test_owner_fields_round_trip_and_many_accounts(store):
+    cam = store.create(
+        name="Owned cam",
+        source_type="file",
+        uri="MOCK",
+        owner_user_id="user-1",
+        owner_username="alice",
+        notify_email="OnCall@Site.example, alice@site.example, not-an-email",
+    )
+    loaded = store.get(cam.id)
+    assert loaded.owner_user_id == "user-1"
+    assert loaded.owner_username == "alice"
+    assert loaded.notify_email == "oncall@site.example, alice@site.example"
+    assert store.list_accounts_for_camera(cam.id)[0]["user_id"] == "user-1"
+    store.set_accounts_for_camera(
+        cam.id, [("user-1", "alice"), ("user-2", "bob")]
+    )
+    ids = {row["user_id"] for row in store.list_accounts_for_camera(cam.id)}
+    assert ids == {"user-1", "user-2"}
+    store.set_accounts_for_camera(cam.id, [])
+    store.update(cam.id, notify_email="")
+    assert store.list_accounts_for_camera(cam.id) == []
+    assert store.get(cam.id).notify_email == ""
+
+
+def test_one_account_many_cameras(store):
+    a = store.create(name="Cam A", source_type="file", uri="MOCK")
+    b = store.create(name="Cam B", source_type="file", uri="MOCK")
+    store.set_cameras_for_user("user-9", "pat", [a.id, b.id])
+    assert set(store.list_camera_ids_for_user("user-9")) == {a.id, b.id}
+    store.set_cameras_for_user("user-9", "pat", [b.id])
+    assert store.list_camera_ids_for_user("user-9") == [b.id]
+    assert store.list_accounts_for_camera(a.id) == []
+    assert store.list_accounts_for_camera(b.id)[0]["username"] == "pat"
+
+
+def test_camera_from_form_resolves_owner(store):
+    class Form(dict):
+        def get(self, key, default=None):
+            return super().get(key, default)
+
+    class _User:
+        def __init__(self):
+            self.id = "uid-9"
+            self.username = "pat"
+            self.email = "pat@example.com"
+
+    class _Users:
+        def get_by_id(self, user_id):
+            return _User() if user_id == "uid-9" else None
+
+    payload = camera_from_form(
+        Form(
+            {
+                "name": "Gate",
+                "location_label": "North",
+                "source_type": "file",
+                "uri": "MOCK",
+                "sample_fps": "2",
+                "enabled": "1",
+                "notes": "",
+                "place_type": "street",
+                "owner_user_id": "uid-9",
+                "notify_email": "extra@example.com",
+            }
+        ),
+        user_store=_Users(),
+    )
+    assert payload["owner_user_id"] == "uid-9"
+    assert payload["owner_username"] == "pat"
+    assert payload["notify_email"] == "extra@example.com"
+    created = store.create(**payload)
+    assert created.owner_username == "pat"
+
+
 def test_create_get_list_and_disable(store):
     cam = store.create(
         name="Lobby west",
@@ -189,6 +264,7 @@ def test_seed_demo_cameras_once(store, tmp_path):
     assert by_id["demo-roam-01"].name == "Roam / patrol cam"
     assert by_id["demo-roam-01"].place_type == "roam"
     assert all(c.place_type == EXPECTED_DEMO_PLACES[c.id] for c in seeded)
+    assert all(c.owner_user_id == "" and c.owner_username == "" for c in seeded)
     for cam in seeded:
         if cam.id != "demo-rtsp-01":
             assert cam.enabled is True

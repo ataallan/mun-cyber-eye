@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
-from typing import Iterator, Optional
+from typing import Iterator, List, Optional
 
 from flask import flash, redirect, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -43,6 +43,27 @@ def normalize_username(value: str) -> str:
 
 def normalize_email(value: str) -> str:
     return value.strip().lower()
+
+
+def normalize_optional_email(value: str) -> str:
+    cleaned = normalize_email(value or "")
+    return cleaned if cleaned and "@" in cleaned else ""
+
+
+def account_notify_email(user: object) -> str:
+    """Alert address: security_email if set, else login email. Never invent one."""
+    security = normalize_optional_email(getattr(user, "security_email", "") or "")
+    if security:
+        return security
+    login = normalize_optional_email(getattr(user, "email", "") or "")
+    return login
+
+
+def _row_text(row: sqlite3.Row, key: str, default: str = "") -> str:
+    if key not in row.keys():
+        return default
+    value = row[key]
+    return default if value is None else str(value)
 
 
 def validate_username(username: str) -> Optional[str]:
@@ -83,6 +104,11 @@ class User:
     created_at: str
     reset_token: Optional[str] = None
     reset_expires: Optional[str] = None
+    security_email: str = ""
+
+    def notify_address(self) -> str:
+        """Prefer security_email for alerts; otherwise the login email."""
+        return account_notify_email(self)
 
 
 class UserStore:
@@ -126,6 +152,11 @@ class UserStore:
                 CREATE INDEX IF NOT EXISTS idx_users_reset_token ON users(reset_token);
                 """
             )
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(users)")}
+            if "security_email" not in cols:
+                conn.execute(
+                    "ALTER TABLE users ADD COLUMN security_email TEXT NOT NULL DEFAULT ''"
+                )
 
     def ensure_env_user(
         self,
@@ -158,6 +189,7 @@ class UserStore:
                     "UPDATE users SET email = ?, role = ? WHERE id = ?",
                     (email, role, existing.id),
                 )
+            # Do not overwrite security_email on env sync.
             refreshed = self.get_by_id(existing.id)
             assert refreshed is not None
             return refreshed
@@ -253,6 +285,15 @@ class UserStore:
             ).fetchone()
         return self._row_to_user(row) if row else None
 
+    def list_users(self, active_only: bool = False) -> List[User]:
+        q = "SELECT * FROM users"
+        if active_only:
+            q += " WHERE active = 1"
+        q += " ORDER BY username COLLATE NOCASE ASC"
+        with self._conn() as conn:
+            rows = conn.execute(q).fetchall()
+        return [self._row_to_user(r) for r in rows]
+
     def get_by_email(self, email: str) -> Optional[User]:
         email = normalize_email(email)
         if not email:
@@ -279,6 +320,26 @@ class UserStore:
         if not check_password_hash(user.password_hash, password):
             return None
         return user
+
+    def set_security_email(self, user_id: str, security_email: str) -> User:
+        cleaned = normalize_optional_email(security_email)
+        if cleaned:
+            err = validate_email(cleaned)
+            if err:
+                raise ValueError(err)
+        with self._conn() as conn:
+            exists = conn.execute(
+                "SELECT 1 FROM users WHERE id = ?", (user_id,)
+            ).fetchone()
+            if not exists:
+                raise KeyError(f"User not found: {user_id}")
+            conn.execute(
+                "UPDATE users SET security_email = ? WHERE id = ?",
+                (cleaned, user_id),
+            )
+        refreshed = self.get_by_id(user_id)
+        assert refreshed is not None
+        return refreshed
 
     def set_password(self, user_id: str, password: str) -> None:
         if not password:
@@ -344,6 +405,7 @@ class UserStore:
             created_at=row["created_at"],
             reset_token=row["reset_token"],
             reset_expires=row["reset_expires"],
+            security_email=_row_text(row, "security_email"),
         )
 
 

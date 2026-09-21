@@ -15,6 +15,7 @@ from alerts.notify import (
     WebhookAdapter,
     combine_delivery_status,
     email_subject,
+    merge_recipient_lists,
     merge_recipients,
     parse_env_recipients,
 )
@@ -65,6 +66,12 @@ def test_parse_and_merge_recipients():
     assert env == ["alpha@x.com", "beta@x.com"]
     merged = merge_recipients("alpha@x.com", ["Beta@x.com", "gamma@x.com"])
     assert merged == ["alpha@x.com", "beta@x.com", "gamma@x.com"]
+    ordered = merge_recipient_lists(
+        ["owner@x.com"],
+        ["extra@x.com", "owner@x.com"],
+        ["alpha@x.com"],
+    )
+    assert ordered == ["owner@x.com", "extra@x.com", "alpha@x.com"]
 
 
 def test_email_without_api_key_is_queued_not_sent(store):
@@ -218,3 +225,16 @@ def test_email_subject_includes_severity(store):
     subject = email_subject(payload)
     assert "WARNING" in subject or payload["severity"].upper() in subject
     assert "potential fall" in subject or "potential_fall" in subject
+    assert "human review" in subject.lower()
+    named = email_subject(
+        {
+            **payload,
+            "camera_name": "Lobby west",
+            "place_label": "corridor_hallway",
+            "category_label": "potential confrontation",
+            "severity": "critical",
+        }
+    )
+    assert "Lobby west" in named
+    assert "corridor_hallway" in named
+    assert "potential confrontation" in named

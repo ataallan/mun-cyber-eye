@@ -3,7 +3,7 @@
 {% block content %}
 <section class="card">
   <h1>Authorized recipients</h1>
-  <p class="muted">Outbound email is sent only to addresses listed here or in <code>ALERT_EMAIL_RECIPIENTS</code>. Admin and operator roles can manage this list. The console remains the primary review surface.</p>
+  <p class="muted">Outbound email is the union of: <strong>every account linked to the camera</strong> (security email or login email), the signed-in account on interactive Run Pipeline, this Recipients directory, and optional <code>ALERT_EMAIL_RECIPIENTS</code>. <code>SECURITY_ALERT_EMAIL</code> is a site fallback only when no camera account and no session user apply. The console remains the primary review surface.</p>
 
   <dl class="kv">
     <dt>Resend</dt>
@@ -12,6 +12,8 @@
     <dd>{{ notify.resend_from }}</dd>
     <dt>Webhook</dt>
     <dd>{% if notify.webhook_configured %}{{ notify.webhook_url }}{% else %}Not configured{% endif %}</dd>
+    <dt>Site security fallback</dt>
+    <dd>{% if notify.security_alert_email %}<span class="mono">{{ notify.security_alert_email }}</span>{% else %}Not set (<code>SECURITY_ALERT_EMAIL</code> default empty){% endif %}</dd>
   </dl>
 
   <h2>Environment recipients</h2>
