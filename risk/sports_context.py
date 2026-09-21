@@ -7,7 +7,7 @@ a named sport stays ``game_or_play`` (possible intense play) unless
 
 Place / venue type and kit-color similarity are additional assists:
 sports venues strengthen play softening; street / corridor / house /
-compound plus high aggression and no sport lean toward a fight alert.
+compound / roam plus high aggression and no sport lean toward a fight alert.
 Street play (street + sport) stays ``game_or_play`` unless aggression is
 extreme.
 

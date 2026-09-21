@@ -203,6 +203,8 @@ def test_camera_form_has_place_type_dropdown(client):
     assert "corridor_hallway" in body
     assert "house_interior" in body
     assert "compound_courtyard" in body
+    assert "roam" in body
+    assert "Roam / patrol" in body
     assert "Madison Square Garden" not in body
 
     created = client.post(

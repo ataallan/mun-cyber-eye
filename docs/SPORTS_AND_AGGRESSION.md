@@ -47,7 +47,7 @@ Soft labels (`aggressive_motion`, `aggressive_pose`, plus the existing `rapid_mo
 
 Documented rule (also covered by tests):
 
-1. **High aggression + no `sport_context`** → lean `potential_fight` and **alert**. Street / corridor / house / compound makes that lean **stronger** (risk may be `high`).
+1. **High aggression + no `sport_context`** → lean `potential_fight` and **alert**. Street / corridor / house / compound / roam makes that lean **stronger** (risk may be `high`). Roam is patrol / multi-area circulation, not a sports-venue soften.
 2. **High aggression + decent/strong `sport_context`** → stay `game_or_play` with rationale *“possible intense play; human should verify.”* **No threat alert** unless `ALERT_ON_INTENSE_SPORT=1`. A **sports venue** place type strengthens this play reading.
 3. **Low aggression + `sport_context`** → `game_or_play`, no threat alert.
 4. Phase 2 fight heuristics (`close_proximity` + `rapid_motion`, …) are **softened** when `sport_context` is present with decent confidence and aggression is not high.

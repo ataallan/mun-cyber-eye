@@ -29,7 +29,7 @@ SQLite (`CAMERA_DB_PATH`, default `data/cameras.db`):
 
 | Column | Meaning |
 |--------|---------|
-| `id` | Stable id (seeded demos use `demo-file-01`, `demo-rtsp-01`) |
+| `id` | Stable id (seeded demos use `demo-file-01`, `demo-rtsp-01`, plus corridor / house / compound / roam stubs) |
 | `name` | Operator-facing name |
 | `location_label` | Site / zone label stamped onto alerts (free text — not a famous arena name) |
 | `place_type` | Optional catalog setting (`street`, `corridor_hallway`, `house_interior`, …) stamped onto the pipeline |
@@ -42,10 +42,14 @@ SQLite (`CAMERA_DB_PATH`, default `data/cameras.db`):
 | `last_seen_at` | Last successful ingest |
 | `last_error` | Last honest failure (offline, timeout, missing secret, webcam refused) |
 
-On first boot, if the table is empty, the app seeds:
+On first boot the app seeds the authorized demo set (create-if-missing). Empty `place_type` on those ids is backfilled on list/seed:
 
-1. **Demo Lab File** (`demo-file-01`) — enabled; URI `MOCK` (or `sample_data/demo.mp4` if that clip exists)
-2. **Authorized RTSP stub** (`demo-rtsp-01`) — **disabled**; URI `env:RTSP_DEMO_URI`
+1. **Demo Lab File** (`demo-file-01`) — enabled; URI `MOCK` (or `sample_data/demo.mp4` if that clip exists); `place_type=gymnasium`
+2. **Authorized RTSP stub** (`demo-rtsp-01`) — **disabled**; URI `env:RTSP_DEMO_URI`; `place_type=street`
+3. **Corridor North** (`demo-corridor-01`) — enabled MOCK file; `place_type=corridor_hallway`
+4. **House interior demo** (`demo-house-01`) — enabled MOCK file; `place_type=house_interior`
+5. **Compound courtyard** (`demo-compound-01`) — enabled MOCK file; `place_type=compound_courtyard`
+6. **Roam / patrol cam** (`demo-roam-01`) — enabled MOCK file; `place_type=roam`
 
 ## Credentials
 

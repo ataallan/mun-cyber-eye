@@ -132,19 +132,80 @@ def store_public_uri():
     return cam.to_public_dict()["uri"]
 
 
+EXPECTED_DEMO_PLACES = {
+    "demo-file-01": "gymnasium",
+    "demo-rtsp-01": "street",
+    "demo-corridor-01": "corridor_hallway",
+    "demo-house-01": "house_interior",
+    "demo-compound-01": "compound_courtyard",
+    "demo-roam-01": "roam",
+}
+
+
 def test_seed_demo_cameras_once(store, tmp_path):
     seeded = store.seed_demo_cameras(tmp_path)
-    assert {c.id for c in seeded} == {"demo-file-01", "demo-rtsp-01"}
-    file_cam = store.get("demo-file-01")
-    rtsp_cam = store.get("demo-rtsp-01")
+    by_id = {c.id: c for c in seeded}
+    assert set(by_id) == set(EXPECTED_DEMO_PLACES)
+    file_cam = by_id["demo-file-01"]
+    rtsp_cam = by_id["demo-rtsp-01"]
     assert file_cam.enabled is True
     assert file_cam.source_type == "file"
     assert file_cam.place_type == "gymnasium"
     assert rtsp_cam.enabled is False
     assert rtsp_cam.place_type == "street"
     assert rtsp_cam.uri == "env:RTSP_DEMO_URI"
+    assert by_id["demo-corridor-01"].name == "Corridor North"
+    assert by_id["demo-corridor-01"].place_type == "corridor_hallway"
+    assert by_id["demo-house-01"].name == "House interior demo"
+    assert by_id["demo-house-01"].place_type == "house_interior"
+    assert by_id["demo-compound-01"].name == "Compound courtyard"
+    assert by_id["demo-compound-01"].place_type == "compound_courtyard"
+    assert by_id["demo-roam-01"].name == "Roam / patrol cam"
+    assert by_id["demo-roam-01"].place_type == "roam"
+    assert all(c.place_type == EXPECTED_DEMO_PLACES[c.id] for c in seeded)
+    for cam in seeded:
+        if cam.id != "demo-rtsp-01":
+            assert cam.enabled is True
+            assert cam.source_type == "file"
+        assert "uthorized" in cam.notes
     again = store.seed_demo_cameras(tmp_path)
-    assert len(again) == 2
+    assert len(again) == 6
+
+
+def test_list_and_seed_backfill_empty_demo_place_types(store, tmp_path):
+    store.create(
+        camera_id="demo-file-01",
+        name="Demo Lab File",
+        location_label="Demo Lab",
+        source_type="file",
+        uri="MOCK",
+        notes="Authorized demo",
+        place_type="",
+    )
+    store.create(
+        camera_id="demo-rtsp-01",
+        name="Authorized RTSP stub",
+        location_label="Perimeter (stub)",
+        source_type="rtsp",
+        uri="env:RTSP_DEMO_URI",
+        enabled=False,
+        notes="Authorized demo",
+        place_type="",
+    )
+    listed = store.list_cameras()
+    assert store.get("demo-file-01").place_type == "gymnasium"
+    assert store.get("demo-rtsp-01").place_type == "street"
+    assert {c.id for c in listed} == {"demo-file-01", "demo-rtsp-01"}
+
+    seeded = store.seed_demo_cameras(tmp_path)
+    by_id = {c.id: c for c in seeded}
+    assert by_id["demo-file-01"].place_type == "gymnasium"
+    assert by_id["demo-rtsp-01"].place_type == "street"
+    assert by_id["demo-rtsp-01"].enabled is False
+    assert by_id["demo-corridor-01"].place_type == "corridor_hallway"
+    assert by_id["demo-house-01"].place_type == "house_interior"
+    assert by_id["demo-compound-01"].place_type == "compound_courtyard"
+    assert by_id["demo-roam-01"].place_type == "roam"
 
 
 def test_camera_from_form_blank_uri_keeps_existing(store):

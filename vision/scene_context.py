@@ -35,7 +35,7 @@ class PlaceEntry:
     notes: str = ""
 
 
-# Stable catalog (~26). Display names are generic — never a specific arena.
+# Stable catalog (~27). Display names are generic — never a specific arena.
 PLACES: tuple[PlaceEntry, ...] = (
     PlaceEntry("sports_field", "Sports field", "sports", ("field", "pitch", "soccer_pitch", "football_pitch")),
     PlaceEntry("basketball_court", "Basketball court", "sports", ("hoops_court", "court_basketball")),
@@ -53,6 +53,13 @@ PLACES: tuple[PlaceEntry, ...] = (
     PlaceEntry("corridor_hallway", "Corridor / hallway", "circulation", ("corridor", "hallway", "hall")),
     PlaceEntry("lobby", "Lobby", "circulation", ("foyer", "entrance_lobby")),
     PlaceEntry("stairwell", "Stairwell", "circulation", ("stairs", "staircase")),
+    PlaceEntry(
+        "roam",
+        "Roam / patrol (multi-area)",
+        "circulation",
+        ("roaming", "patrol", "mobile_camera"),
+        "Mobile / patrol camera covering multiple areas. Circulation family — not a sports venue.",
+    ),
     PlaceEntry("house_interior", "House / indoor home", "residential", ("house", "home", "indoor_home", "living_room")),
     PlaceEntry("residential_yard", "Residential yard", "residential", ("yard", "backyard", "garden")),
     PlaceEntry("compound_courtyard", "Compound / courtyard", "residential", ("compound", "courtyard")),
@@ -69,14 +76,16 @@ SPORTS_VENUE_IDS = frozenset(p.id for p in PLACES if p.group == "sports")
 CIRCULATION_IDS = frozenset(p.id for p in PLACES if p.group == "circulation")
 RESIDENTIAL_IDS = frozenset(p.id for p in PLACES if p.group == "residential")
 
-# Street / corridor / house / compound — stronger lean toward confrontation
-# when body-aggression is high and there is no sport context.
+# Street / corridor / house / compound / roam — stronger lean toward
+# confrontation when body-aggression is high and there is no sport context.
+# Roam is circulation (patrol / multi-area), not a sports-venue soften.
 STRONG_CONFRONTATION_IDS = frozenset(
     {
         "street",
         "corridor_hallway",
         "house_interior",
         "compound_courtyard",
+        "roam",
     }
 )
 CONFRONTATION_SETTING_IDS = frozenset(
@@ -86,6 +95,7 @@ CONFRONTATION_SETTING_IDS = frozenset(
         "parking_lot",
         "corridor_hallway",
         "stairwell",
+        "roam",
         "house_interior",
         "residential_yard",
         "compound_courtyard",

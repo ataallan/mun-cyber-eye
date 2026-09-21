@@ -19,6 +19,16 @@ from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
 from vision.scene_context import validate_place_type
 
+# Canonical demo-camera place stamps. Used for seed + empty-place backfill.
+DEMO_PLACE_BACKFILL: dict[str, str] = {
+    "demo-file-01": "gymnasium",
+    "demo-rtsp-01": "street",
+    "demo-corridor-01": "corridor_hallway",
+    "demo-house-01": "house_interior",
+    "demo-compound-01": "compound_courtyard",
+    "demo-roam-01": "roam",
+}
+
 SOURCE_TYPES = frozenset({"file", "rtsp", "webcam"})
 ENV_URI_PREFIX = "env:"
 MOCK_URIS = frozenset({"", "mock", "MOCK", "mock://synthetic", "mock://demo"})
@@ -190,6 +200,7 @@ class CameraStore:
         return self._row_to_camera(row) if row else None
 
     def list_cameras(self, enabled_only: bool = False) -> List[Camera]:
+        self.backfill_demo_place_types()
         q = "SELECT * FROM cameras"
         params: list[Any] = []
         if enabled_only:
@@ -382,46 +393,35 @@ class CameraStore:
             "cameras": [c.to_public_dict() for c in cameras],
         }
 
+    def backfill_demo_place_types(self) -> int:
+        """Fill empty ``place_type`` on known demo cameras. Returns rows updated."""
+        updated = 0
+        now = _utc_now()
+        with self._conn() as conn:
+            for camera_id, place in DEMO_PLACE_BACKFILL.items():
+                cur = conn.execute(
+                    """
+                    UPDATE cameras
+                    SET place_type = ?, updated_at = ?
+                    WHERE id = ? AND (place_type IS NULL OR TRIM(place_type) = '')
+                    """,
+                    (place, now, camera_id),
+                )
+                updated += int(cur.rowcount or 0)
+        return updated
+
     def seed_demo_cameras(self, project_root: str | Path | None = None) -> List[Camera]:
-        """Insert 1–2 demo cameras when the registry is empty."""
-        if self.count() > 0:
-            return self.list_cameras()
-        root = Path(project_root) if project_root else Path.cwd()
-        demo_file = root / "sample_data" / "demo.mp4"
-        file_uri = "MOCK"
-        if demo_file.is_file():
-            file_uri = str(Path("sample_data") / "demo.mp4")
-        file_cam = self.create(
-            camera_id="demo-file-01",
-            name="Demo Lab File",
-            location_label="Demo Lab",
-            source_type="file",
-            uri=file_uri,
-            enabled=True,
-            sample_fps=2.0,
-            notes=(
-                "Authorized demo source. Uses MOCK synthetic frames unless a "
-                "sample clip is present at sample_data/demo.mp4. Replace the "
-                "URI with an authorized video file path for a real file run."
-            ),
-            place_type="gymnasium",
-        )
-        rtsp_cam = self.create(
-            camera_id="demo-rtsp-01",
-            name="Authorized RTSP stub",
-            location_label="Perimeter (stub)",
-            source_type="rtsp",
-            uri="env:RTSP_DEMO_URI",
-            enabled=False,
-            sample_fps=2.0,
-            notes=(
-                "Disabled by default. Set RTSP_DEMO_URI to an authorized RTSP "
-                "URL (credentials stay in the environment). Do not point this "
-                "at unauthorized streams."
-            ),
-            place_type="street",
-        )
-        return [file_cam, rtsp_cam]
+        """Insert demo cameras (create-if-missing) and backfill empty place tags."""
+        self.backfill_demo_place_types()
+        existing_ids = {row["id"] for row in self._list_rows()}
+        for spec in _demo_camera_specs(project_root):
+            if spec["camera_id"] not in existing_ids:
+                self.create(**spec)
+        return self.list_cameras()
+
+    def _list_rows(self) -> list[sqlite3.Row]:
+        with self._conn() as conn:
+            return list(conn.execute("SELECT id FROM cameras").fetchall())
 
     @staticmethod
     def _row_to_camera(row: sqlite3.Row) -> Camera:
@@ -441,6 +441,96 @@ class CameraStore:
             last_error=row["last_error"],
             place_type=row["place_type"] if "place_type" in row.keys() else "",
         )
+
+
+def _demo_camera_specs(project_root: str | Path | None = None) -> list[dict[str, Any]]:
+    """Authorized demo / stub cameras with operator-requested place tags."""
+    root = Path(project_root) if project_root else Path.cwd()
+    demo_file = root / "sample_data" / "demo.mp4"
+    file_uri = "MOCK"
+    if demo_file.is_file():
+        file_uri = str(Path("sample_data") / "demo.mp4")
+    authorized = (
+        "Authorized demo source. Uses MOCK synthetic frames unless a "
+        "sample clip is present at sample_data/demo.mp4. Replace the "
+        "URI with an authorized video file path for a real file run."
+    )
+    stub_note = (
+        "Authorized demo stub (MOCK). Place type is a catalog stamp for "
+        "operators — not a named venue or a determination of what happened."
+    )
+    return [
+        {
+            "camera_id": "demo-file-01",
+            "name": "Demo Lab File",
+            "location_label": "Demo Lab",
+            "source_type": "file",
+            "uri": file_uri,
+            "enabled": True,
+            "sample_fps": 2.0,
+            "notes": authorized,
+            "place_type": "gymnasium",
+        },
+        {
+            "camera_id": "demo-rtsp-01",
+            "name": "Authorized RTSP stub",
+            "location_label": "Perimeter (stub)",
+            "source_type": "rtsp",
+            "uri": "env:RTSP_DEMO_URI",
+            "enabled": False,
+            "sample_fps": 2.0,
+            "notes": (
+                "Disabled by default. Set RTSP_DEMO_URI to an authorized RTSP "
+                "URL (credentials stay in the environment). Do not point this "
+                "at unauthorized streams."
+            ),
+            "place_type": "street",
+        },
+        {
+            "camera_id": "demo-corridor-01",
+            "name": "Corridor North",
+            "location_label": "North corridor",
+            "source_type": "file",
+            "uri": "MOCK",
+            "enabled": True,
+            "sample_fps": 2.0,
+            "notes": stub_note,
+            "place_type": "corridor_hallway",
+        },
+        {
+            "camera_id": "demo-house-01",
+            "name": "House interior demo",
+            "location_label": "House interior",
+            "source_type": "file",
+            "uri": "MOCK",
+            "enabled": True,
+            "sample_fps": 2.0,
+            "notes": stub_note,
+            "place_type": "house_interior",
+        },
+        {
+            "camera_id": "demo-compound-01",
+            "name": "Compound courtyard",
+            "location_label": "Compound courtyard",
+            "source_type": "file",
+            "uri": "MOCK",
+            "enabled": True,
+            "sample_fps": 2.0,
+            "notes": stub_note,
+            "place_type": "compound_courtyard",
+        },
+        {
+            "camera_id": "demo-roam-01",
+            "name": "Roam / patrol cam",
+            "location_label": "Patrol / multi-area",
+            "source_type": "file",
+            "uri": "MOCK",
+            "enabled": True,
+            "sample_fps": 2.0,
+            "notes": stub_note,
+            "place_type": "roam",
+        },
+    ]
 
 
 def _require_name(name: str) -> str:
