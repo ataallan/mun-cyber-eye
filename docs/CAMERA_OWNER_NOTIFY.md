@@ -6,7 +6,7 @@ Many cameras can belong to **one account**, and one camera can notify **several 
 
 When a pipeline run creates an alert for camera C, outbound Resend mail is the **union** of:
 
-1. **Every account linked to C** — each user’s `security_email` if set, otherwise their login `email`. Inactive users and users with no address are skipped with an honest note.
+1. **Every account linked to C** — each user’s `security_email` if set, otherwise their login `email`. Inactive, **pending (unapproved)**, and users with no address are skipped with an honest note.
 2. **Signed-in account** — on interactive Flask **Run Pipeline** / resend only (`security_email` or login email). Background jobs do not invent a session user.
 3. **Optional extras** — Recipients directory, `ALERT_EMAIL_RECIPIENTS` when non-empty, and optional per-camera `notify_email`.
 4. **`SECURITY_ALERT_EMAIL`** — site-wide fallback **only** when no camera account and no session user contributed an address. Default empty.

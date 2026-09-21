@@ -12,7 +12,7 @@ from alerts.notify import NotificationService, NotifyConfig
 from alerts.store import AlertStore
 from ingest.cameras import CameraStore
 
-from .auth import CUSTOMER_ROLES, UserStore, can_train
+from .auth import CUSTOMER_ROLES, UserStore, can_approve_accounts, can_train
 
 
 def _env_flag(name: str, default: str = "0") -> bool:
@@ -272,6 +272,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             "allow_webcam": bool(app.config.get("ALLOW_WEBCAM")),
             "face_aggression_enabled": _env_flag("ENABLE_FACE_AGGRESSION", "0"),
             "can_train": can_train(session.get("role")),
+            "can_approve_accounts": can_approve_accounts(session.get("role")),
         }
 
     return app

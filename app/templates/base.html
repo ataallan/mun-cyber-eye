@@ -32,7 +32,7 @@
       <a href="{{ url_for('main.recipients') }}">Recipients</a>
       {% endif %}
       <a href="{{ url_for('main.my_cameras') }}">My cameras</a>
-      {% if session.get('role') == 'admin' %}
+      {% if can_approve_accounts %}
       <a href="{{ url_for('main.accounts') }}">Accounts</a>
       {% endif %}
       <span class="user">{{ session.user }}{% if session.get('role') %} · {{ session.role }}{% endif %}</span>

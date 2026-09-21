@@ -8,10 +8,10 @@
   </div>
   {% if needs_setup %}
   <h1>Create the first admin account</h1>
-  <p class="muted">Choose a username and a strong password (at least 8 characters). This first account becomes site admin (cameras, alerts, recipients). It cannot train models. No default password is shipped.</p>
+  <p class="muted">Choose a username and a strong password (at least 8 characters). This first account becomes site admin and is auto-approved so you can approve later customers. It cannot train models. No default password is shipped.</p>
   {% else %}
   <h1>Create account</h1>
-  <p class="muted">Register as an operator to review alerts. New accounts do not grant autonomous control — humans verify and decide.</p>
+  <p class="muted">Register as an operator to review alerts. A site admin or Mun Cyber developer must approve your account before you can sign in to cameras, alerts, or Run Pipeline. New accounts do not grant autonomous control — humans verify and decide.</p>
   {% endif %}
   <form method="post" class="form">
     <label>Username
@@ -34,6 +34,6 @@
   <p class="auth-links">
     <span>Already have an account? <a href="{{ url_for('main.login') }}">Sign in</a></span>
   </p>
-  <p class="fineprint">Authorized use only. Operator accounts review alerts; they do not trigger enforcement. Later accounts are operators. Model training is reserved for Mun Cyber developer accounts and is never granted by Create account.</p>
+  <p class="fineprint">Authorized use only. Operator accounts review alerts; they do not trigger enforcement. Later accounts are operators and stay pending until approved. Model training is reserved for Mun Cyber developer accounts and is never granted by Create account.</p>
 </section>
 {% endblock %}
