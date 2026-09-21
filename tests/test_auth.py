@@ -429,6 +429,89 @@ def test_admin_role_env_cannot_grant_developer(tmp_path):
     assert ">Train models</a>" not in dash.get_data(as_text=True)
 
 
+def _password_input(html: str, field_id: str) -> str:
+    match = re.search(rf'<input[^>]*id="{field_id}"[^>]*>', html)
+    assert match, html
+    return match.group(0)
+
+
+def _password_toggle(html: str, field_id: str) -> str:
+    match = re.search(
+        rf'<button[^>]*aria-controls="{field_id}"[^>]*>',
+        html,
+    )
+    assert match, html
+    return match.group(0)
+
+
+def test_auth_forms_offer_show_hide_password(client, app):
+    """Visibility is a browser control. The server still renders type=password and never echoes the secret."""
+    login = client.get("/login").get_data(as_text=True)
+    login_input = _password_input(login, "login-password")
+    assert 'type="password"' in login_input
+    assert 'name="password"' in login_input
+    assert 'autocomplete="off"' in login_input
+    assert "readonly" in login_input
+    assert "value=" not in login_input
+    login_toggle = _password_toggle(login, "login-password")
+    assert 'type="button"' in login_toggle
+    assert 'aria-label="Show password"' in login_toggle
+    assert 'aria-pressed="false"' in login_toggle
+    assert 'data-label-hide="Hide password"' in login_toggle
+    assert "password-toggle.js" in login
+
+    posted = client.post(
+        "/login",
+        data={"username": "nobody", "password": "s3cret-value"},
+    )
+    posted_html = posted.get_data(as_text=True)
+    assert "s3cret-value" not in posted_html
+    assert 'type="password"' in _password_input(posted_html, "login-password")
+    assert "value=" not in _password_input(posted_html, "login-password")
+
+    register = client.get("/register").get_data(as_text=True)
+    for field_id, show_label in (
+        ("register-password", "Show password"),
+        ("register-confirm", "Show confirm password"),
+    ):
+        tag = _password_input(register, field_id)
+        assert 'type="password"' in tag
+        assert "value=" not in tag
+        toggle = _password_toggle(register, field_id)
+        assert 'type="button"' in toggle
+        assert f'aria-label="{show_label}"' in toggle
+    assert "password-toggle.js" in register
+
+    create_account = client.get("/create-account").get_data(as_text=True)
+    assert 'aria-controls="register-password"' in create_account
+    assert 'aria-controls="register-confirm"' in create_account
+
+    forgot = client.get("/forgot-password").get_data(as_text=True)
+    assert "password-toggle" not in forgot
+    assert 'type="password"' not in forgot
+
+    store: UserStore = app.extensions["user_store"]
+    user = store.create_user(
+        username="pat",
+        email="pat@example.com",
+        password="secret123",
+    )
+    token = store.create_reset_token(user.id, ttl_minutes=45)
+    reset = client.get(f"/reset-password?token={token}").get_data(as_text=True)
+    assert "secret123" not in reset
+    for field_id, show_label in (
+        ("reset-password", "Show password"),
+        ("reset-confirm", "Show confirm password"),
+    ):
+        tag = _password_input(reset, field_id)
+        assert 'type="password"' in tag
+        assert "value=" not in tag
+        toggle = _password_toggle(reset, field_id)
+        assert 'type="button"' in toggle
+        assert f'aria-label="{show_label}"' in toggle
+    assert "password-toggle.js" in reset
+
+
 def test_legacy_auth_db_accepts_developer_role(tmp_path):
     db = tmp_path / "legacy-auth.db"
     conn = sqlite3.connect(str(db))

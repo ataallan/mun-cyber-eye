@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_password_field.html" import password_field, password_toggle_script %}
 {% block title %}Sign in · {{ product_name }}{% endblock %}
 {% block content %}
 <section class="card auth-card">
@@ -19,9 +20,7 @@
     <label>Username
       <input type="text" name="username" autocomplete="off" required readonly onfocus="this.removeAttribute('readonly')">
     </label>
-    <label>Password
-      <input type="password" name="password" autocomplete="off" required readonly onfocus="this.removeAttribute('readonly')">
-    </label>
+    {{ password_field("login-password", "password", "Password", "off", readonly_until_focus=True) }}
     <button class="btn btn-primary" type="submit">Sign in</button>
   </form>
   <p class="auth-links">
@@ -31,3 +30,4 @@
   <p class="fineprint">Username and password start empty. Sign out ends the console session. A browser may still fill a saved password for this site until you remove it. Authorized use only. This console does not enforce or act on its own. Detection runs from registered cameras — not from uploading incident clips.</p>
 </section>
 {% endblock %}
+{% block scripts %}{{ password_toggle_script() }}{% endblock %}

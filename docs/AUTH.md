@@ -21,6 +21,10 @@ Login checks the hashed password in the `users` table **and** that the account i
 | `/register` | Username, email, password, confirm password. First account is site admin (not developer) and is auto-approved. Later accounts wait for approval. |
 | `/forgot-password` | Request a time-limited reset (45 minutes by default). Pending accounts are treated like unknown identities. |
 | `/reset-password?token=…` | Set a new password (approved, active accounts only) |
+
+## Show / hide password
+
+Sign-in, create account, and reset password put a control on each password field (including confirm). It starts hidden (`type="password"`). The accessible name is **Show password** / **Hide password** (confirm fields: **Show confirm password** / **Hide confirm password**). The switch runs only in the browser. The password is not copied into the HTML, not posted to another endpoint, and not written to the server log. Forgot-password and the email sign-in code page have no password field.
 | `/logout` | **Sign out.** Clears the session cookie, including any email-code stamp, so the next sign-in starts at the password form |
 | `/accounts` | Admin dashboard: pending queue with **Approve** / **Reject**, deactivate / reactivate. Site `admin` and `developer` only — not `operator`. |
 | `/admin/train` (`/train`) | Model training — **developer only**; customers do not see the nav or the page |
