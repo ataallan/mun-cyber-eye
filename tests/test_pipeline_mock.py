@@ -36,6 +36,8 @@ def test_synthetic_demo_creates_alerts(tmp_path):
     assert "potential_fight" in predicted
     sports = {a.sport_context for a in result.assessments if a.sport_context}
     assert {"basketball", "soccer"} <= sports
+    # Blank MOCK color-wash frames must not invent extra sports.
+    assert sports <= {"basketball", "soccer"}
     assert all(a.face_cue_status == "disabled" for a in result.assessments)
     non_alerts = {a.category for a in result.assessments if not a.should_alert}
     assert "game_or_play" in non_alerts
@@ -55,6 +57,22 @@ def test_synthetic_demo_offline_notify_does_not_invent_success(tmp_path):
         loaded = store.get(alert.id)
         assert loaded.delivery_status == "queued"
         assert loaded.delivery_status != "sent"
+
+
+def test_blank_color_wash_does_not_invent_sport(tmp_path):
+    from vision.assists import AssistState, enrich_detections
+
+    img = np.zeros((120, 160, 3), dtype=np.uint8)
+    img[:, :, 0] = 200
+    img[:, :, 1] = 40
+    img[:, :, 2] = 60
+    dets, assist = enrich_detections(
+        img,
+        [Detection("person", 0.9, (10, 10, 40, 80))],
+        AssistState(),
+    )
+    assert assist.sport_context is None
+    assert all(not (d.extras or {}).get("sport_context") for d in dets)
 
 
 class _OrdinaryAdapter(VisionAdapter):

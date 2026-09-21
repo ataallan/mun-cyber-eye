@@ -105,17 +105,17 @@ def enrich_detections(
     inferred_id, inferred_conf = infer_sport_context(image_bgr)
     # Never invent a sport on fight / fall / weapon frames — reddish
     # confrontation painters must not become "basketball."
+    # Only infer a sport when the activity model already said game_or_play
+    # (or MOCK/folder extras already named one). Color-wash frames must not
+    # invent tennis/basketball from a tinted blank.
     if (
         sport_id is None
         and inferred_id
+        and "game_or_play" in activity_labels
+        and inferred_conf >= 0.50
         and not (activity_labels & _THREAT_ACTIVITY)
     ):
-        wants_play = "game_or_play" in activity_labels
-        unlabeled = not activity_labels
-        if (wants_play and inferred_conf >= 0.50) or (
-            unlabeled and inferred_conf >= 0.70
-        ):
-            sport_id, sport_conf = inferred_id, inferred_conf
+        sport_id, sport_conf = inferred_id, inferred_conf
 
     aggression = analyze_aggression(
         image_bgr,
