@@ -475,6 +475,8 @@ class UserStore:
         if user is None or not check_password_hash(user.password_hash, password):
             return None, "invalid"
         if not user.approved:
+            if not user.active:
+                return user, "inactive"
             return user, "pending"
         if not user.active:
             return user, "inactive"
