@@ -49,11 +49,18 @@
         </dd>
         {% endif %}
         {% if payload.metadata and payload.metadata.weapon %}
+        <dt>Dangerous object</dt><dd>
+          {% if payload.metadata.weapon.weapon_id %}<code>{{ payload.metadata.weapon.weapon_id }}</code>{% endif %}
+          {% if payload.metadata.weapon.weapon_class %} · {{ payload.metadata.weapon.weapon_class }}{% endif %}
+          {% if payload.metadata.weapon.harm_potential %} · harm {{ payload.metadata.weapon.harm_potential }}{% endif %}
+          <span class="fineprint">curated assist — toys, tools, and phones false-fire</span>
+        </dd>
         <dt>Weapon use</dt><dd>
           {% if payload.metadata.weapon.aimed_at_person %}<code>firearm_aimed_at_person</code> · {% endif %}
           intensity {{ '%.2f'|format(payload.metadata.weapon.use_intensity or 0) }}
-          {% if payload.metadata.weapon.use_tier %} ({{ payload.metadata.weapon.use_tier }}){% endif %}
-          <span class="fineprint">bbox proxy — not proof of a real firearm or intent; sport does not suppress an aimed-at-person cue</span>
+          {% if payload.metadata.weapon.use_intensity_label %} (<code>{{ payload.metadata.weapon.use_intensity_label }}</code>){% endif %}
+          {% if payload.metadata.weapon.use_tier and payload.metadata.weapon.use_tier != payload.metadata.weapon.use_intensity_label %} · {{ payload.metadata.weapon.use_tier }}{% endif %}
+          <span class="fineprint">indicator only — not proof of assault or intent; sport does not suppress an aimed-at-person cue</span>
         </dd>
         {% endif %}
         {% if payload.metadata and payload.metadata.throw and payload.metadata.throw.thrown_at_person %}

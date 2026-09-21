@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Optional, Sequence
 
+from vision.dangerous_objects import detector_signal_labels, weapon_should_soften_sport
 from vision.dataset import canonicalize_category
 from vision.detector import Detection
 
@@ -77,6 +78,10 @@ class RiskResult:
     aimed_at_person: bool = False
     weapon_use_intensity: float = 0.0
     weapon_use_tier: str = ""
+    use_intensity_label: str = ""
+    weapon_class: str = ""
+    harm_potential: str = ""
+    weapon_id: str = ""
     thrown_at_person: bool = False
     throw_confidence: float = 0.0
     throw_label: str = ""
@@ -117,20 +122,7 @@ class RiskEngine:
         "aggressive_motion",
     }
     FALL_SIGNALS = {"person_down", "horizontal_pose", "fall"}
-    WEAPON_SIGNALS = {
-        "knife",
-        "gun",
-        "firearm",
-        "pistol",
-        "rifle",
-        "handgun",
-        "raised_object",
-        "suspicious_object",
-        "scissors",
-        "baseball bat",
-        "firearm_aimed_at_person",
-        "weapon_pointed_at_person",
-    }
+    WEAPON_SIGNALS = detector_signal_labels()
     GUNSHOT_SIGNALS = {"possible_gunshot_video_proxy", "potential_gunshot"}
 
     def assess(self, detections: Sequence[Detection]) -> RiskResult:
@@ -180,25 +172,22 @@ class RiskEngine:
         weapon_hits = label_set & self.WEAPON_SIGNALS
         people = [d for d in detections if d.label.lower() == "person"]
 
-        # Priority: weapon-object > fight > fall > ordinary
-        if weapon_hits:
-            conf = self._avg_conf(conf_by_label, weapon_hits, floor=0.55)
-            level = RiskLevel.HIGH if conf >= 0.65 else RiskLevel.ELEVATED
-            return self._stamp(
-                RiskResult(
-                    category=ActivityCategory.POTENTIAL_WEAPON_OBJECT,
-                    risk_level=level,
-                    confidence=round(conf, 3),
-                    rationale=(
-                        "Possible weapon-like or dangerous object indicators detected. "
-                        "Requires human verification — not a determination of weapon possession."
-                        + self._weapon_suffix(ctx)
+        # Priority: weapon-object (unless sport-bat low intensity) > fight > fall
+        if weapon_hits or self._weapon_present(ctx):
+            if not self._weapon_sport_softens(ctx):
+                conf = self._avg_conf(conf_by_label, weapon_hits, floor=0.55) if weapon_hits else max(
+                    ctx.weapon_use_intensity, 0.55
+                )
+                if ctx.use_intensity_label == "possible_strike" or ctx.aimed_at_person:
+                    conf = max(conf, 0.78)
+                return self._stamp(
+                    self._dangerous_object_alert(
+                        ctx,
+                        sorted(weapon_hits | {p.label for p in people} | {ctx.weapon_id or ""} - {""}),
+                        confidence=conf,
                     ),
-                    contributing_labels=sorted(weapon_hits | {p.label for p in people}),
-                    should_alert=True,
-                ),
-                ctx,
-            )
+                    ctx,
+                )
 
         fight_pattern = len(fight_hits) >= 2 or (
             "strike_motion" in fight_hits and len(people) >= 2
@@ -329,8 +318,12 @@ class RiskEngine:
             ) + "."
 
         if category == ActivityCategory.GAME_OR_PLAY:
+            if ctx.aimed_at_person:
+                return self._aimed_firearm_alert(ctx, [])
             if ctx.thrown_at_person and not self._throw_softens(ctx):
                 return self._thrown_alert(ctx)
+            if self._weapon_present(ctx) and not self._weapon_sport_softens(ctx):
+                return self._dangerous_object_alert(ctx, [category.value])
             return self._combine_game_and_aggression(conf, score_txt, ctx)
 
         if (
@@ -373,7 +366,14 @@ class RiskEngine:
             )
 
         if category == ActivityCategory.POTENTIAL_WEAPON_OBJECT:
-            level = RiskLevel.HIGH if conf >= 0.65 else RiskLevel.ELEVATED
+            if self._weapon_sport_softens(ctx):
+                return self._sport_vs_fight(
+                    confidence=max(conf, ctx.sport_confidence, 0.5),
+                    labels=[category.value, ctx.sport_context or "game_or_play"],
+                    context=ctx,
+                    score_txt=score_txt,
+                )
+            level = RiskLevel.HIGH if conf >= 0.65 or ctx.use_intensity_label == "possible_strike" else RiskLevel.ELEVATED
             rationale = (
                 "Phase 3 activity model flagged a potential weapon-like or dangerous "
                 "object pattern. Requires human verification — not a determination "
@@ -663,6 +663,62 @@ class RiskEngine:
             "No alert queued. Human operators may still review the live source."
         )
 
+    def _weapon_present(self, ctx: SceneContext) -> bool:
+        if ctx.aimed_at_person:
+            return True
+        if ctx.weapon_id and ctx.use_intensity_label and ctx.use_intensity_label != "none":
+            return True
+        return bool(ctx.weapon_class and ctx.weapon_use_intensity > 0)
+
+    def _weapon_sport_softens(self, ctx: SceneContext) -> bool:
+        return weapon_should_soften_sport(
+            weapon_id=ctx.weapon_id or "",
+            sport_context=ctx.sport_context,
+            sports_venue=ctx.sports_venue,
+            sport_decent=ctx.sport_decent,
+            use_intensity=ctx.weapon_use_intensity,
+            use_intensity_label=ctx.use_intensity_label or "",
+            aimed_at_person=ctx.aimed_at_person,
+            gunshot_proxy=ctx.gunshot_proxy,
+        )
+
+    def _dangerous_object_alert(
+        self,
+        ctx: SceneContext,
+        labels: list[str],
+        confidence: Optional[float] = None,
+    ) -> RiskResult:
+        conf = max(
+            0.55,
+            float(confidence or 0),
+            ctx.weapon_use_intensity,
+        )
+        high = (
+            ctx.harm_potential == "high"
+            or ctx.use_intensity_label in {"possible_strike", "threatening_motion"}
+            or ctx.aimed_at_person
+            or conf >= 0.65
+        )
+        what = ctx.weapon_id or "dangerous object"
+        klass = ctx.weapon_class or "unknown"
+        harm = ctx.harm_potential or "unknown"
+        intensity_label = ctx.use_intensity_label or ctx.weapon_use_tier or "none"
+        return RiskResult(
+            category=ActivityCategory.POTENTIAL_WEAPON_OBJECT,
+            risk_level=RiskLevel.HIGH if high else RiskLevel.ELEVATED,
+            confidence=round(min(0.95, conf), 3),
+            rationale=(
+                f"Possible weapon-like or dangerous object ({what}, class {klass}, "
+                f"harm_potential {harm}). Use-against-person intensity "
+                f"{ctx.weapon_use_intensity:.2f} ({intensity_label}) — indicator only, "
+                "not proof of assault or intent. Toys, tools, and phones false-fire. "
+                "Requires human verification — not a determination of weapon possession."
+                + self._weapon_suffix(ctx)
+            ),
+            contributing_labels=sorted({lab for lab in labels if lab}),
+            should_alert=True,
+        )
+
     def _throw_softens(self, ctx: SceneContext) -> bool:
         from vision.throw_assist import ThrowAssessment, throw_should_soften
 
@@ -758,9 +814,15 @@ class RiskEngine:
             bits.append(" Aimed-at-person cue is present.")
         if ctx.thrown_at_person:
             bits.append(" Thrown-object-toward-person cue is present.")
-        if ctx.weapon_use_tier:
+        if ctx.weapon_use_tier or ctx.use_intensity_label:
             bits.append(
-                f" Use intensity {ctx.weapon_use_intensity:.2f} ({ctx.weapon_use_tier})."
+                f" Use intensity {ctx.weapon_use_intensity:.2f} "
+                f"({ctx.use_intensity_label or ctx.weapon_use_tier})."
+            )
+        if ctx.weapon_class:
+            bits.append(
+                f" Weapon class {ctx.weapon_class}, harm_potential "
+                f"{ctx.harm_potential or 'unknown'}."
             )
         return "".join(bits)
 
@@ -789,6 +851,10 @@ class RiskEngine:
         result.aimed_at_person = ctx.aimed_at_person
         result.weapon_use_intensity = ctx.weapon_use_intensity
         result.weapon_use_tier = ctx.weapon_use_tier
+        result.use_intensity_label = ctx.use_intensity_label
+        result.weapon_class = ctx.weapon_class
+        result.harm_potential = ctx.harm_potential
+        result.weapon_id = ctx.weapon_id
         result.thrown_at_person = ctx.thrown_at_person
         result.throw_confidence = ctx.throw_confidence
         result.throw_label = ctx.throw_label

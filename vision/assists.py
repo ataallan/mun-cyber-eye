@@ -85,6 +85,10 @@ class SceneAssist:
             "weapon": self.weapon.to_dict(),
             "weapon_use_intensity": round(float(self.weapon.use_intensity), 3),
             "weapon_use_tier": self.weapon.use_tier,
+            "use_intensity_label": self.weapon.use_intensity_label,
+            "weapon_class": self.weapon.weapon_class,
+            "harm_potential": self.weapon.harm_potential,
+            "weapon_id": self.weapon.weapon_id,
             "aimed_at_person": bool(self.weapon.aimed_at_person),
             "throw": self.throw.to_dict(),
             "thrown_at_person": bool(self.throw.thrown_at_person),
@@ -272,7 +276,11 @@ def enrich_detections(
         aggression=aggression,
         prev_bgr=state.prev_bgr,
     )
-    weapon = analyze_weapon_use(dets, aggression=aggression)
+    weapon = analyze_weapon_use(
+        dets,
+        aggression=aggression,
+        prev_tracks=state.prev_object_tracks or None,
+    )
     thrown = analyze_throw(dets, prev_tracks=state.prev_object_tracks or None)
 
     assist = SceneAssist(

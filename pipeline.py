@@ -61,6 +61,10 @@ class FrameAssessment:
     aimed_at_person: bool = False
     weapon_use_intensity: float = 0.0
     weapon_use_tier: str = ""
+    use_intensity_label: str = ""
+    weapon_class: str = ""
+    harm_potential: str = ""
+    weapon_id: str = ""
     thrown_at_person: bool = False
     throw_label: str = ""
     throw_confidence: float = 0.0
@@ -254,6 +258,10 @@ class CyberEyePipeline:
                     aimed_at_person=bool(risk.aimed_at_person),
                     weapon_use_intensity=risk.weapon_use_intensity,
                     weapon_use_tier=risk.weapon_use_tier or "",
+                    use_intensity_label=risk.use_intensity_label or "",
+                    weapon_class=risk.weapon_class or "",
+                    harm_potential=risk.harm_potential or "",
+                    weapon_id=risk.weapon_id or "",
                     thrown_at_person=bool(risk.thrown_at_person),
                     throw_label=risk.throw_label or "",
                     throw_confidence=risk.throw_confidence,
@@ -340,15 +348,19 @@ class CyberEyePipeline:
                 "confidence": risk.gunshot_confidence,
                 "audio_status": risk.gunshot_audio_status or "disabled",
             }
-            if risk.aimed_at_person or risk.weapon_use_tier:
+            if risk.aimed_at_person or risk.weapon_use_tier or risk.weapon_id or risk.weapon_class:
                 metadata["weapon"] = {
                     "aimed_at_person": bool(risk.aimed_at_person),
                     "use_intensity": risk.weapon_use_intensity,
+                    "use_intensity_label": risk.use_intensity_label or risk.weapon_use_tier,
                     "use_tier": risk.weapon_use_tier,
+                    "weapon_class": risk.weapon_class,
+                    "harm_potential": risk.harm_potential,
+                    "weapon_id": risk.weapon_id,
                     "cue": (
                         "firearm_aimed_at_person"
                         if risk.aimed_at_person
-                        else risk.weapon_use_tier
+                        else risk.use_intensity_label or risk.weapon_use_tier
                     ),
                 }
             if risk.thrown_at_person:

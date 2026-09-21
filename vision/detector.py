@@ -184,7 +184,7 @@ class YoloVisionAdapter(VisionAdapter):
     name = "yolo"
 
     # Map COCO / custom labels toward our risk heuristics
-    WEAPON_LIKE = {"knife", "scissors", "baseball bat", "sports ball"}  # heuristic
+    WEAPON_LIKE = {"knife", "scissors", "baseball bat"}  # heuristic; sports balls are play
     PERSON_LABELS = {"person"}
 
     def __init__(self, model_name: str = "yolov8n.pt") -> None:

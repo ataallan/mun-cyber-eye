@@ -79,6 +79,9 @@ def create_app(test_config: dict | None = None) -> Flask:
         OBJECTS_DATA_ROOT=os.getenv(
             "OBJECTS_DATA_ROOT", str(root / "data" / "objects")
         ),
+        DANGEROUS_DATA_ROOT=os.getenv(
+            "DANGEROUS_DATA_ROOT", str(root / "data" / "dangerous")
+        ),
         CHECKPOINTS_DIR=os.getenv(
             "CHECKPOINTS_DIR", str(root / "data" / "checkpoints")
         ),
@@ -125,6 +128,10 @@ def create_app(test_config: dict | None = None) -> Flask:
             app.config["OBJECTS_DATA_ROOT"] = str(
                 Path(app.config["ACTIVITY_DATA_ROOT"]).parent / "objects"
             )
+        if "DANGEROUS_DATA_ROOT" not in test_config and test_config.get("ACTIVITY_DATA_ROOT"):
+            app.config["DANGEROUS_DATA_ROOT"] = str(
+                Path(app.config["ACTIVITY_DATA_ROOT"]).parent / "dangerous"
+            )
 
     def _abs(path_value: str) -> str:
         path = Path(path_value)
@@ -144,6 +151,9 @@ def create_app(test_config: dict | None = None) -> Flask:
     )
     app.config["OBJECTS_DATA_ROOT"] = _abs(
         app.config.get("OBJECTS_DATA_ROOT") or str(root / "data" / "objects")
+    )
+    app.config["DANGEROUS_DATA_ROOT"] = _abs(
+        app.config.get("DANGEROUS_DATA_ROOT") or str(root / "data" / "dangerous")
     )
     app.config["CHECKPOINTS_DIR"] = _abs(
         app.config.get("CHECKPOINTS_DIR") or str(root / "data" / "checkpoints")

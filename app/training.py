@@ -29,6 +29,11 @@ from vision.dataset import (
     parse_folder_label,
     parse_folder_tags,
 )
+from vision.dangerous_objects import (
+    describe_dangerous_dataset,
+    ensure_dangerous_tree,
+    validate_dangerous_id,
+)
 from vision.objects_catalog import (
     describe_objects_dataset,
     ensure_objects_tree,
@@ -46,7 +51,7 @@ MAX_UPLOAD_BYTES = 8 * 1024 * 1024
 MAX_VIDEO_UPLOAD_BYTES = 64 * 1024 * 1024
 MAX_ZIP_MEMBERS = 400
 VIDEO_SUFFIXES = {".mp4", ".avi", ".mov", ".mkv"}
-VIDEO_EXTRACT_KINDS = ("activity", "sport", "place", "object")
+VIDEO_EXTRACT_KINDS = ("activity", "sport", "place", "object", "dangerous")
 MAX_VIDEO_EXTRACT_FRAMES = 240
 
 
@@ -76,6 +81,19 @@ def objects_inventory(config: dict) -> dict:
     root = objects_root_from_config(config)
     root.mkdir(parents=True, exist_ok=True)
     return describe_objects_dataset(root)
+
+
+def dangerous_root_from_config(config: dict) -> Path:
+    return Path(
+        config.get("DANGEROUS_DATA_ROOT")
+        or Path(config["OBJECTS_DATA_ROOT"]).parent / "dangerous"
+    )
+
+
+def dangerous_inventory(config: dict) -> dict:
+    root = dangerous_root_from_config(config)
+    root.mkdir(parents=True, exist_ok=True)
+    return describe_dangerous_dataset(root)
 
 
 def list_checkpoint_files(config: dict) -> list[Path]:
@@ -395,7 +413,7 @@ def resolve_label_dest(
     kind = (kind or "activity").strip().lower()
     if kind not in VIDEO_EXTRACT_KINDS:
         raise ValueError(
-            "Kind must be activity, sport, place, or object (catalog class)."
+            "Kind must be activity, sport, place, object, or dangerous (catalog class)."
         )
     if kind == "object":
         oid = validate_object_id(object_id)
@@ -403,6 +421,12 @@ def resolve_label_dest(
         dest = _assert_under(root / split / oid, root)
         dest.mkdir(parents=True, exist_ok=True)
         return dest, f"object:{oid}"
+    if kind == "dangerous":
+        oid = validate_dangerous_id(object_id)
+        root = ensure_dangerous_tree(dangerous_root_from_config(config), [oid])
+        dest = _assert_under(root / split / oid, root)
+        dest.mkdir(parents=True, exist_ok=True)
+        return dest, f"dangerous:{oid}"
 
     if kind == "sport":
         folder = folder_label_for_upload("game_or_play", sport_context, "")

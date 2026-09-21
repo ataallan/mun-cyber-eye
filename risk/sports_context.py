@@ -87,6 +87,10 @@ class SceneContext:
     aimed_at_person: bool = False
     weapon_use_intensity: float = 0.0
     weapon_use_tier: str = ""
+    use_intensity_label: str = ""
+    weapon_class: str = ""
+    harm_potential: str = ""
+    weapon_id: str = ""
     weapon_cues: List[str] = field(default_factory=list)
     thrown_at_person: bool = False
     throw_confidence: float = 0.0
@@ -297,6 +301,20 @@ def collect_scene_context(detections: Sequence[Detection]) -> SceneContext:
             ctx.weapon_use_tier = str(
                 weapon.get("use_tier") or extras.get("weapon_use_tier") or ctx.weapon_use_tier
             )
+            ctx.use_intensity_label = str(
+                weapon.get("use_intensity_label")
+                or extras.get("use_intensity_label")
+                or ctx.use_intensity_label
+            )
+            ctx.weapon_class = str(
+                weapon.get("weapon_class") or extras.get("weapon_class") or ctx.weapon_class
+            )
+            ctx.harm_potential = str(
+                weapon.get("harm_potential") or extras.get("harm_potential") or ctx.harm_potential
+            )
+            ctx.weapon_id = str(
+                weapon.get("weapon_id") or extras.get("weapon_id") or ctx.weapon_id
+            )
             extra_wc = weapon.get("cues") or []
             if isinstance(extra_wc, (list, tuple)):
                 ctx.weapon_cues.extend(str(c) for c in extra_wc)
@@ -340,9 +358,12 @@ def collect_scene_context(detections: Sequence[Detection]) -> SceneContext:
 def should_soften_fight(ctx: SceneContext) -> bool:
     """True when sport / sports-venue context should suppress fight heuristics.
 
-    Aimed-at-person firearm cues are never softened (unlike a bat on a field).
+    Aimed-at-person firearm cues are never softened (unlike a bat on a field
+    at low use-intensity).
     """
     if ctx.aimed_at_person or ctx.gunshot_proxy:
+        return False
+    if ctx.use_intensity_label == "possible_strike" and ctx.weapon_class:
         return False
     if ctx.thrown_at_person and ctx.throw_harmful and not ctx.throw_sport_projectile:
         return False

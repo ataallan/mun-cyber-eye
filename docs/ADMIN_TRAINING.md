@@ -27,7 +27,7 @@ The **Train models** nav link is shown only when `session.role == admin`.
 7. **Activate checkpoint** writes the chosen file to `data/active_checkpoint.json`. Subsequent **Run Pipeline** / upload runs use that model.
 8. Optional **Evaluate** runs `vision.eval_activity` on val or test.
 9. **Upload labeled frames** — multi-file into a chosen category (optional sport context writes `game_or_play__<sport>`; optional place type writes `scene__<place>`), or a zip of `train/<category>/*.jpg` including catalog sport folders and `train/scene__street/*.jpg`. Unknown category names and `..` paths are rejected. Sport-context, scene-place, and body-aggression assists stay in the pipeline; training does not replace them. See [SCENE_CONTEXT.md](SCENE_CONTEXT.md).
-10. **Extract frames from video** — admin picks kind (activity / game_or_play+sport / scene place / **object class**), uploads an authorized mp4 / avi / mov / mkv, and sets sample FPS / max frames. `FrameSampler` writes JPEGs into `data/activity/train/...` or `data/objects/train/<object_id>/`. **Videos are sampled to frames; the sklearn activity trainer still learns from images.** After extract, use **Train from labeled data** for activity classes. Optional **Train object model** fits a small CPU classifier when enough object images exist; runtime inventory still prefers YOLO and will not invent a refrigerator when the detector is missing. See [OBJECTS_AND_STRUCTURES.md](OBJECTS_AND_STRUCTURES.md).
+10. **Extract frames from video** — admin picks kind (activity / game_or_play+sport / scene place / **object class** / **dangerous / weapon-like class**), uploads an authorized mp4 / avi / mov / mkv, and sets sample FPS / max frames. `FrameSampler` writes JPEGs into `data/activity/train/...`, `data/objects/train/<object_id>/`, or `data/dangerous/train/<id>/`. Activity class `potential_weapon_object` remains a six-class trainer folder. **Videos are sampled to frames; the sklearn activity trainer still learns from images.** After extract, use **Train from labeled data** for activity classes. Optional **Train object model** fits a small CPU classifier when enough object images exist; runtime inventory still prefers YOLO and will not invent a refrigerator when the detector is missing. See [OBJECTS_AND_STRUCTURES.md](OBJECTS_AND_STRUCTURES.md) and [DANGEROUS_OBJECTS.md](DANGEROUS_OBJECTS.md).
 
 Training is in-request (seconds on CPU). If a future model exceeds ~60s, switch that job to a background thread and a status file; do not silently hang the worker.
 
@@ -60,6 +60,7 @@ Paths:
 | `CHECKPOINTS_DIR` | `data/checkpoints` | Train output + activate list |
 | `ACTIVITY_DATA_ROOT` | `data/activity` | Labeled frames |
 | `OBJECTS_DATA_ROOT` | `data/objects` | Labeled object/structure frames (sibling tree) |
+| `DANGEROUS_DATA_ROOT` | `data/dangerous` | Labeled dangerous / weapon-like frames (sibling tree) |
 | `ACTIVITY_CHECKPOINT` | `data/checkpoints/activity_demo.joblib` | Fallback when no pointer file |
 
 ## Honesty
@@ -69,7 +70,7 @@ Paths:
 - A higher F1 does not authorize skipping human review.
 - Train and activate actions are written to `system_audit` (actor = session username).
 - **Videos are sampled to frames; the sklearn activity trainer still learns from images.**
-- Fall / gunshot / aimed-firearm / thrown-object assists are pipeline extras, not extra sklearn classes. `potential_gunshot` is a risk enum only. See [GUNSHOTS_AND_FALLS.md](GUNSHOTS_AND_FALLS.md).
+- Fall / gunshot / aimed-firearm / thrown-object / dangerous-object intensity assists are pipeline extras, not extra sklearn classes. `potential_gunshot` is a risk enum only. See [GUNSHOTS_AND_FALLS.md](GUNSHOTS_AND_FALLS.md) and [DANGEROUS_OBJECTS.md](DANGEROUS_OBJECTS.md).
 
 ## CLI (unchanged)
 

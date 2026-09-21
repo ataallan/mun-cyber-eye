@@ -54,7 +54,7 @@ Documented rule (also covered by tests):
 5. **Street + `sport_context`** (street soccer, …) → still `game_or_play` unless aggression is **extreme**; rationale notes *“street play — verify.”*
 6. Similar kit colors slightly boost play confidence; missing kits do not prove a fight.
 
-Weapon-object, aimed-firearm, harmful thrown-object, gunshot-proxy, and fall paths are **not** sport-softened (a bat on a field may still soften; `firearm_aimed_at_person` never does). A sports ball thrown toward a teammate on a court stays `game_or_play` unless an aimed-firearm cue is also strong. Brick / bottle / improvised toward a person on a street / corridor / house alerts. Dance stays dance (choreography is not upgraded to a fight on scene-cut motion). See [GUNSHOTS_AND_FALLS.md](GUNSHOTS_AND_FALLS.md).
+Weapon-object, aimed-firearm, harmful thrown-object, gunshot-proxy, and fall paths are **not** sport-softened except a **baseball bat on a matching field at low use-intensity** (see [DANGEROUS_OBJECTS.md](DANGEROUS_OBJECTS.md)). `firearm_aimed_at_person` never softens. A sports ball thrown toward a teammate on a court stays `game_or_play` unless an aimed-firearm cue is also strong. Brick / bottle / improvised toward a person on a street / corridor / house alerts. Dance stays dance (choreography is not upgraded to a fight on scene-cut motion). See [GUNSHOTS_AND_FALLS.md](GUNSHOTS_AND_FALLS.md).
 
 ```bash
 # .env

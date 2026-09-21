@@ -137,6 +137,24 @@
         {{ result.thrown_at_person_frames or 0 }} frame(s)
         <span class="muted">— sport balls on a court may stay game or play; brick/bottle on a street do not</span>
       </li>
+      <li>Dangerous objects:
+        {% if result.dangerous_objects %}
+          {% for row in result.dangerous_objects %}
+            {{ row.label }} <span class="mono muted">({{ row.id }})</span> × {{ row.count }}{% if not loop.last %}, {% endif %}
+          {% endfor %}
+        {% else %}
+          <span class="muted">none this run</span>
+        {% endif %}
+        · max use intensity {{ '%.2f'|format(result.weapon_use.max_intensity or 0) }}
+        {% if result.weapon_use.labels %}
+          (
+          {% for row in result.weapon_use.labels %}
+            <code>{{ row.id }}</code> × {{ row.count }}{% if not loop.last %}, {% endif %}
+          {% endfor %}
+          )
+        {% endif %}
+        <span class="muted">— indicator only, not proof of assault or intent; toys/tools/phones false-fire</span>
+      </li>
     </ul>
     {% if result.category_rows %}
     <h3>Category summary</h3>
@@ -188,7 +206,8 @@
             {% if row.gunshot %}<code>possible_gunshot_video_proxy</code> {% endif %}
             {% if row.aimed %}<code>firearm_aimed_at_person</code> {% endif %}
             {% if row.thrown %}<code>object_thrown_at_person</code>{% if row.throw_label %} ({{ row.throw_label }}){% endif %} {% endif %}
-            {% if not row.fall_manner and not row.gunshot and not row.aimed and not row.thrown %}<span class="muted">—</span>{% endif %}
+            {% if row.weapon_id %}<code>{{ row.weapon_id }}</code>{% if row.use_intensity_label %} {{ row.use_intensity_label }} {{ '%.2f'|format(row.use_intensity or 0) }}{% endif %} {% endif %}
+            {% if not row.fall_manner and not row.gunshot and not row.aimed and not row.thrown and not row.weapon_id %}<span class="muted">—</span>{% endif %}
           </td>
           <td>{% if row.alert %}yes{% else %}none{% endif %}</td>
         </tr>

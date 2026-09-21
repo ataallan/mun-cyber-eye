@@ -53,6 +53,7 @@ def test_health_reports_phase_5_and_cameras(client):
     assert data["cameras"]["enabled"] >= 1
     assert data["place_catalog_size"] >= 20
     assert data["objects_catalog_size"] >= 40
+    assert data["dangerous_objects_catalog_size"] >= 10
     assert data["gunshot_audio_enabled"] is False
 
 

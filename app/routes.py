@@ -26,6 +26,7 @@ from alerts.schema import category_display_name, structured_payload
 from vision.dataset import ACTIVITY_CATEGORIES
 from vision.face_aggression import face_aggression_enabled
 from vision.gunshot_assist import gunshot_audio_enabled
+from vision.dangerous_objects import all_dangerous_objects, dangerous_display_name
 from vision.objects_catalog import all_objects, object_display_name
 from vision.scene_context import all_places, place_display_name
 from vision.sports_catalog import all_sports, sport_display_name
@@ -467,6 +468,9 @@ def _pipeline_result_summary(results, *, mode: str = "", filename: str = "") -> 
     gunshot_frames = 0
     aimed_frames = 0
     thrown_frames = 0
+    dangerous_counts: Counter[str] = Counter()
+    max_weapon_intensity = 0.0
+    intensity_counts: Counter[str] = Counter()
     assist_rows = []
     for result in rows:
         for assessment in getattr(result, "assessments", []) or []:
@@ -501,6 +505,14 @@ def _pipeline_result_summary(results, *, mode: str = "", filename: str = "") -> 
                 aimed_frames += 1
             if getattr(assessment, "thrown_at_person", False):
                 thrown_frames += 1
+            wid = getattr(assessment, "weapon_id", "") or ""
+            if wid:
+                dangerous_counts[str(wid)] += 1
+            wint = float(getattr(assessment, "weapon_use_intensity", 0.0) or 0.0)
+            max_weapon_intensity = max(max_weapon_intensity, wint)
+            ilabel = getattr(assessment, "use_intensity_label", "") or ""
+            if ilabel and ilabel != "none":
+                intensity_counts[str(ilabel)] += 1
             assist_rows.append(
                 {
                     "frame": assessment.frame_index,
@@ -526,6 +538,14 @@ def _pipeline_result_summary(results, *, mode: str = "", filename: str = "") -> 
                     "thrown": bool(getattr(assessment, "thrown_at_person", False)),
                     "throw_label": getattr(assessment, "throw_label", "") or "",
                     "weapon_tier": getattr(assessment, "weapon_use_tier", "") or "",
+                    "weapon_id": getattr(assessment, "weapon_id", "") or "",
+                    "weapon_class": getattr(assessment, "weapon_class", "") or "",
+                    "harm_potential": getattr(assessment, "harm_potential", "") or "",
+                    "use_intensity": round(
+                        float(getattr(assessment, "weapon_use_intensity", 0.0) or 0.0), 3
+                    ),
+                    "use_intensity_label": getattr(assessment, "use_intensity_label", "")
+                    or "",
                     "objects": [
                         obj.get("id") if isinstance(obj, dict) else str(obj)
                         for obj in (getattr(assessment, "objects_seen", []) or [])
@@ -607,6 +627,20 @@ def _pipeline_result_summary(results, *, mode: str = "", filename: str = "") -> 
         ),
         "aimed_at_person_frames": aimed_frames,
         "thrown_at_person_frames": thrown_frames,
+        "dangerous_objects": [
+            {
+                "id": oid,
+                "label": dangerous_display_name(oid),
+                "count": n,
+            }
+            for oid, n in dangerous_counts.most_common()
+        ],
+        "weapon_use": {
+            "max_intensity": round(max_weapon_intensity, 3),
+            "labels": [
+                {"id": lab, "count": n} for lab, n in intensity_counts.most_common()
+            ],
+        },
         "assist_rows": assist_rows,
         "cameras": [
             {
@@ -878,11 +912,13 @@ def _train_page_context(extra: dict | None = None) -> dict:
         "sports": all_sports(),
         "places": all_places(),
         "objects": all_objects(),
+        "dangerous_objects": all_dangerous_objects(),
         "object_groups": {
             "home": [o for o in all_objects() if o.group == "home"],
             "community": [o for o in all_objects() if o.group == "community"],
         },
         "objects_dataset": training_ops.objects_inventory(current_app.config),
+        "dangerous_dataset": training_ops.dangerous_inventory(current_app.config),
         "splits": list(SPLITS),
         "checkpoints": training_ops.list_checkpoint_files(current_app.config),
         "audit": _store().list_system_audit(limit=20),
@@ -1080,7 +1116,9 @@ def admin_train_extract_video():
             category=request.form.get("category") or "",
             sport_context=(request.form.get("sport_context") or "").strip(),
             place_type=(request.form.get("place_type") or "").strip(),
-            object_id=(request.form.get("object_id") or "").strip(),
+            object_id=(
+                request.form.get("object_id") or request.form.get("dangerous_id") or ""
+            ).strip(),
             sample_fps=fps,
             max_frames=max_frames,
         )
@@ -1169,6 +1207,7 @@ def health():
         "sports_catalog_size": len(all_sports()),
         "place_catalog_size": len(all_places()),
         "objects_catalog_size": len(all_objects()),
+        "dangerous_objects_catalog_size": len(all_dangerous_objects()),
         "notify": {
             "resend_configured": notify.resend_configured,
             "webhook_configured": notify.webhook_configured,
