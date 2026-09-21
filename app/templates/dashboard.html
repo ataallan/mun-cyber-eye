@@ -51,7 +51,7 @@
     {% endfor %}
     </tbody>
   </table>
-  {% if session.get('role') in ['admin', 'operator'] %}
+  {% if session.get('role') in ['admin', 'operator', 'developer'] %}
   <p class="fineprint"><a href="{{ url_for('main.cameras') }}">Manage cameras</a></p>
   {% endif %}
 </section>

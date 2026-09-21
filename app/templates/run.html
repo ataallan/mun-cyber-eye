@@ -4,7 +4,7 @@
 <section class="card">
   <h1>Run detection pipeline</h1>
   <p class="muted">Detection runs from <strong>registered authorized cameras</strong> when this pipeline runs (one camera or all enabled, sequentially). Register RTSP, file-source cameras, or a webcam if <code>ALLOW_WEBCAM=1</code>. Offline or unconfigured cameras are reported honestly — no fake detections. There is no customer “upload an incident clip for live detection” path.</p>
-  <p class="fineprint">Video files belong on <a href="{{ url_for('main.admin_train') }}">Train models</a> (extract frames into a labeled dataset). Synthetic MOCK / Phase 3 activity demo remain for lab and development only — they are not the customer detection path. The activity model does not “know most sports” or “understand all arenas.” Named <code>sport_context</code> and <code>place_type</code> are catalog + folder / camera / color-geometry assists. Home/community objects are a YOLO inventory assist when ultralytics is installed — otherwise Last run reports <code>objects_backend=unavailable</code> and does not invent a refrigerator. Kit similarity is a clothing-color cluster, not identity or guilt. Body-aggression cues are OpenCV motion proxies, not a determination of assault. Face-expression assist is <strong>{% if face_aggression_enabled %}on (lab){% else %}off{% endif %}</strong> and never identifies a person or attaches a criminal label.</p>
+  <p class="fineprint">{% if can_train %}Video files belong on <a href="{{ url_for('main.admin_train') }}">Train models</a> (extract frames into a labeled dataset).{% else %}Customers run detection from registered cameras using shipped checkpoints. Video file uploads are for Mun Cyber developer training only — they are not a live detection path.{% endif %} Synthetic MOCK / Phase 3 activity demo remain for lab and development only — they are not the customer detection path. The activity model does not “know most sports” or “understand all arenas.” Named <code>sport_context</code> and <code>place_type</code> are catalog + folder / camera / color-geometry assists. Home/community objects are a YOLO inventory assist when ultralytics is installed — otherwise Last run reports <code>objects_backend=unavailable</code> and does not invent a refrigerator. Kit similarity is a clothing-color cluster, not identity or guilt. Body-aggression cues are OpenCV motion proxies, not a determination of assault. Face-expression assist is <strong>{% if face_aggression_enabled %}on (lab){% else %}off{% endif %}</strong> and never identifies a person or attaches a criminal label.</p>
 
   <form method="post" class="form" id="run-form">
     <fieldset>
@@ -31,12 +31,12 @@
         {% endfor %}
       </select>
     </label>
-    {% if session.get('role') in ['admin', 'operator'] %}
+    {% if session.get('role') in ['admin', 'operator', 'developer'] %}
     <p class="fineprint"><a href="{{ url_for('main.cameras') }}">Manage camera registry</a>
       · {{ enabled_cameras|length }} enabled
       · true parallel streaming is not in this prototype</p>
     {% endif %}
-    <p class="fineprint">To label site video, use Train models → Extract frames from video. Leftover extract files may remain on disk; there is no video library or delete UI.</p>
+    <p class="fineprint">{% if can_train %}To label site video, use Train models → Extract frames from video. Leftover extract files may remain on disk; there is no video library or delete UI.{% else %}Video uploads are training-only and developer-only. Customer accounts do not extract or retrain. Leftover extract files may remain on disk; there is no video library or delete UI.{% endif %}</p>
     <button class="btn btn-primary" type="submit">Run</button>
   </form>
 

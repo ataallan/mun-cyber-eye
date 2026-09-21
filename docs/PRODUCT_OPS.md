@@ -18,13 +18,15 @@ Synthetic MOCK and the Phase 3 synthetic activity demo remain **lab / developmen
 
 ## Video files are for training only
 
-Admin **Train models → Extract frames from video** samples an authorized clip into labeled JPEGs. That is not live detection.
+Developer **Train models → Extract frames from video** samples an authorized clip into labeled JPEGs. That is not live detection. Uploads remain training-only and **developer-only**. Customer site admins and operators do not see this UI.
 
 Run Pipeline does **not** treat a one-shot “Authorized video file upload” as the product detection path. Attached files on Run are ignored.
 
 ## Accounts
 
-Fresh installs ship **no default password**. Create the first admin with **Create account**. Later registrations are operators. Optional `ADMIN_USERNAME` / `ADMIN_PASSWORD` bootstrap only if you set both yourself — never a published default.
+Fresh installs ship **no default password**. Create the first **site admin** with **Create account**. Later registrations are operators. Site admin and operator run cameras, alerts, My cameras, recipients, and Run Pipeline — they **cannot** train. Optional `ADMIN_USERNAME` / `ADMIN_PASSWORD` bootstrap only if you set both yourself — never a published default.
+
+Model training is reserved for the **developer** role (Mun Cyber Technologies). Seed it only on lab machines with **both** `DEVELOPER_USERNAME` and `DEVELOPER_PASSWORD` (optional `DEVELOPER_EMAIL`). Customer `.env.example` leaves these empty. Never `operator` / `changeme`.
 
 ## Retention — no UI wipe
 

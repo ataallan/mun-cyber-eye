@@ -53,8 +53,8 @@ Camera registry (SQLite)  →  authorized file / RTSP / webcam / MOCK
 
 1. Risk engine sets `should_alert=True` → structured alert created (`status=open`, `delivery_status=pending`).
 2. Optional outbound delivery: Resend email to authorized recipients and/or SIEM webhook. Missing keys are `queued` / `undelivered` — never reported as sent.
-3. Operator signs in (SQLite users; first Create account is admin; optional env bootstrap only if both username and password are set). `admin` or `operator` may manage recipients and resend. See [AUTH.md](AUTH.md).
-4. Operator **acknowledges**, **dismisses**, **escalates**, or **reopens** with optional note. There is no delete that wipes the alert. Admins may train or activate a checkpoint (`/admin/train`).
+3. Operator signs in (SQLite users; first Create account is site admin; optional env bootstrap only if both username and password are set). `admin` or `operator` may manage recipients and resend. See [AUTH.md](AUTH.md).
+4. Operator **acknowledges**, **dismisses**, **escalates**, or **reopens** with optional note. There is no delete that wipes the alert. Mun Cyber **developer** accounts may train or activate a checkpoint (`/admin/train`). Customer site admins cannot.
 5. Every review action and notify/resend attempt is written to `audit_log` with actor + timestamp. Channel attempts go to `delivery_log`. Train / activate / labeled-frame uploads go to `system_audit`.
 
 Structured fields and delivery statuses are documented in [PHASE4.md](PHASE4.md).

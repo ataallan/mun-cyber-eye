@@ -240,7 +240,7 @@
 </section>
 {% endif %}
 
-{% if is_admin %}
+{% if can_train %}
 <section class="card">
   <h2>Train from labeled data</h2>
   <p class="muted">Calls <code>vision.train_activity.train_activity_model</code>. CPU sklearn training is typically a few seconds — this request waits for the result.</p>

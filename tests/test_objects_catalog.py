@@ -62,6 +62,9 @@ def app(tmp_path):
             "OPERATOR_USERNAME": "reviewer",
             "OPERATOR_PASSWORD": "reviewpass",
             "OPERATOR_EMAIL": "reviewer@localhost",
+            "DEVELOPER_USERNAME": "labdev",
+            "DEVELOPER_PASSWORD": "dev-pass-99",
+            "DEVELOPER_EMAIL": "labdev@localhost",
             "ALERT_DB_PATH": str(tmp_path / "alerts.db"),
             "AUTH_DB_PATH": str(tmp_path / "auth.db"),
             "CAMERA_DB_PATH": str(tmp_path / "cameras.db"),
@@ -83,7 +86,7 @@ def client(app):
     return app.test_client()
 
 
-def _login(client, username="siteadmin", password="test-pass-12"):
+def _login(client, username="labdev", password="dev-pass-99"):
     return client.post(
         "/login",
         data={"username": username, "password": password},
@@ -296,14 +299,14 @@ def test_extract_video_rejects_unknown_object_and_bad_type(client, tmp_path):
 
 def test_operator_cannot_extract_video(client):
     _login(client, "reviewer", "reviewpass")
-    page = client.get("/admin/train")
+    page = client.get("/admin/train", follow_redirects=True)
     assert "Extract frames from video" not in page.get_data(as_text=True)
     denied = client.post(
         "/admin/train/extract-video",
         data={"kind": "activity", "category": "ordinary"},
         follow_redirects=True,
     )
-    assert "Only the admin role" in denied.get_data(as_text=True)
+    assert "Only Mun Cyber developer accounts" in denied.get_data(as_text=True)
 
 
 def test_train_object_model_when_enough_images(client, tmp_path):

@@ -1,7 +1,10 @@
 """Local operator accounts for the Mun Cyber Eye console.
 
-SQLite is the source of truth after the env bootstrap admin is seeded.
+SQLite is the source of truth after optional env bootstrap users are seeded.
 Session keys stay ``user`` (username) and ``role``.
+
+Customer ``admin`` / ``operator`` run detection and review. Only ``developer``
+(Mun Cyber lab, env-seeded) may train models.
 """
 
 from __future__ import annotations
@@ -20,9 +23,13 @@ from typing import Iterator, List, Optional
 from flask import flash, redirect, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
-VALID_ROLES = frozenset({"admin", "operator"})
+# Customer site roles (Create account / ADMIN_* bootstrap). Never granted training.
+CUSTOMER_ROLES = frozenset({"admin", "operator"})
+DEVELOPER_ROLE = "developer"
+VALID_ROLES = CUSTOMER_ROLES | {DEVELOPER_ROLE}
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_.-]{3,32}$")
 MIN_PASSWORD_LEN = 8
+_USERS_ROLE_CHECK = "role IN ('admin', 'operator', 'developer')"
 
 
 def _utc_now() -> datetime:
@@ -136,13 +143,13 @@ class UserStore:
     def _init_schema(self) -> None:
         with self._conn() as conn:
             conn.executescript(
-                """
+                f"""
                 CREATE TABLE IF NOT EXISTS users (
                     id TEXT PRIMARY KEY,
                     username TEXT NOT NULL COLLATE NOCASE UNIQUE,
                     email TEXT NOT NULL COLLATE NOCASE UNIQUE,
                     password_hash TEXT NOT NULL,
-                    role TEXT NOT NULL CHECK (role IN ('admin', 'operator')),
+                    role TEXT NOT NULL CHECK ({_USERS_ROLE_CHECK}),
                     active INTEGER NOT NULL DEFAULT 1,
                     created_at TEXT NOT NULL,
                     reset_token TEXT,
@@ -157,6 +164,44 @@ class UserStore:
                 conn.execute(
                     "ALTER TABLE users ADD COLUMN security_email TEXT NOT NULL DEFAULT ''"
                 )
+            self._migrate_role_check(conn)
+
+    @staticmethod
+    def _migrate_role_check(conn: sqlite3.Connection) -> None:
+        """Rebuild users when an older CHECK omitted developer."""
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='users'"
+        ).fetchone()
+        sql = (row[0] or "") if row else ""
+        if "developer" in sql.lower():
+            return
+        conn.executescript(
+            f"""
+            CREATE TABLE users_role_mig (
+                id TEXT PRIMARY KEY,
+                username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                email TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL CHECK ({_USERS_ROLE_CHECK}),
+                active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                reset_token TEXT,
+                reset_expires TEXT,
+                security_email TEXT NOT NULL DEFAULT ''
+            );
+            INSERT INTO users_role_mig (
+                id, username, email, password_hash, role, active,
+                created_at, reset_token, reset_expires, security_email
+            )
+            SELECT id, username, email, password_hash, role, active,
+                   created_at, reset_token, reset_expires,
+                   COALESCE(security_email, '')
+            FROM users;
+            DROP TABLE users;
+            ALTER TABLE users_role_mig RENAME TO users;
+            CREATE INDEX IF NOT EXISTS idx_users_reset_token ON users(reset_token);
+            """
+        )
 
     def ensure_env_user(
         self,
@@ -424,18 +469,44 @@ def login_required(view):
     return wrapped
 
 
+def can_train(role: str | None) -> bool:
+    """True only for Mun Cyber developer accounts — never customer admin/operator."""
+    return (role or "").strip().lower() == DEVELOPER_ROLE
+
+
+def public_register_role(*, is_first: bool) -> str:
+    """Create account roles: first user is site admin; later users are operators."""
+    return "admin" if is_first else "operator"
+
+
 def admin_required(view):
-    """Admin role only — train, activate, and upload labeled frames."""
+    """Site admin only — customer account directory, not model training."""
 
     @wraps(view)
     def wrapped(*args, **kwargs):
         if not session.get("user"):
             return redirect(url_for("main.login", next=request.path))
         if session.get("role") != "admin":
+            flash("Only the site admin role can manage accounts.", "error")
+            return redirect(url_for("main.dashboard"))
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
+def developer_required(view):
+    """Developer role only — train, activate, upload labeled frames, extract video."""
+
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get("user"):
+            return redirect(url_for("main.login", next=request.path))
+        if not can_train(session.get("role")):
             flash(
-                "Only the admin role can train or activate models. "
-                "Registered accounts are operators unless this is the first account "
-                "(which becomes admin) or the row is promoted in the database.",
+                "Only Mun Cyber developer accounts can train or activate models. "
+                "Site admin and operator accounts run detection and review; "
+                "they cannot retrain checkpoints. Public Create account never "
+                "grants the developer role.",
                 "error",
             )
             return redirect(url_for("main.dashboard"))

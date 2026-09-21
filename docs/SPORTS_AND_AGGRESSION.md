@@ -85,7 +85,7 @@ See [ETHICS_AND_SAFETY.md](ETHICS_AND_SAFETY.md).
 
 ## Console
 
-Admins can upload sport-folder frames and retrain from **Train models** (`/admin/train`) without dropping this assist layer. Run Pipeline still uses the active checkpoint plus `sport_context` / aggression extras.
+Mun Cyber developers can upload sport-folder frames and retrain from **Train models** (`/admin/train`) without dropping this assist layer. Customer site admins cannot train. Run Pipeline still uses the active (shipped or developer-activated) checkpoint plus `sport_context` / aggression extras.
 
 **Run Pipeline → Last run** shows:
 

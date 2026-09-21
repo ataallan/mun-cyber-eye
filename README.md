@@ -26,11 +26,11 @@ python run.py
 
 Open **http://127.0.0.1:5055**
 
-There is **no default password**. On a fresh install, use **Create account** — the first account becomes site admin (choose a strong password). Later accounts are operators.
+There is **no default password**. On a fresh install, use **Create account** — the first account becomes site admin (choose a strong password). Later accounts are operators. Site admin runs cameras and review; **Train models** is Mun Cyber developer-only (empty `DEVELOPER_*` on customer installs).
 
 1. Create account / sign in  
 2. **Cameras** → confirm the seeded Demo Lab File camera, or add an authorized file / RTSP source  
-3. **Run Pipeline** → registered cameras (product detection path). Lab-only MOCK / Phase 3 synthetic demo are labeled as development, not customer detection. **Video uploads are for training only** (Admin → Train models → Extract frames from video).  
+3. **Run Pipeline** → registered cameras (product detection path). Lab-only MOCK / Phase 3 synthetic demo are labeled as development, not customer detection. **Video uploads are for training only** (developer → Train models → Extract frames from video). Customer accounts use shipped checkpoints.  
 4. Open an alert → `camera_id` + `location_label` from the registry, then acknowledge / dismiss / escalate / reopen (alerts are retained — no delete wipe)  
 5. Optional: **Recipients** + `RESEND_API_KEY` to email authorized operators. Camera owners are notified via `security_email` or login email.  
 
@@ -97,7 +97,7 @@ python -m vision.eval_activity \
 
 `VISION_BACKEND=auto` (default) uses the Phase 3 checkpoint when present, then YOLO, then MOCK.  
 `VISION_BACKEND=mock` keeps the Phase 2 scripted demo.  
-`ACTIVITY_CHECKPOINT` is the fallback path. An admin can train and activate a new file from **Train models** (`/admin/train`); that writes `data/active_checkpoint.json`, which wins over the env value. Full notes: [docs/PHASE3.md](docs/PHASE3.md) and [docs/ADMIN_TRAINING.md](docs/ADMIN_TRAINING.md).
+`ACTIVITY_CHECKPOINT` is the fallback path. A Mun Cyber **developer** can train and activate a new file from **Train models** (`/admin/train`); that writes `data/active_checkpoint.json`, which wins over the env value. Customer site admins cannot train. Full notes: [docs/PHASE3.md](docs/PHASE3.md) and [docs/ADMIN_TRAINING.md](docs/ADMIN_TRAINING.md).
 
 ### Optional YOLO
 
@@ -127,7 +127,7 @@ If YOLO is missing and no activity checkpoint loads, the app uses honest **MOCK*
 | Aimed firearm-like object | Assistive (`firearm_aimed_at_person`); never sport-softened; one person = brandish only |
 | Dangerous objects + use intensity | Assistive catalog (`edged` / `blunt` / `firearm_like` / `improvised`) with `none`–`possible_strike`; indicator only |
 | Thrown object toward person | Assistive (`object_thrown_at_person` / `thrown_projectile`); sport-ball pass may stay play; street brick/bottle does not |
-| Train / eval (accuracy, P/R/F1 per class) | Real (CLI + Admin → Train models) |
+| Train / eval (accuracy, P/R/F1 per class) | Real (CLI + developer → Train models) |
 | Demo activity checkpoint | Bundled (`data/checkpoints/activity_demo.joblib`, synthetic data) |
 | Ultralytics YOLO adapter | Real **if** installed |
 | MOCK vision adapter | Real, deterministic demo |

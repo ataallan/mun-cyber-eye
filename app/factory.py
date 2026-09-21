@@ -6,24 +6,31 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from flask import Flask
+from flask import Flask, session
 
 from alerts.notify import NotificationService, NotifyConfig
 from alerts.store import AlertStore
 from ingest.cameras import CameraStore
 
-from .auth import UserStore
+from .auth import CUSTOMER_ROLES, UserStore, can_train
 
 
 def _env_flag(name: str, default: str = "0") -> bool:
     return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _customer_bootstrap_role(value: str | None) -> str:
+    """ADMIN_* may seed site admin or operator — never developer / training."""
+    role = (value or "admin").strip().lower()
+    return role if role in CUSTOMER_ROLES else "admin"
+
+
 def _seed_env_users(user_store: UserStore, config: dict) -> None:
     """Optional env bootstrap only when both username and password are set.
 
-    Fresh installs ship with empty ADMIN_* values. There is no default
-    password. The first Create account becomes admin.
+    Fresh installs ship with empty ADMIN_* and DEVELOPER_* values. There is no
+    default password. The first Create account becomes customer site admin and
+    cannot train. Developer (Mun Cyber lab) is seeded only via DEVELOPER_*.
     """
     sync = bool(config.get("ADMIN_SYNC_PASSWORD", True))
     admin_username = (config.get("ADMIN_USERNAME") or "").strip()
@@ -34,7 +41,7 @@ def _seed_env_users(user_store: UserStore, config: dict) -> None:
             admin_password,
             config.get("ADMIN_EMAIL") or f"{admin_username}@localhost",
             sync_password=sync,
-            role=config.get("ADMIN_ROLE") or "admin",
+            role=_customer_bootstrap_role(config.get("ADMIN_ROLE")),
         )
     op_user = (config.get("OPERATOR_USERNAME") or "").strip()
     op_pass = config.get("OPERATOR_PASSWORD") or ""
@@ -44,6 +51,16 @@ def _seed_env_users(user_store: UserStore, config: dict) -> None:
             op_pass,
             config.get("OPERATOR_EMAIL") or f"{op_user}@localhost",
             role="operator",
+            sync_password=sync,
+        )
+    dev_user = (config.get("DEVELOPER_USERNAME") or "").strip()
+    dev_pass = config.get("DEVELOPER_PASSWORD") or ""
+    if dev_user and dev_pass:
+        user_store.ensure_env_user(
+            dev_user,
+            dev_pass,
+            config.get("DEVELOPER_EMAIL") or f"{dev_user}@localhost",
+            role="developer",
             sync_password=sync,
         )
 
@@ -69,6 +86,9 @@ def create_app(test_config: dict | None = None) -> Flask:
         OPERATOR_USERNAME=os.getenv("OPERATOR_USERNAME", ""),
         OPERATOR_PASSWORD=os.getenv("OPERATOR_PASSWORD", ""),
         OPERATOR_EMAIL=os.getenv("OPERATOR_EMAIL", ""),
+        DEVELOPER_USERNAME=(os.getenv("DEVELOPER_USERNAME") or "").strip(),
+        DEVELOPER_PASSWORD=os.getenv("DEVELOPER_PASSWORD", ""),
+        DEVELOPER_EMAIL=os.getenv("DEVELOPER_EMAIL", ""),
         ALERT_DB_PATH=os.getenv("ALERT_DB_PATH", str(root / "data" / "alerts.db")),
         AUTH_DB_PATH=os.getenv("AUTH_DB_PATH", str(root / "data" / "auth.db")),
         CAMERA_DB_PATH=os.getenv("CAMERA_DB_PATH", str(root / "data" / "cameras.db")),
@@ -251,6 +271,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             "notify_webhook_configured": notify.webhook_configured,
             "allow_webcam": bool(app.config.get("ALLOW_WEBCAM")),
             "face_aggression_enabled": _env_flag("ENABLE_FACE_AGGRESSION", "0"),
+            "can_train": can_train(session.get("role")),
         }
 
     return app

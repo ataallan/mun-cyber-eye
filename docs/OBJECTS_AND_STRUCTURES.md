@@ -42,9 +42,9 @@ data/objects/{train,val,test}/<object_id>/*.jpg                   # object class
 
 Activity training still reads only `data/activity/`. Object folders are a sibling tree so they cannot break the six-class activity trainer.
 
-## Video → frames (admin)
+## Video → frames (developer)
 
-On **Train models** (`/admin/train`):
+On **Train models** (`/admin/train`, Mun Cyber developer only):
 
 1. Choose kind: activity / game_or_play+sport / scene place / object class.
 2. Upload an authorized mp4 / avi / mov / mkv.
