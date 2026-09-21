@@ -11,13 +11,12 @@ def _moving_blob_pair():
     """Localized motion + two close people — not a uniform scene cut."""
     prev = np.zeros((120, 160, 3), dtype=np.uint8)
     prev[:] = (30, 30, 30)
-    cv2_rect = prev
-    cv2_rect[40:90, 20:45] = (20, 40, 180)
-    cv2_rect[40:90, 100:125] = (20, 40, 200)
+    prev[50:100, 10:40] = (20, 40, 180)
+    prev[50:100, 120:150] = (20, 40, 200)
     cur = np.zeros((120, 160, 3), dtype=np.uint8)
     cur[:] = (30, 30, 30)
-    cur[15:55, 50:80] = (20, 40, 180)  # upper-band motion (raised-arm proxy)
-    cur[40:95, 70:110] = (20, 40, 200)
+    cur[5:50, 45:85] = (20, 40, 180)  # upper-band motion (raised-arm proxy)
+    cur[45:105, 55:100] = (20, 40, 200)
     return prev, cur
 
 

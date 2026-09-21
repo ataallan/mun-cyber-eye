@@ -174,18 +174,20 @@ def analyze_aggression(
     )
 
     cues: list[str] = []
-    if result.motion_intensity >= 0.22 and not result.uniform_scene_change:
+    if result.motion_intensity >= 0.12 and not result.uniform_scene_change:
         cues.append("aggressive_motion")
-    if result.motion_intensity >= 0.40 and not result.uniform_scene_change:
+    if result.motion_intensity >= 0.35 and not result.uniform_scene_change:
         cues.append("rapid_motion")
-    if result.raised_arm >= 0.18 and not result.uniform_scene_change:
+    if result.raised_arm >= 0.12 and not result.uniform_scene_change:
         cues.append("aggressive_pose")
         cues.append("strike_motion")
-    if result.proximity >= 0.45 and (
-        result.opposing_motion >= 0.25 or result.motion_intensity >= 0.2
+    if result.proximity >= 0.40 and (
+        result.opposing_motion >= 0.18 or result.motion_intensity >= 0.12
     ):
         cues.append("close_proximity")
-    if result.score < 0.18:
+    if result.score >= 0.20 and not cues and not result.uniform_scene_change:
+        cues.append("aggressive_motion")
+    if result.score < 0.16:
         cues = []
     result.cues = cues
     return result

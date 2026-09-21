@@ -42,7 +42,7 @@ import numpy as np
 
 from vision.features import extract_frame_features
 from vision.sports_catalog import (
-    DEMO_SPORT_SCENES,
+    DEMO_DATASET_SPORTS,
     resolve_sport,
     sport_display_name,
 )
@@ -267,7 +267,7 @@ def generate_demo_dataset(
         if n <= 0:
             continue
         n_sport = max(2, n // 3)
-        for s_i, sport in enumerate(DEMO_SPORT_SCENES):
+        for s_i, sport in enumerate(DEMO_DATASET_SPORTS):
             dest = root_path / split / f"game_or_play__{sport}"
             dest.mkdir(parents=True, exist_ok=True)
             for i in range(n_sport):
@@ -332,9 +332,9 @@ def _paint_basketball(img: np.ndarray, rng: np.random.Generator) -> None:
     """Orange court, white key, orange ball."""
     h, w = img.shape[:2]
     img[:] = (
-        int(rng.integers(20, 50)),
-        int(rng.integers(70, 110)),
-        int(rng.integers(175, 220)),
+        int(rng.integers(15, 40)),
+        int(rng.integers(75, 105)),
+        int(rng.integers(190, 230)),
     )
     cv2.rectangle(img, (w // 3, 8), (2 * w // 3, h - 8), (235, 235, 240), 2)
     cv2.circle(img, (w // 2, int(h * 0.62)), max(8, w // 8), (235, 235, 240), 1)
@@ -367,12 +367,13 @@ def _paint_volleyball(img: np.ndarray, rng: np.random.Generator) -> None:
     """Tan indoor court, white net, yellow/white ball."""
     h, w = img.shape[:2]
     img[:] = (
-        int(rng.integers(70, 110)),
-        int(rng.integers(130, 170)),
-        int(rng.integers(170, 210)),
+        int(rng.integers(100, 130)),
+        int(rng.integers(145, 175)),
+        int(rng.integers(175, 205)),
     )
-    cv2.line(img, (0, h // 2), (w - 1, h // 2), (245, 245, 250), 3)
-    cv2.line(img, (w // 2, h // 2 - 12), (w // 2, h // 2 + 12), (245, 245, 250), 2)
+    cv2.line(img, (0, h // 2), (w - 1, h // 2), (245, 245, 250), 4)
+    cv2.line(img, (0, h // 2 - 3), (w - 1, h // 2 - 3), (245, 245, 250), 2)
+    cv2.line(img, (w // 2, h // 2 - 14), (w // 2, h // 2 + 14), (245, 245, 250), 2)
     _draw_person(img, int(w * 0.18), standing=True, color=(30, 80, 200), rng=rng)
     _draw_person(img, int(w * 0.64), standing=True, color=(40, 160, 40), rng=rng)
     cx = int(rng.integers(int(w * 0.40), int(w * 0.58)))
@@ -381,20 +382,21 @@ def _paint_volleyball(img: np.ndarray, rng: np.random.Generator) -> None:
 
 
 def _paint_american_football(img: np.ndarray, rng: np.random.Generator) -> None:
-    """Green field, yard lines, brown oval ball."""
+    """Olive field, yard lines, brown dirt hash and oval ball."""
     h, w = img.shape[:2]
     img[:] = (
-        int(rng.integers(20, 45)),
-        int(rng.integers(90, 130)),
-        int(rng.integers(15, 40)),
+        int(rng.integers(18, 36)),
+        int(rng.integers(70, 100)),
+        int(rng.integers(25, 50)),
     )
-    for x in range(12, w - 8, max(14, w // 8)):
-        cv2.line(img, (x, 6), (x, h - 7), (220, 225, 230), 1)
+    cv2.rectangle(img, (int(w * 0.28), 8), (int(w * 0.72), h - 8), (25, 70, 95), -1)
+    for x in range(10, w - 6, max(12, w // 9)):
+        cv2.line(img, (x, 4), (x, h - 5), (220, 225, 230), 1)
     _draw_person(img, int(w * 0.22), standing=True, color=(20, 20, 180), rng=rng)
     _draw_person(img, int(w * 0.62), standing=True, color=(20, 20, 40), rng=rng)
     cx = int(rng.integers(int(w * 0.40), int(w * 0.58)))
     cy = int(rng.integers(int(h * 0.45), int(h * 0.65)))
-    cv2.ellipse(img, (cx, cy), (10, 6), 25, 0, 360, (20, 55, 90), -1)
+    cv2.ellipse(img, (cx, cy), (12, 7), 25, 0, 360, (15, 50, 85), -1)
 
 
 def _paint_dance(img: np.ndarray, rng: np.random.Generator) -> None:

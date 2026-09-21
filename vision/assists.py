@@ -71,16 +71,23 @@ def _existing_sport(detections: Sequence[Detection]) -> tuple[Optional[str], flo
     return best_id, best_conf
 
 
-def _activity_wants_sport(detections: Sequence[Detection]) -> bool:
+def _activity_labels(detections: Sequence[Detection]) -> set[str]:
     from vision.dataset import canonicalize_category
 
+    found: set[str] = set()
     for det in detections:
         try:
-            if canonicalize_category(det.label) == "game_or_play":
-                return True
+            found.add(canonicalize_category(det.label))
         except ValueError:
             continue
-    return False
+    return found
+
+
+_THREAT_ACTIVITY = {
+    "potential_fight",
+    "potential_fall",
+    "potential_weapon_object",
+}
 
 
 def enrich_detections(
@@ -94,11 +101,21 @@ def enrich_detections(
     state = state or AssistState()
     dets = list(detections)
     sport_id, sport_conf = _existing_sport(dets)
+    activity_labels = _activity_labels(dets)
     inferred_id, inferred_conf = infer_sport_context(image_bgr)
-    if sport_id is None and inferred_id and (
-        inferred_conf >= 0.70 or (_activity_wants_sport(dets) and inferred_conf >= 0.50)
+    # Never invent a sport on fight / fall / weapon frames — reddish
+    # confrontation painters must not become "basketball."
+    if (
+        sport_id is None
+        and inferred_id
+        and not (activity_labels & _THREAT_ACTIVITY)
     ):
-        sport_id, sport_conf = inferred_id, inferred_conf
+        wants_play = "game_or_play" in activity_labels
+        unlabeled = not activity_labels
+        if (wants_play and inferred_conf >= 0.50) or (
+            unlabeled and inferred_conf >= 0.70
+        ):
+            sport_id, sport_conf = inferred_id, inferred_conf
 
     aggression = analyze_aggression(
         image_bgr,

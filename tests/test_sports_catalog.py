@@ -103,4 +103,4 @@ def test_generate_demo_writes_sport_folders(tmp_path):
         for _p, _c, sport in iter_split_samples_with_context(root, "train")
         if sport
     }
-    assert {"basketball", "soccer", "tennis"} <= sports
+    assert {"soccer", "tennis", "volleyball"} <= sports

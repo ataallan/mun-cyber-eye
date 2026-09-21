@@ -115,7 +115,9 @@ def collect_scene_context(detections: Sequence[Detection]) -> SceneContext:
 
         if det.label.lower() in FIGHT_PROXY_LABELS:
             cues.append(det.label.lower())
-            ctx.aggression_score = max(ctx.aggression_score, float(det.confidence))
+            # Heuristic label confidence is not a body-aggression score.
+            # Using it here would make sport-softening impossible whenever
+            # close_proximity / rapid_motion are present.
 
     # de-dupe cues, keep order
     seen: set[str] = set()

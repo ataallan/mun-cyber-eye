@@ -111,13 +111,20 @@ SPORTS: tuple[SportEntry, ...] = (
     SportEntry("cheer", "Cheer / sideline", ("cheerleading", "sideline_cheer")),
 )
 
-# Distinct synthetic painters used by the demo dataset / Last run.
+# Distinct synthetic painters used by Last run / activity demo frames.
 DEMO_SPORT_SCENES: tuple[str, ...] = (
     "basketball",
     "soccer",
     "tennis",
     "volleyball",
     "american_football",
+)
+# Extra train-folder sports. Skip orange basketball so the tiny demo
+# forest does not confuse it with the reddish fight painter.
+DEMO_DATASET_SPORTS: tuple[str, ...] = (
+    "soccer",
+    "tennis",
+    "volleyball",
 )
 
 
@@ -198,14 +205,21 @@ def infer_sport_context(
         return None, 0.0
 
     orange = (
-        (r.astype(np.int16) > 140)
+        (r.astype(np.int16) > 150)
         & (g.astype(np.int16) > 50)
-        & (g.astype(np.int16) < 170)
-        & (b.astype(np.int16) < 90)
+        & (g.astype(np.int16) < 150)
+        & (b.astype(np.int16) < 70)
     )
     green = (g > r) & (g > b) & (g > 80)
     blue = (b > r) & (b > g) & (b > 90)
-    tan = (r > 110) & (g > 90) & (b < 140) & (r > b) & (g > b - 10)
+    tan = (
+        (r > 140)
+        & (g > 110)
+        & (b > 70)
+        & (b < 150)
+        & (r > b + 20)
+        & (g > b)
+    )
     brown = (r > 60) & (g > 35) & (b < 70) & (r > g) & (g > b)
 
     orange_frac = float(orange.mean())
@@ -220,27 +234,43 @@ def infer_sport_context(
     edge_frac = float((edges > 0).mean())
     h_proj = (edges > 0).mean(axis=1)
     mid_band = float(h_proj[28:33].mean()) if h_proj.size >= 33 else 0.0
+    v_proj = (edges > 0).mean(axis=0)
+    yard_like = float((v_proj > 0.08).mean()) if v_proj.size else 0.0
 
     scores = {
-        "basketball": 0.15
-        + 0.70 * orange_frac
-        + 0.15 * max(0.0, (mean_r - mean_b) / 255.0)
-        + (0.08 if edge_frac > 0.04 else 0.0),
+        "basketball": 0.12
+        + 0.78 * orange_frac
+        + 0.12 * max(0.0, (mean_r - mean_b) / 255.0)
+        + (0.06 if edge_frac > 0.04 else 0.0)
+        - 0.40 * min(1.0, mid_band * 8.0),
         "soccer": 0.10
         + 0.75 * green_frac
         + 0.10 * max(0.0, (mean_g - mean_r) / 255.0)
         - 0.25 * orange_frac,
         "tennis": 0.12 + 0.78 * blue_frac + 0.08 * sat_mean,
-        "volleyball": 0.12 + 0.62 * tan_frac + 0.25 * min(1.0, mid_band * 8.0),
+        "volleyball": 0.10
+        + 0.55 * tan_frac
+        + 0.45 * min(1.0, mid_band * 10.0)
+        - 0.35 * orange_frac,
         "american_football": 0.08
-        + 0.45 * green_frac
-        + 0.35 * brown_frac
-        + (0.1 if edge_frac > 0.06 else 0.0),
+        + 0.20 * green_frac
+        + 0.45 * brown_frac
+        + 0.15 * yard_like
+        + (0.06 if edge_frac > 0.06 else 0.0),
     }
-    # Generic green play field with a bright ball leans soccer, not football.
-    if green_frac > 0.45 and brown_frac < 0.08 and orange_frac < 0.08:
-        scores["soccer"] = max(scores["soccer"], 0.62 + 0.2 * green_frac)
-        scores["american_football"] *= 0.55
+    # Bright green pitch (demo soccer) vs darker olive + brown hash (football).
+    if mean_g >= 125 and green_frac > 0.35 and orange_frac < 0.12:
+        scores["soccer"] = max(scores["soccer"], 0.72)
+        scores["american_football"] = min(scores["american_football"], 0.42)
+    if mean_g < 115 and mean_r < 95 and (brown_frac > 0.06 or yard_like > 0.25):
+        scores["american_football"] = max(scores["american_football"], 0.70)
+        scores["soccer"] = min(scores["soccer"], 0.42)
+    # Orange hardwood (demo basketball) vs tan gym with a net (volleyball).
+    if mean_r > 150 and mean_b < 85 and mean_g < 140 and orange_frac > 0.30:
+        scores["basketball"] = max(scores["basketball"], 0.74)
+    if mid_band >= 0.10 and tan_frac > 0.20 and orange_frac < 0.25:
+        scores["volleyball"] = max(scores["volleyball"], 0.68 + 0.2 * tan_frac)
+        scores["basketball"] *= 0.55
 
     sport_id, raw = max(scores.items(), key=lambda kv: kv[1])
     conf = float(max(0.0, min(0.92, raw)))
