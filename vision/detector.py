@@ -78,7 +78,22 @@ class MockVisionAdapter(VisionAdapter):
             Detection("rapid_motion", 0.80, (50, 50, 350, 405)),
             Detection("strike_motion", 0.74, (120, 100, 280, 350)),
         ],
-        7: [Detection("person", 0.90, (120, 60, 260, 400))],
+        7: [
+            Detection(
+                "game_or_play",
+                0.83,
+                (50, 50, 360, 410),
+                extras={
+                    "source": "mock",
+                    "sport_context": "soccer",
+                    "sport_confidence": 0.80,
+                    "sport_display": "Soccer / football",
+                    "scores": {"game_or_play": 0.83, "potential_fight": 0.09, "ordinary": 0.05},
+                },
+            ),
+            Detection("person", 0.88, (50, 50, 190, 400)),
+            Detection("person", 0.84, (210, 60, 350, 405)),
+        ],
         8: [
             Detection(
                 "game_or_play",
@@ -86,6 +101,9 @@ class MockVisionAdapter(VisionAdapter):
                 (40, 50, 360, 410),
                 extras={
                     "source": "mock",
+                    "sport_context": "basketball",
+                    "sport_confidence": 0.82,
+                    "sport_display": "Basketball",
                     "scores": {"game_or_play": 0.84, "potential_fight": 0.08, "ordinary": 0.05},
                 },
             ),

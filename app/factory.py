@@ -93,6 +93,8 @@ def create_app(test_config: dict | None = None) -> Flask:
         PUBLIC_BASE_URL=os.getenv("PUBLIC_BASE_URL", "").rstrip("/"),
         RESET_TOKEN_MINUTES=int(os.getenv("RESET_TOKEN_MINUTES", "45")),
         AUTH_SHOW_RESET_URL=_env_flag("AUTH_SHOW_RESET_URL", "0"),
+        ENABLE_FACE_AGGRESSION=_env_flag("ENABLE_FACE_AGGRESSION", "0"),
+        ALERT_ON_INTENSE_SPORT=_env_flag("ALERT_ON_INTENSE_SPORT", "0"),
     )
     if test_config:
         app.config.update(test_config)
@@ -181,6 +183,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             "notify_resend_configured": notify.resend_configured,
             "notify_webhook_configured": notify.webhook_configured,
             "allow_webcam": bool(app.config.get("ALLOW_WEBCAM")),
+            "face_aggression_enabled": _env_flag("ENABLE_FACE_AGGRESSION", "0"),
         }
 
     return app

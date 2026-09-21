@@ -32,6 +32,8 @@ def test_canonical_categories_include_game_dance_confrontation():
     assert canonicalize_category("play") == "game_or_play"
     assert canonicalize_category("sports") == "game_or_play"
     assert canonicalize_category("dancing") == "dance"
+    assert canonicalize_category("game_or_play__basketball") == "game_or_play"
+    assert canonicalize_category("basketball") == "game_or_play"
 
 
 def test_feature_vector_is_finite_and_fixed():

@@ -75,7 +75,7 @@ Alerts created from a registry camera carry that camera’s `camera_id` and `loc
 ## Safety
 
 - Register only lawful, authorized feeds.
-- No facial criminal labeling.
+- No facial criminal labeling. Optional face-expression assist is off by default and, when enabled, is unreliable and never identity.
 - No enforcement hooks (locks, dispatch, detention) on ingest success or failure.
 - A dead RTSP URL is an error on the camera, not a “clear” scene and not a fabricated threat.
 

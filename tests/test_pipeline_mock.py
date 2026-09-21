@@ -34,6 +34,9 @@ def test_synthetic_demo_creates_alerts(tmp_path):
     assert "game_or_play" in predicted
     assert "dance" in predicted
     assert "potential_fight" in predicted
+    sports = {a.sport_context for a in result.assessments if a.sport_context}
+    assert {"basketball", "soccer"} <= sports
+    assert all(a.face_cue_status == "disabled" for a in result.assessments)
     non_alerts = {a.category for a in result.assessments if not a.should_alert}
     assert "game_or_play" in non_alerts
     assert "dance" in non_alerts

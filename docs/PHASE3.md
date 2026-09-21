@@ -33,7 +33,9 @@ Canonical labels (proposal / Phase 2 + game / dance):
 
 Related informal folder names are accepted when loading data (`fight`, `confrontation`, `altercation`, `play`, `sports`, `dancing`, `fall`, `weapon`, `person_down`, …) and mapped onto those classes. Phase 2 heuristic signals (`close_proximity`, `raised_object`, …) remain available when the activity model is **not** loaded.
 
-Game or play and dance are **logged and shown** on the Run Pipeline “Last run” summary so operators can see the differentiation. They do not page as threats unless `ALERT_ON_GAME_OR_DANCE=1`. See [PHASE3b.md](PHASE3b.md).
+Game or play and dance are **logged and shown** on the Run Pipeline “Last run” summary so operators can see the differentiation. They do not page as threats unless `ALERT_ON_GAME_OR_DANCE=1`. Named `sport_context` and body-aggression assists (optional face path off by default) are documented in [SPORTS_AND_AGGRESSION.md](SPORTS_AND_AGGRESSION.md). See also [PHASE3b.md](PHASE3b.md).
+
+The current model **cannot** actually know most sports or reliably read facial aggression. Those extras are a structured assistive layer with explicit limits.
 
 ## Approach (CPU, no GPU)
 
@@ -61,6 +63,8 @@ data/activity/
   train/
     ordinary/*.jpg
     game_or_play/*.jpg
+    game_or_play__basketball/*.jpg   # optional sport_context
+    # or game_or_play/basketball/*.jpg
     dance/*.jpg
     potential_fight/*.jpg
     potential_fall/*.jpg

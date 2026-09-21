@@ -24,6 +24,8 @@ from werkzeug.utils import secure_filename
 from alerts.notify import parse_env_recipients, send_resend_email
 from alerts.schema import category_display_name, structured_payload
 from vision.dataset import ACTIVITY_CATEGORIES
+from vision.face_aggression import face_aggression_enabled
+from vision.sports_catalog import all_sports, sport_display_name
 from ingest.cameras import camera_from_form, mask_uri
 
 from .auth import (
@@ -447,6 +449,38 @@ def _pipeline_result_summary(results, *, mode: str = "", filename: str = "") -> 
     ordered.extend(
         entry for key, entry in detailed.items() if key not in ACTIVITY_CATEGORIES
     )
+    sport_counts: Counter[str] = Counter()
+    cue_counts: Counter[str] = Counter()
+    max_aggression = 0.0
+    face_statuses: Counter[str] = Counter()
+    assist_rows = []
+    for result in rows:
+        for assessment in getattr(result, "assessments", []) or []:
+            sport = getattr(assessment, "sport_context", "") or ""
+            if sport:
+                sport_counts[sport] += 1
+            score = float(getattr(assessment, "aggression_score", 0.0) or 0.0)
+            max_aggression = max(max_aggression, score)
+            for cue in getattr(assessment, "aggression_cues", []) or []:
+                cue_counts[str(cue)] += 1
+            face_statuses[getattr(assessment, "face_cue_status", "") or "disabled"] += 1
+            assist_rows.append(
+                {
+                    "frame": assessment.frame_index,
+                    "category": assessment.category,
+                    "label": category_display_name(assessment.category),
+                    "sport": sport,
+                    "sport_label": getattr(assessment, "sport_display", "")
+                    or (sport_display_name(sport) if sport else ""),
+                    "aggression": round(score, 3),
+                    "cues": list(getattr(assessment, "aggression_cues", []) or []),
+                    "face": getattr(assessment, "face_cue_status", "disabled"),
+                    "alert": bool(assessment.should_alert),
+                }
+            )
+    face_status = "disabled"
+    if face_statuses:
+        face_status = face_statuses.most_common(1)[0][0]
     return {
         "frames": frames,
         "alerts": alerts,
@@ -457,6 +491,22 @@ def _pipeline_result_summary(results, *, mode: str = "", filename: str = "") -> 
         "quiet": frames > 0 and alerts == 0,
         "categories": sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])),
         "category_rows": ordered,
+        "sport_contexts": [
+            {
+                "id": sport,
+                "label": sport_display_name(sport),
+                "frames": n,
+            }
+            for sport, n in sport_counts.most_common()
+        ],
+        "aggression": {
+            "max_score": round(max_aggression, 3),
+            "cues": [c for c, _n in cue_counts.most_common()],
+            "frames_flagged": sum(1 for row in assist_rows if row["cues"]),
+        },
+        "face_cue_status": face_status,
+        "face_enabled": face_aggression_enabled(),
+        "assist_rows": assist_rows,
         "cameras": [
             {
                 "id": r.camera_id,
@@ -725,6 +775,8 @@ def health():
         "vision_backend": current_app.config.get("VISION_BACKEND"),
         "activity_checkpoint_ready": ckpt.is_file(),
         "allow_webcam": bool(current_app.config.get("ALLOW_WEBCAM")),
+        "face_aggression_enabled": face_aggression_enabled(),
+        "sports_catalog_size": len(all_sports()),
         "notify": {
             "resend_configured": notify.resend_configured,
             "webhook_configured": notify.webhook_configured,

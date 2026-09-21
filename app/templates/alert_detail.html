@@ -22,6 +22,15 @@
         <dt>Severity</dt><dd>{{ payload.severity }}</dd>
         <dt>Risk level</dt><dd>{{ alert.risk_level }}</dd>
         <dt>Category</dt><dd>{{ alert.category|category_label }} <span class="mono muted">({{ alert.category }})</span></dd>
+        {% if payload.metadata and payload.metadata.sport_context %}
+        <dt>Sport context</dt><dd>{{ payload.metadata.sport_display or payload.metadata.sport_context }} <span class="mono muted">({{ payload.metadata.sport_context }})</span></dd>
+        {% endif %}
+        {% if payload.metadata and payload.metadata.aggression %}
+        <dt>Aggression</dt><dd>{{ '%.2f'|format(payload.metadata.aggression.score or 0) }}{% if payload.metadata.aggression.cues %} · {% for cue in payload.metadata.aggression.cues %}<code>{{ cue }}</code> {% endfor %}{% endif %}</dd>
+        {% endif %}
+        {% if payload.metadata and payload.metadata.face_aggression %}
+        <dt>Face cue</dt><dd><code>{{ payload.metadata.face_aggression.status or 'disabled' }}</code> <span class="fineprint">assistive only — never identity or a criminal label</span></dd>
+        {% endif %}
         <dt>Confidence</dt><dd>{{ '%.1f'|format(alert.confidence * 100) }}%</dd>
         <dt>Location</dt><dd>{{ alert.location_label or '—' }}</dd>
         <dt>Camera ID</dt><dd>{{ alert.camera_id or '—' }}</dd>

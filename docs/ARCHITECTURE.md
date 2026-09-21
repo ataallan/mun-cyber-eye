@@ -21,7 +21,8 @@ Camera registry (SQLite)  →  authorized file / RTSP / webcam / MOCK
                             ← else YOLO if installed
                             ← else honest MOCK
         ↓
-   Risk engine (risk/)      ← ordinary | game_or_play | dance | potential_fight | potential_fall | potential_weapon_object
+   Risk engine (risk/)      ← ordinary | game_or_play (+ optional sport_context) | dance | potential_fight | potential_fall | potential_weapon_object
+                            ← body-aggression proxies; optional gated face assist (off by default)
         ↓
  Alert store (alerts/)      ← SQLite + structured schema + camera_id + location_label
         ↓
@@ -37,13 +38,13 @@ Camera registry (SQLite)  →  authorized file / RTSP / webcam / MOCK
 | Module | Role |
 |--------|------|
 | `ingest/` | Camera registry; file sampler; RTSP with timeout; webcam gated by `ALLOW_WEBCAM` |
-| `vision/` | Pluggable detectors (`ActivityVisionAdapter`, `YoloVisionAdapter`, `MockVisionAdapter`) plus train/eval |
-| `risk/` | Phase 3 category labels or Phase 2 heuristics → `low` / `elevated` / `high` |
+| `vision/` | Pluggable detectors (`ActivityVisionAdapter`, `YoloVisionAdapter`, `MockVisionAdapter`) plus train/eval, sports catalog, aggression / optional face assists |
+| `risk/` | Phase 3 category labels or Phase 2 heuristics → `low` / `elevated` / `high`; sport-vs-fight policy |
 | `alerts/` | SQLite persistence, structured payload, recipients, delivery adapters |
 | `app/` | Dark-theme Flask console for review and authorized notification |
 | `data/activity/` | Labeled train/val/test frames |
 | `data/checkpoints/` | Default `activity_demo.joblib` |
-| `docs/` | Architecture, ethics & safety, Phase 3, Phase 4, Phase 5 |
+| `docs/` | Architecture, ethics & safety, Phase 3, sports/aggression, Phase 4, Phase 5 |
 | `pipeline.py` | End-to-end orchestration |
 | `run.py` | Console entrypoint |
 
@@ -82,7 +83,8 @@ Phase 3 training and metrics are documented in [PHASE3.md](PHASE3.md).
 ## Non-goals (Phase 5)
 
 - True parallel live streaming of a camera fleet (sequential ingest is the prototype)  
-- Autonomous lockdown / weapons discharge / facial criminal labeling  
+- Autonomous lockdown / weapons discharge / facial criminal labeling (face assist, when enabled, is unreliable and never identity)  
+- Claiming the activity model “knows most sports” or can read facial aggression reliably
 - Large GPU HAR models (optional later; this phase is CPU OpenCV + sklearn)  
 - Legal identity or guilt determination  
 - Guaranteed third-party email delivery (we report the provider result honestly)  
@@ -92,4 +94,4 @@ Phase 3 training and metrics are documented in [PHASE3.md](PHASE3.md).
 
 Phase 2 = working HITL prototype on controlled sources. Phase 3 = trainable activity categories with documented metrics and fallback. Phase 4 = structured alerts and secure notification to authorized personnel. Phase 5 = camera registry and live ingest (file / RTSP / gated webcam) that still feeds human review. Later phases add reviewer-agreement studies, controlled pilots, and lawful integrations — always with human oversight.
 
-Live ingest details: [PHASE5.md](PHASE5.md).
+Live ingest details: [PHASE5.md](PHASE5.md). Sports / aggression assists: [SPORTS_AND_AGGRESSION.md](SPORTS_AND_AGGRESSION.md).
