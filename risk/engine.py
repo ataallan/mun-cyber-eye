@@ -584,7 +584,7 @@ class RiskEngine:
         source = f" ({ctx.place_source})" if ctx.place_source not in {"", "none"} else ""
         if lean_fight and ctx.strong_confrontation_setting and not ctx.sport_decent:
             return (
-                f" Setting: {label}{source} — street / corridor / house / compound "
+                f" Setting: {label}{source} — street / corridor / house / compound / roam "
                 "plus high body-aggression and no sport context, so a stronger lean "
                 "toward potential_fight. Place is a catalog type, not a named venue."
             )

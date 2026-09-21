@@ -234,7 +234,7 @@ def test_street_high_aggression_no_sport_leans_stronger_fight():
 
 def test_house_and_corridor_high_aggression_no_sport_alert():
     engine = RiskEngine()
-    for place in ("house_interior", "corridor_hallway", "compound_courtyard"):
+    for place in ("house_interior", "corridor_hallway", "compound_courtyard", "roam"):
         result = engine.assess(
             [
                 Detection(

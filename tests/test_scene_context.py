@@ -18,6 +18,9 @@ from vision.scene_context import (
     famous_arena_name_rejected,
     infer_place_heuristic,
     infer_scene_place,
+    is_confrontation_setting,
+    is_sports_venue,
+    is_strong_confrontation_setting,
     place_display_name,
     resolve_place,
     validate_place_type,
@@ -46,6 +49,7 @@ def test_place_catalog_is_a_solid_known_set():
         "corridor_hallway",
         "lobby",
         "stairwell",
+        "roam",
         "house_interior",
         "residential_yard",
         "compound_courtyard",
@@ -58,10 +62,26 @@ def test_place_catalog_is_a_solid_known_set():
     assert resolve_place("compound").id == "compound_courtyard"
     assert resolve_place("home").id == "house_interior"
     assert resolve_place("pitch").id == "sports_field"
+    assert resolve_place("roaming").id == "roam"
+    assert resolve_place("patrol").id == "roam"
+    assert resolve_place("mobile_camera").id == "roam"
     assert resolve_place("madison_square_garden") is None
     assert "Basketball court" == place_display_name("basketball_court")
     assert validate_place_type("") == ""
     assert validate_place_type("Street") == "street"
+
+
+def test_roam_is_circulation_confrontation_not_sports():
+    roam = resolve_place("roam")
+    assert roam is not None
+    assert roam.group == "circulation"
+    assert roam.display_name == "Roam / patrol (multi-area)"
+    assert validate_place_type("Roam") == "roam"
+    assert is_sports_venue("roam") is False
+    assert is_confrontation_setting("roam") is True
+    assert is_strong_confrontation_setting("roam") is True
+    assert is_strong_confrontation_setting("street") is True
+    assert is_strong_confrontation_setting("gymnasium") is False
 
 
 def test_scene_folder_tags():

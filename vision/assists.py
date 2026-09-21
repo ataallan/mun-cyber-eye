@@ -3,7 +3,7 @@
 Single enrichment point so MOCK, YOLO, and the activity adapter share
 the same metadata contract without double-counting cues.
 
-Place type is a catalog setting (court / street / corridor / house / …),
+Place type is a catalog setting (court / street / corridor / house / roam / …),
 not recognition of a named arena. Kit cues are clothing-color clusters,
 not identity or guilt. Fall manner is not a medical diagnosis. Gunshot
 video proxies are not ballistic proof. Aimed-firearm geometry is not
