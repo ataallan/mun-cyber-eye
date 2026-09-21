@@ -31,7 +31,8 @@ SQLite (`CAMERA_DB_PATH`, default `data/cameras.db`):
 |--------|---------|
 | `id` | Stable id (seeded demos use `demo-file-01`, `demo-rtsp-01`) |
 | `name` | Operator-facing name |
-| `location_label` | Site / zone label stamped onto alerts |
+| `location_label` | Site / zone label stamped onto alerts (free text — not a famous arena name) |
+| `place_type` | Optional catalog setting (`street`, `corridor_hallway`, `house_interior`, …) stamped onto the pipeline |
 | `source_type` | `file` \| `rtsp` \| `webcam` |
 | `uri` | File path, RTSP URL, device index, `MOCK`, or `env:VAR_NAME` |
 | `enabled` | Disabled cameras are skipped by “all enabled” |

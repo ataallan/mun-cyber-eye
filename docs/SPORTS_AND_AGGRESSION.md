@@ -2,7 +2,9 @@
 
 **AI detects and alerts. Humans verify and decide.**
 
-This layer helps operators tell **authorized play** from a **possible confrontation**. It is a structured assist — not a claim that today’s OpenCV + sklearn activity model “knows most sports,” and not a claim that it can reliably read facial aggression.
+This layer helps operators tell **authorized play** from a **possible confrontation**. It is a structured assist — not a claim that today’s OpenCV + sklearn activity model “knows most sports,” understands all sports arenas, or can reliably read facial aggression.
+
+Scene / place types (court, street, corridor, house, compound, …) and kit-color cues are documented in [SCENE_CONTEXT.md](SCENE_CONTEXT.md). Setting is not identity; uniforms are not guilt.
 
 ## Honesty
 
@@ -45,10 +47,12 @@ Soft labels (`aggressive_motion`, `aggressive_pose`, plus the existing `rapid_mo
 
 Documented rule (also covered by tests):
 
-1. **High aggression + no `sport_context`** → lean `potential_fight` and **alert**.
-2. **High aggression + decent/strong `sport_context`** → stay `game_or_play` with rationale *“possible intense play; human should verify.”* **No threat alert** unless `ALERT_ON_INTENSE_SPORT=1`.
+1. **High aggression + no `sport_context`** → lean `potential_fight` and **alert**. Street / corridor / house / compound makes that lean **stronger** (risk may be `high`).
+2. **High aggression + decent/strong `sport_context`** → stay `game_or_play` with rationale *“possible intense play; human should verify.”* **No threat alert** unless `ALERT_ON_INTENSE_SPORT=1`. A **sports venue** place type strengthens this play reading.
 3. **Low aggression + `sport_context`** → `game_or_play`, no threat alert.
 4. Phase 2 fight heuristics (`close_proximity` + `rapid_motion`, …) are **softened** when `sport_context` is present with decent confidence and aggression is not high.
+5. **Street + `sport_context`** (street soccer, …) → still `game_or_play` unless aggression is **extreme**; rationale notes *“street play — verify.”*
+6. Similar kit colors slightly boost play confidence; missing kits do not prove a fight.
 
 Weapon-object and fall paths are unchanged. Dance stays dance (choreography is not upgraded to a fight on scene-cut motion).
 
@@ -87,6 +91,7 @@ Admins can upload sport-folder frames and retrain from **Train models** (`/admin
 
 - Activity class counts (including game / dance that do not page)
 - Named sport contexts when present
+- Place type (catalog setting) and kit-color cues
 - Body-aggression max score and cues
 - Face cue status (`disabled` / `none_detected` / `unavailable` / `assistive`)
 - A per-frame scene-assist table

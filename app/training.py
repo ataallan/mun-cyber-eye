@@ -24,7 +24,9 @@ from vision.dataset import (
     describe_dataset,
     ensure_dataset_tree,
     parse_folder_label,
+    parse_folder_tags,
 )
+from vision.scene_context import validate_place_type
 from vision.sports_catalog import resolve_sport
 from vision.eval_activity import evaluate_checkpoint
 from vision.metrics import format_metrics_report
@@ -173,20 +175,37 @@ def _safe_zip_parts(name: str) -> list[str] | None:
 
 
 def labeled_dest_folder(root: Path, split: str, folder_name: str) -> Path:
-    """Resolve a category or sport folder onto the on-disk dataset path."""
-    category, sport = parse_folder_label(folder_name)
-    if sport:
-        return root / split / f"game_or_play__{sport}"
-    return root / split / category
+    """Resolve a category, sport, or scene folder onto the on-disk path."""
+    tags = parse_folder_tags(folder_name)
+    if tags.sport_context:
+        return root / split / f"game_or_play__{tags.sport_context}"
+    if tags.place_type:
+        prefix = folder_name.strip().lower()
+        if prefix.startswith("scene__") or "__scene__" in prefix:
+            if tags.category not in {"ordinary", "game_or_play"} and "scene__" in prefix:
+                return root / split / f"{tags.category}__scene__{tags.place_type}"
+            return root / split / f"scene__{tags.place_type}"
+        return root / split / f"scene__{tags.place_type}"
+    return root / split / tags.category
 
 
-def folder_label_for_upload(category: str, sport_context: str = "") -> str:
+def folder_label_for_upload(
+    category: str, sport_context: str = "", place_type: str = ""
+) -> str:
     sport = (sport_context or "").strip()
+    place = (place_type or "").strip()
     if sport:
         resolved = resolve_sport(sport)
         if resolved is None:
             raise ValueError(f"Unknown sport context '{sport}'.")
         return f"game_or_play__{resolved.id}"
+    if place:
+        place_id = validate_place_type(place)
+        cat = (category or "").strip()
+        if cat and cat not in {"", "ordinary", "game_or_play"}:
+            parse_folder_label(cat)
+            return f"{cat}__scene__{place_id}"
+        return f"scene__{place_id}"
     parse_folder_label(category)
     return category
 
@@ -222,11 +241,12 @@ def save_labeled_files(
     category: str,
     split: str = "train",
     sport_context: str = "",
+    place_type: str = "",
 ) -> int:
     split = split.strip().lower() or "train"
     if split not in SPLITS:
         raise ValueError("Split must be train, val, or test.")
-    folder = folder_label_for_upload(category, sport_context)
+    folder = folder_label_for_upload(category, sport_context, place_type)
     root = ensure_dataset_tree(data_root_from_config(config))
     dest_dir = labeled_dest_folder(root, split, folder)
     dest_dir.mkdir(parents=True, exist_ok=True)
@@ -309,6 +329,7 @@ def save_labeled_zip(
     if saved == 0:
         raise ValueError(
             "Zip contained no recognized labeled frames. "
-            f"Use train/<category>/*.jpg with categories: {', '.join(ACTIVITY_CATEGORIES)}."
+            f"Use train/<category>/*.jpg with categories: {', '.join(ACTIVITY_CATEGORIES)} "
+            "or scene__<place_type> / catalog sport folders."
         )
     return saved

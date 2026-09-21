@@ -36,6 +36,9 @@ def test_synthetic_demo_creates_alerts(tmp_path):
     assert "potential_fight" in predicted
     sports = {a.sport_context for a in result.assessments if a.sport_context}
     assert {"basketball", "soccer"} <= sports
+    places = {a.place_type for a in result.assessments if a.place_type and a.place_type != "unknown"}
+    assert {"basketball_court", "sports_field"} <= places or places  # MOCK stamps sports venues
+    assert all("madison" not in (a.place_display or "").lower() for a in result.assessments)
     # Blank MOCK color-wash frames must not invent extra sports.
     assert sports <= {"basketball", "soccer"}
     assert all(a.face_cue_status == "disabled" for a in result.assessments)

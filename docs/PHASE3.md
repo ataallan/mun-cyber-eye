@@ -64,6 +64,7 @@ data/activity/
     ordinary/*.jpg
     game_or_play/*.jpg
     game_or_play__basketball/*.jpg   # optional sport_context
+    scene__street/*.jpg              # optional place type (see SCENE_CONTEXT.md)
     # or game_or_play/basketball/*.jpg
     dance/*.jpg
     potential_fight/*.jpg

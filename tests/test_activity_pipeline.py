@@ -22,7 +22,7 @@ def test_activity_pipeline_creates_alerts(tmp_path):
     result = demo_activity_run(store, checkpoint=ckpt, per_class=2)
     assert result.backend == "activity"
     assert result.source_label == "Authorized Camera — Activity Demo"
-    assert result.frames_processed == 17  # 6 classes × 2 + 5 demo sports
+    assert result.frames_processed == 23  # 6 classes × 2 + 5 demo sports + 6 places
     assert len(result.alerts_created) >= 1
     predicted = {a.category for a in result.assessments}
     assert {"game_or_play", "dance", "potential_fight"} <= predicted
@@ -49,4 +49,4 @@ def test_activity_pipeline_falls_back_to_mock(tmp_path):
         store, checkpoint=tmp_path / "no-such.joblib", per_class=2
     )
     assert result.backend == "mock"
-    assert result.frames_processed == 17
+    assert result.frames_processed == 23

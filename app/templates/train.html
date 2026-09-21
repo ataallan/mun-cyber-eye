@@ -118,6 +118,24 @@
     {% endfor %}
     </tbody>
   </table>
+  {% if dataset.place_types %}
+  <h3>Scene / place folders</h3>
+  <p class="fineprint">Counted from <code>scene__&lt;place_type&gt;</code> or sport folders that imply a default place (basketball → basketball court). Catalog setting only — not recognition of a named arena.</p>
+  <table class="table">
+    <thead>
+      <tr><th>Place</th><th>Id</th><th>Frames</th></tr>
+    </thead>
+    <tbody>
+    {% for place_id, row in dataset.place_types.items() %}
+      <tr>
+        <td>{{ row.label }}</td>
+        <td class="mono">{{ row.id }}</td>
+        <td>{{ row.frames }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
   {% if dataset.sport_contexts %}
   <h3>Sport-context folders</h3>
   <p class="fineprint">Counted from <code>game_or_play__&lt;sport&gt;</code>, nested <code>game_or_play/&lt;sport&gt;</code>, or a catalog sport name. Assistive label only — the model does not “know most sports.”</p>
@@ -220,7 +238,7 @@
 
 <section class="card">
   <h2>Upload labeled frames</h2>
-  <p class="muted">Add authorized, site-specific examples (game, dance, confrontation, fall, …) without SSH. Category names are validated; path traversal is rejected. Sport zips may use <code>train/game_or_play__basketball/*.jpg</code>, <code>train/game_or_play/basketball/*.jpg</code>, or <code>train/basketball/*.jpg</code>.</p>
+  <p class="muted">Add authorized, site-specific examples (game, dance, confrontation, fall, …) without SSH. Category names are validated; path traversal is rejected. Sport zips may use <code>train/game_or_play__basketball/*.jpg</code>, <code>train/game_or_play/basketball/*.jpg</code>, or <code>train/basketball/*.jpg</code>. Scene tags use <code>train/scene__street/*.jpg</code> or <code>train/game_or_play__scene__street/*.jpg</code>.</p>
   <form method="post" action="{{ url_for('main.admin_train_upload') }}" enctype="multipart/form-data" class="form">
     <label>Category
       <select name="category">
@@ -237,6 +255,15 @@
         {% endfor %}
       </select>
     </label>
+    <label>Optional place type (writes <code>scene__&lt;place&gt;</code>)
+      <select name="place_type">
+        <option value="">none</option>
+        {% for place in places %}
+        <option value="{{ place.id }}">{{ place.display_name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <p class="fineprint">Place tags help the scene-context assist. They are not a claim the model understands every sports arena. Uniforms are not labeled as identity or guilt.</p>
     <label>Split
       <select name="split">
         <option value="train" selected>train</option>

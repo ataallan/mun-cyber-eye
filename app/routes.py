@@ -25,6 +25,7 @@ from alerts.notify import parse_env_recipients, send_resend_email
 from alerts.schema import category_display_name, structured_payload
 from vision.dataset import ACTIVITY_CATEGORIES
 from vision.face_aggression import face_aggression_enabled
+from vision.scene_context import all_places, place_display_name
 from vision.sports_catalog import all_sports, sport_display_name
 from ingest.cameras import camera_from_form, mask_uri
 
@@ -452,8 +453,11 @@ def _pipeline_result_summary(results, *, mode: str = "", filename: str = "") -> 
         entry for key, entry in detailed.items() if key not in ACTIVITY_CATEGORIES
     )
     sport_counts: Counter[str] = Counter()
+    place_counts: Counter[str] = Counter()
     cue_counts: Counter[str] = Counter()
     max_aggression = 0.0
+    max_kit = 0.0
+    jersey_frames = 0
     face_statuses: Counter[str] = Counter()
     assist_rows = []
     for result in rows:
@@ -461,8 +465,15 @@ def _pipeline_result_summary(results, *, mode: str = "", filename: str = "") -> 
             sport = getattr(assessment, "sport_context", "") or ""
             if sport:
                 sport_counts[sport] += 1
+            place = getattr(assessment, "place_type", "") or ""
+            if place and place != "unknown":
+                place_counts[place] += 1
             score = float(getattr(assessment, "aggression_score", 0.0) or 0.0)
             max_aggression = max(max_aggression, score)
+            kit = float(getattr(assessment, "team_kit_similarity", 0.0) or 0.0)
+            max_kit = max(max_kit, kit)
+            if getattr(assessment, "jersey_like_colors", False):
+                jersey_frames += 1
             for cue in getattr(assessment, "aggression_cues", []) or []:
                 cue_counts[str(cue)] += 1
             face_statuses[getattr(assessment, "face_cue_status", "") or "disabled"] += 1
@@ -474,6 +485,12 @@ def _pipeline_result_summary(results, *, mode: str = "", filename: str = "") -> 
                     "sport": sport,
                     "sport_label": getattr(assessment, "sport_display", "")
                     or (sport_display_name(sport) if sport else ""),
+                    "place": place if place != "unknown" else "",
+                    "place_label": getattr(assessment, "place_display", "")
+                    or (place_display_name(place) if place and place != "unknown" else ""),
+                    "place_source": getattr(assessment, "place_source", "") or "",
+                    "kit": round(kit, 3),
+                    "jersey": bool(getattr(assessment, "jersey_like_colors", False)),
                     "aggression": round(score, 3),
                     "cues": list(getattr(assessment, "aggression_cues", []) or []),
                     "face": getattr(assessment, "face_cue_status", "disabled"),
@@ -501,6 +518,18 @@ def _pipeline_result_summary(results, *, mode: str = "", filename: str = "") -> 
             }
             for sport, n in sport_counts.most_common()
         ],
+        "place_types": [
+            {
+                "id": place,
+                "label": place_display_name(place),
+                "frames": n,
+            }
+            for place, n in place_counts.most_common()
+        ],
+        "kit": {
+            "max_similarity": round(max_kit, 3),
+            "jersey_like_frames": jersey_frames,
+        },
         "aggression": {
             "max_score": round(max_aggression, 3),
             "cues": [c for c, _n in cue_counts.most_common()],
@@ -582,6 +611,7 @@ def _run_registered_selection(camera_id: str, store, notifier, snapshot_dir: str
         adapter=adapter,
         snapshot_dir=snapshot_dir,
         notifier=notifier,
+        activity_data_root=current_app.config.get("ACTIVITY_DATA_ROOT"),
     )
     return run_registered_cameras(
         pipe,
@@ -620,6 +650,7 @@ def camera_new():
         camera=None,
         masked_uri="",
         allow_webcam=bool(current_app.config.get("ALLOW_WEBCAM")),
+        place_types=all_places(),
     )
 
 
@@ -645,6 +676,7 @@ def camera_edit(camera_id: str):
         camera=camera,
         masked_uri=mask_uri(camera.uri),
         allow_webcam=bool(current_app.config.get("ALLOW_WEBCAM")),
+        place_types=all_places(),
     )
 
 
@@ -706,6 +738,7 @@ def run_pipeline():
                     notifier=notifier,
                     location_label=current_app.config.get("DEFAULT_LOCATION_LABEL"),
                     camera_id=current_app.config.get("DEFAULT_CAMERA_ID"),
+                    activity_data_root=current_app.config.get("ACTIVITY_DATA_ROOT"),
                 )
                 result = pipe.run_video(
                     path,
@@ -773,6 +806,7 @@ def _train_page_context(extra: dict | None = None) -> dict:
         "dataset": training_ops.dataset_inventory(current_app.config),
         "categories": list(ACTIVITY_CATEGORIES),
         "sports": all_sports(),
+        "places": all_places(),
         "splits": list(SPLITS),
         "checkpoints": training_ops.list_checkpoint_files(current_app.config),
         "audit": _store().list_system_audit(limit=20),
@@ -912,12 +946,13 @@ def admin_train_upload():
     category = request.form.get("category") or ""
     split = request.form.get("split") or "train"
     sport_context = (request.form.get("sport_context") or "").strip()
+    place_type = (request.form.get("place_type") or "").strip()
     zip_file = request.files.get("zipfile")
     images = request.files.getlist("images")
     try:
         folder = (
-            training_ops.folder_label_for_upload(category, sport_context)
-            if category or sport_context
+            training_ops.folder_label_for_upload(category, sport_context, place_type)
+            if category or sport_context or place_type
             else ""
         )
         if zip_file and zip_file.filename:
@@ -935,6 +970,7 @@ def admin_train_upload():
                 category=folder or category,
                 split=split,
                 sport_context="" if folder else sport_context,
+                place_type="" if folder else place_type,
             )
             kind = "files"
     except ValueError as exc:
@@ -943,7 +979,7 @@ def admin_train_upload():
     _store().record_system_audit(
         "upload_labels",
         actor,
-        f"{kind} count={saved} split={split} category={folder or category or 'from-zip'}",
+        f"{kind} count={saved} split={split} category={folder or category or 'from-zip'} place={place_type or '-'}",
     )
     flash(
         f"Saved {saved} labeled frame(s). Training improves assistive detection only.",
@@ -974,6 +1010,7 @@ def health():
         "allow_webcam": bool(current_app.config.get("ALLOW_WEBCAM")),
         "face_aggression_enabled": face_aggression_enabled(),
         "sports_catalog_size": len(all_sports()),
+        "place_catalog_size": len(all_places()),
         "notify": {
             "resend_configured": notify.resend_configured,
             "webhook_configured": notify.webhook_configured,

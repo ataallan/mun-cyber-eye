@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Any, Iterator, List, Optional
 from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
+from vision.scene_context import validate_place_type
+
 SOURCE_TYPES = frozenset({"file", "rtsp", "webcam"})
 ENV_URI_PREFIX = "env:"
 MOCK_URIS = frozenset({"", "mock", "MOCK", "mock://synthetic", "mock://demo"})
@@ -100,6 +102,7 @@ class Camera:
     updated_at: str
     last_seen_at: Optional[str] = None
     last_error: Optional[str] = None
+    place_type: str = ""
 
     def effective_fps(self) -> float:
         if self.sample_interval is not None and float(self.sample_interval) > 0:
@@ -156,13 +159,23 @@ class CameraStore:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     last_seen_at TEXT,
-                    last_error TEXT
+                    last_error TEXT,
+                    place_type TEXT NOT NULL DEFAULT ''
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_cameras_enabled ON cameras(enabled);
                 CREATE INDEX IF NOT EXISTS idx_cameras_updated ON cameras(updated_at DESC);
                 """
             )
+            self._ensure_column(conn, "cameras", "place_type", "TEXT NOT NULL DEFAULT ''")
+
+    @staticmethod
+    def _ensure_column(
+        conn: sqlite3.Connection, table: str, column: str, decl: str
+    ) -> None:
+        cols = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in cols:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
 
     def count(self) -> int:
         with self._conn() as conn:
@@ -198,6 +211,7 @@ class CameraStore:
         sample_interval: Optional[float] = None,
         notes: str = "",
         camera_id: Optional[str] = None,
+        place_type: str = "",
     ) -> Camera:
         camera = Camera(
             id=camera_id or str(uuid.uuid4()),
@@ -211,6 +225,7 @@ class CameraStore:
             notes=(notes or "").strip(),
             created_at=_utc_now(),
             updated_at=_utc_now(),
+            place_type=validate_place_type(place_type),
         )
         with self._conn() as conn:
             conn.execute(
@@ -218,8 +233,8 @@ class CameraStore:
                 INSERT INTO cameras (
                     id, name, location_label, source_type, uri, enabled,
                     sample_fps, sample_interval, notes, created_at, updated_at,
-                    last_seen_at, last_error
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
+                    last_seen_at, last_error, place_type
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)
                 """,
                 (
                     camera.id,
@@ -233,6 +248,7 @@ class CameraStore:
                     camera.notes,
                     camera.created_at,
                     camera.updated_at,
+                    camera.place_type,
                 ),
             )
         return camera
@@ -249,6 +265,7 @@ class CameraStore:
         sample_fps: Optional[float] = None,
         sample_interval: Optional[float] = None,
         notes: Optional[str] = None,
+        place_type: Optional[str] = None,
         clear_interval: bool = False,
     ) -> Camera:
         existing = self.get(camera_id)
@@ -288,6 +305,11 @@ class CameraStore:
             updated_at=_utc_now(),
             last_seen_at=existing.last_seen_at,
             last_error=existing.last_error,
+            place_type=(
+                existing.place_type
+                if place_type is None
+                else validate_place_type(place_type)
+            ),
         )
         with self._conn() as conn:
             conn.execute(
@@ -295,7 +317,7 @@ class CameraStore:
                 UPDATE cameras SET
                     name = ?, location_label = ?, source_type = ?, uri = ?,
                     enabled = ?, sample_fps = ?, sample_interval = ?, notes = ?,
-                    updated_at = ?
+                    updated_at = ?, place_type = ?
                 WHERE id = ?
                 """,
                 (
@@ -308,6 +330,7 @@ class CameraStore:
                     updated.sample_interval,
                     updated.notes,
                     updated.updated_at,
+                    updated.place_type,
                     updated.id,
                 ),
             )
@@ -381,6 +404,7 @@ class CameraStore:
                 "sample clip is present at sample_data/demo.mp4. Replace the "
                 "URI with an authorized video file path for a real file run."
             ),
+            place_type="gymnasium",
         )
         rtsp_cam = self.create(
             camera_id="demo-rtsp-01",
@@ -395,6 +419,7 @@ class CameraStore:
                 "URL (credentials stay in the environment). Do not point this "
                 "at unauthorized streams."
             ),
+            place_type="street",
         )
         return [file_cam, rtsp_cam]
 
@@ -414,6 +439,7 @@ class CameraStore:
             updated_at=row["updated_at"],
             last_seen_at=row["last_seen_at"],
             last_error=row["last_error"],
+            place_type=row["place_type"] if "place_type" in row.keys() else "",
         )
 
 
@@ -463,6 +489,7 @@ def camera_from_form(form: Any, *, existing: Optional[Camera] = None) -> dict[st
         "source_type": (form.get("source_type") or "file").strip().lower(),
         "notes": (form.get("notes") or "").strip(),
         "enabled": (form.get("enabled") or "0") == "1",
+        "place_type": (form.get("place_type") or "").strip(),
     }
     fps_raw = (form.get("sample_fps") or "").strip()
     if fps_raw:

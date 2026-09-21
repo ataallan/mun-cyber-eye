@@ -44,6 +44,11 @@ class FrameAssessment:
     aggression_score: float = 0.0
     aggression_cues: list[str] = field(default_factory=list)
     face_cue_status: str = "disabled"
+    place_type: str = "unknown"
+    place_display: str = ""
+    place_source: str = "none"
+    team_kit_similarity: float = 0.0
+    jersey_like_colors: bool = False
 
 
 @dataclass
@@ -70,6 +75,8 @@ class CyberEyePipeline:
         location_label: Optional[str] = None,
         camera_id: Optional[str] = None,
         correlation_id: Optional[str] = None,
+        activity_data_root: Optional[str | Path] = None,
+        camera_place_type: Optional[str] = None,
     ) -> None:
         self.store = store
         self.adapter = adapter or create_adapter()
@@ -80,6 +87,10 @@ class CyberEyePipeline:
         self.location_label = location_label or os.getenv("DEFAULT_LOCATION_LABEL", "")
         self.camera_id = camera_id or os.getenv("DEFAULT_CAMERA_ID", "")
         self.correlation_id = correlation_id
+        self.activity_data_root = Path(
+            activity_data_root or os.getenv("ACTIVITY_DATA_ROOT", "data/activity")
+        )
+        self.camera_place_type = camera_place_type or ""
 
     def run_video(
         self,
@@ -105,12 +116,14 @@ class CyberEyePipeline:
         source_label: str = "Authorized Camera — Demo Lab",
         camera_id: Optional[str] = None,
         location_label: Optional[str] = None,
+        camera_place_type: Optional[str] = None,
     ) -> PipelineResult:
         return self._process(
             iter(frames),
             source_label=source_label,
             camera_id=camera_id,
             location_label=location_label,
+            camera_place_type=camera_place_type,
         )
 
     def run_camera(
@@ -139,6 +152,7 @@ class CyberEyePipeline:
             source_label=camera.source_label(),
             camera_id=camera.id,
             location_label=camera.location_label,
+            camera_place_type=camera.place_type,
         )
 
     def _process(
@@ -147,6 +161,7 @@ class CyberEyePipeline:
         source_label: str,
         camera_id: Optional[str] = None,
         location_label: Optional[str] = None,
+        camera_place_type: Optional[str] = None,
     ) -> PipelineResult:
         alerts: List[Alert] = []
         assessments: List[FrameAssessment] = []
@@ -157,8 +172,20 @@ class CyberEyePipeline:
         for frame in frame_iter:
             count += 1
             detections = self.adapter.detect(frame.image_bgr, frame_index=frame.index)
+            stamp_place = (
+                camera_place_type
+                if camera_place_type is not None
+                else self.camera_place_type
+            )
             detections, _assist = enrich_detections(
-                frame.image_bgr, detections, assist_state
+                frame.image_bgr,
+                detections,
+                assist_state,
+                camera_place_type=stamp_place or None,
+                location_label=(
+                    location_label if location_label is not None else self.location_label
+                ),
+                data_root=self.activity_data_root,
             )
             risk = self.engine.assess(detections)
             category_counts[risk.category.value] += 1
@@ -175,6 +202,11 @@ class CyberEyePipeline:
                     aggression_score=risk.aggression_score,
                     aggression_cues=list(risk.aggression_cues),
                     face_cue_status=risk.face_cue_status or "disabled",
+                    place_type=risk.place_type or "unknown",
+                    place_display=risk.place_display or "",
+                    place_source=risk.place_source or "none",
+                    team_kit_similarity=risk.team_kit_similarity,
+                    jersey_like_colors=bool(risk.jersey_like_colors),
                 )
             )
 
@@ -212,6 +244,20 @@ class CyberEyePipeline:
                 metadata["sport_context"] = risk.sport_context
                 metadata["sport_display"] = risk.sport_display
                 metadata["sport_confidence"] = risk.sport_confidence
+            if risk.place_type and risk.place_type != "unknown":
+                metadata["place_type"] = risk.place_type
+                metadata["place_display"] = risk.place_display
+                metadata["place_confidence"] = risk.place_confidence
+                metadata["place_source"] = risk.place_source
+            metadata["kit"] = {
+                "team_kit_similarity": risk.team_kit_similarity,
+                "jersey_like_colors": bool(risk.jersey_like_colors),
+                "note": risk.kit_note
+                or (
+                    "Clothing color clusters are assistive only — not identity "
+                    "or a guilt label."
+                ),
+            }
             if stamp_camera:
                 metadata["camera_id"] = stamp_camera
             if stamp_location:
@@ -345,6 +391,7 @@ def demo_activity_run(
     from vision.activity import try_load_activity_adapter
     from vision.dataset import ACTIVITY_CATEGORIES, render_demo_frame
     from vision.detector import MockVisionAdapter
+    from vision.scene_context import DEMO_PLACE_SCENES
     from vision.sports_catalog import DEMO_SPORT_SCENES
 
     adapter = try_load_activity_adapter(checkpoint)
@@ -373,6 +420,32 @@ def demo_activity_run(
             idx += 1
     for sport in DEMO_SPORT_SCENES:
         img = render_demo_frame("game_or_play", seed=400 + idx * 3, sport_context=sport)
+        synthetic.append(
+            SampledFrame(
+                index=idx,
+                timestamp_sec=idx / 2.0,
+                image_bgr=img,
+                source_label="Authorized Camera — Activity Demo",
+            )
+        )
+        idx += 1
+    for place in DEMO_PLACE_SCENES:
+        img = render_demo_frame(
+            "ordinary" if place not in {
+                "basketball_court",
+                "sports_field",
+                "tennis_court",
+                "volleyball_court",
+                "playground",
+                "track",
+                "swimming_pool",
+                "skate_park",
+                "gymnasium",
+                "indoor_arena",
+            } else "game_or_play",
+            seed=700 + idx * 3,
+            place_type=place,
+        )
         synthetic.append(
             SampledFrame(
                 index=idx,

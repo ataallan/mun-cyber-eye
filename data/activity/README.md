@@ -11,7 +11,7 @@ data/activity/
 
 Categories: `ordinary`, `game_or_play`, `dance`, `potential_fight`, `potential_fall`, `potential_weapon_object`.
 
-Optional sport context on play folders: `game_or_play__basketball/`, `game_or_play/soccer/`, or a catalog sport name (`basketball/`). See [docs/SPORTS_AND_AGGRESSION.md](../../docs/SPORTS_AND_AGGRESSION.md).
+Optional sport context on play folders: `game_or_play__basketball/`, `game_or_play/soccer/`, or a catalog sport name (`basketball/`). Optional place tags: `scene__street/`, `scene__basketball_court/`. See [docs/SPORTS_AND_AGGRESSION.md](../../docs/SPORTS_AND_AGGRESSION.md) and [docs/SCENE_CONTEXT.md](../../docs/SCENE_CONTEXT.md).
 
 ```bash
 python -m vision.train_activity --generate-demo

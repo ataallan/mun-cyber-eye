@@ -273,6 +273,46 @@ def test_admin_upload_preserves_sport_context_folder(client, tmp_path):
     assert "basketball" in body.lower()
 
 
+def test_admin_upload_scene_place_folder(client, tmp_path):
+    _login(client)
+    resp = client.post(
+        "/admin/train/upload",
+        data={
+            "category": "ordinary",
+            "place_type": "street",
+            "split": "train",
+            "images": (io.BytesIO(_tiny_jpeg_bytes(6)), "block.jpg"),
+        },
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    dest = tmp_path / "activity" / "train" / "scene__street" / "block.jpg"
+    assert dest.is_file()
+    page = client.get("/admin/train")
+    body = page.get_data(as_text=True)
+    assert "scene__" in body or "Place type" in body or "street" in body.lower()
+
+
+def test_admin_zip_accepts_scene_folder(client, tmp_path):
+    _login(client)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("train/scene__corridor_hallway/hall.jpg", _tiny_jpeg_bytes(7))
+    buf.seek(0)
+    resp = client.post(
+        "/admin/train/upload",
+        data={"zipfile": (buf, "scene.zip")},
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert "Saved 1 labeled frame" in resp.get_data(as_text=True)
+    assert (
+        tmp_path / "activity" / "train" / "scene__corridor_hallway" / "hall.jpg"
+    ).is_file()
+
+
 def test_admin_zip_accepts_catalog_sport_folder(client, tmp_path):
     _login(client)
     buf = io.BytesIO()
