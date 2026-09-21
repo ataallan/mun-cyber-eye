@@ -118,6 +118,7 @@ def test_alert_detail_shows_structured_fields(app, client):
     assert "cam-1" in body
     assert "correlation" in body.lower()
     assert "Recommended human action" in body
+    assert "potential weapon-like object" in body
     assert "Resend to authorized recipients" in body
     payload = client.get(f"/alerts/{alert.id}.json").get_json()
     assert payload["camera_id"] == "cam-1"

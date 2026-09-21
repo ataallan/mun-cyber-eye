@@ -6,18 +6,30 @@ enforces access control, detention, or punishment autonomously.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Sequence
+from typing import List, Optional, Sequence
 
+from vision.dataset import canonicalize_category
 from vision.detector import Detection
 
 
 class ActivityCategory(str, Enum):
     ORDINARY = "ordinary"
+    GAME_OR_PLAY = "game_or_play"
+    DANCE = "dance"
     POTENTIAL_FIGHT = "potential_fight"
     POTENTIAL_FALL = "potential_fall"
     POTENTIAL_WEAPON_OBJECT = "potential_weapon_object"
+
+
+# ordinary / game / dance are log-only unless ALERT_ON_GAME_OR_DANCE is enabled
+_NON_THREAT_CATEGORIES = {
+    ActivityCategory.ORDINARY,
+    ActivityCategory.GAME_OR_PLAY,
+    ActivityCategory.DANCE,
+}
 
 
 class RiskLevel(str, Enum):
@@ -36,8 +48,25 @@ class RiskResult:
     should_alert: bool = False
 
 
+def _env_flag(name: str, default: str = "0") -> bool:
+    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def parse_activity_category(label: str) -> Optional[ActivityCategory]:
+    """Map a detection label or alias onto a canonical activity category."""
+    try:
+        return ActivityCategory(canonicalize_category(label))
+    except ValueError:
+        return None
+
+
 class RiskEngine:
     """Heuristic risk engine combining detection labels into categories."""
+
+    def __init__(self, alert_on_game_or_dance: Optional[bool] = None) -> None:
+        if alert_on_game_or_dance is None:
+            alert_on_game_or_dance = _env_flag("ALERT_ON_GAME_OR_DANCE", "0")
+        self.alert_on_game_or_dance = bool(alert_on_game_or_dance)
 
     FIGHT_SIGNALS = {
         "close_proximity",
@@ -66,16 +95,16 @@ class RiskEngine:
             key = d.label.lower()
             conf_by_label[key] = max(conf_by_label.get(key, 0.0), d.confidence)
 
-        # Phase 3: explicit activity-category detections take priority.
-        activity_dets = [
-            d
-            for d in detections
-            if d.label.lower() in {c.value for c in ActivityCategory}
-        ]
-        if activity_dets:
-            top = max(activity_dets, key=lambda d: d.confidence)
+        # Phase 3: explicit activity-category detections (and aliases) take priority.
+        activity_hits: list[tuple[Detection, ActivityCategory]] = []
+        for d in detections:
+            parsed = parse_activity_category(d.label)
+            if parsed is not None:
+                activity_hits.append((d, parsed))
+        if activity_hits:
+            top, category = max(activity_hits, key=lambda item: item[0].confidence)
             return self._from_activity(
-                ActivityCategory(top.label.lower()),
+                category,
                 top.confidence,
                 extras=top.extras,
             )
@@ -178,18 +207,19 @@ class RiskEngine:
                 f"{k}={float(v):.2f}" for k, v in ranked
             ) + "."
 
-        if category == ActivityCategory.ORDINARY:
+        if category in _NON_THREAT_CATEGORIES:
+            should_alert = False
+            level = RiskLevel.LOW
+            if category != ActivityCategory.ORDINARY and self.alert_on_game_or_dance:
+                should_alert = True
+                level = RiskLevel.ELEVATED
             return RiskResult(
                 category=category,
-                risk_level=RiskLevel.LOW,
+                risk_level=level,
                 confidence=round(max(conf, 0.4), 3),
-                rationale=(
-                    "Phase 3 activity model classified the scene as ordinary. "
-                    "No alert queued. Human operators may still review the live source."
-                    + score_txt
-                ),
+                rationale=self._non_threat_rationale(category, should_alert) + score_txt,
                 contributing_labels=[category.value],
-                should_alert=False,
+                should_alert=should_alert,
             )
 
         if category == ActivityCategory.POTENTIAL_WEAPON_OBJECT:
@@ -204,8 +234,8 @@ class RiskEngine:
             level = RiskLevel.HIGH if conf >= 0.75 else RiskLevel.ELEVATED
             rationale = (
                 "Phase 3 activity model flagged movement/interaction patterns "
-                "consistent with a potential physical confrontation. Alert for "
-                "authorized human review only."
+                "consistent with a potential physical confrontation (not game or "
+                "play, and not dance). Alert for authorized human review only."
                 + score_txt
             )
         else:
@@ -224,6 +254,32 @@ class RiskEngine:
             rationale=rationale,
             contributing_labels=[category.value],
             should_alert=True,
+        )
+
+    @staticmethod
+    def _non_threat_rationale(category: ActivityCategory, should_alert: bool) -> str:
+        queued = (
+            "Alert queued because ALERT_ON_GAME_OR_DANCE is enabled. "
+            if should_alert
+            else "No threat alert queued. "
+        )
+        if category == ActivityCategory.GAME_OR_PLAY:
+            return (
+                "Phase 3 activity model classified the scene as game or play "
+                "(sports, games, or playful roughhousing), not a fight. "
+                + queued
+                + "Human operators may still review the live source."
+            )
+        if category == ActivityCategory.DANCE:
+            return (
+                "Phase 3 activity model classified the scene as dance / "
+                "choreographed movement, not a confrontation. "
+                + queued
+                + "Human operators may still review the live source."
+            )
+        return (
+            "Phase 3 activity model classified the scene as ordinary. "
+            "No alert queued. Human operators may still review the live source."
         )
 
     @staticmethod

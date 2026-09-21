@@ -40,8 +40,10 @@ class VisionAdapter(ABC):
 class MockVisionAdapter(VisionAdapter):
     """Deterministic mock detections for demos and tests.
 
-    Cycles through ordinary / fight / fall / weapon-like patterns based on
-    frame index so the risk engine and alert UI can be exercised end-to-end.
+    Cycles through ordinary / game / dance / fight / fall / weapon-like
+    patterns based on frame index so the risk engine and alert UI can be
+    exercised end-to-end. Game and dance emit Phase 3 category labels so they
+    are not mistaken for fights.
     """
 
     name = "mock"
@@ -77,11 +79,37 @@ class MockVisionAdapter(VisionAdapter):
             Detection("strike_motion", 0.74, (120, 100, 280, 350)),
         ],
         7: [Detection("person", 0.90, (120, 60, 260, 400))],
+        8: [
+            Detection(
+                "game_or_play",
+                0.84,
+                (40, 50, 360, 410),
+                extras={
+                    "source": "mock",
+                    "scores": {"game_or_play": 0.84, "potential_fight": 0.08, "ordinary": 0.05},
+                },
+            ),
+            Detection("person", 0.88, (40, 50, 180, 400)),
+            Detection("person", 0.86, (220, 60, 360, 410)),
+        ],
+        9: [
+            Detection(
+                "dance",
+                0.87,
+                (80, 40, 320, 420),
+                extras={
+                    "source": "mock",
+                    "scores": {"dance": 0.87, "potential_fight": 0.06, "ordinary": 0.04},
+                },
+            ),
+            Detection("person", 0.89, (80, 40, 200, 410)),
+            Detection("person", 0.85, (200, 50, 320, 420)),
+        ],
     }
 
     def detect(self, image_bgr: np.ndarray, frame_index: int = 0) -> List[Detection]:
         _ = image_bgr  # unused; mock is scripted
-        key = frame_index % 8
+        key = frame_index % len(self._SCRIPT)
         dets = list(self._SCRIPT.get(key, []))
         logger.debug("MOCK frame %s → %s detections", frame_index, len(dets))
         return dets

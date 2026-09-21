@@ -129,7 +129,7 @@ def merge_recipients(env_csv: str, db_emails: Iterable[str]) -> List[str]:
 
 def email_subject(payload: dict[str, Any]) -> str:
     severity = str(payload.get("severity") or "info").upper()
-    category = payload.get("category") or "alert"
+    category = payload.get("category_label") or payload.get("category") or "alert"
     return f"[Mun Cyber Eye] {severity} {category} — human review required"
 
 
@@ -143,7 +143,7 @@ def email_bodies(payload: dict[str, Any]) -> tuple[str, str]:
         f"Correlation ID: {payload.get('correlation_id')}\n"
         f"Created (UTC): {payload.get('created_at')}\n"
         f"Severity: {payload.get('severity')}\n"
-        f"Category: {payload.get('category')}\n"
+        f"Category: {payload.get('category_label') or payload.get('category')}\n"
         f"Confidence: {payload.get('confidence')}\n"
         f"Location: {payload.get('location_label') or '—'}\n"
         f"Camera: {payload.get('camera_id') or '—'}\n"
@@ -166,7 +166,7 @@ def email_bodies(payload: dict[str, Any]) -> tuple[str, str]:
   <p style="color:#9aabc8;margin-top:0;">Structured notification for authorized personnel. Humans verify and decide.</p>
   <table style="border-collapse:collapse;width:100%;max-width:640px;">
     <tr><td style="color:#9aabc8;padding:4px 8px;">Severity</td><td>{payload.get("severity")}</td></tr>
-    <tr><td style="color:#9aabc8;padding:4px 8px;">Category</td><td>{payload.get("category")}</td></tr>
+    <tr><td style="color:#9aabc8;padding:4px 8px;">Category</td><td>{payload.get("category_label") or payload.get("category")}</td></tr>
     <tr><td style="color:#9aabc8;padding:4px 8px;">Confidence</td><td>{payload.get("confidence")}</td></tr>
     <tr><td style="color:#9aabc8;padding:4px 8px;">Location</td><td>{payload.get("location_label") or "—"}</td></tr>
     <tr><td style="color:#9aabc8;padding:4px 8px;">Camera</td><td>{payload.get("camera_id") or "—"}</td></tr>

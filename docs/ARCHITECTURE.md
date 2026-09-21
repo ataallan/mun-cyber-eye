@@ -21,7 +21,7 @@ Camera registry (SQLite)  →  authorized file / RTSP / webcam / MOCK
                             ← else YOLO if installed
                             ← else honest MOCK
         ↓
-   Risk engine (risk/)      ← ordinary | potential_fight | potential_fall | potential_weapon_object
+   Risk engine (risk/)      ← ordinary | game_or_play | dance | potential_fight | potential_fall | potential_weapon_object
         ↓
  Alert store (alerts/)      ← SQLite + structured schema + camera_id + location_label
         ↓

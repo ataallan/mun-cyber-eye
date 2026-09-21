@@ -22,8 +22,10 @@ def test_activity_pipeline_creates_alerts(tmp_path):
     result = demo_activity_run(store, checkpoint=ckpt, per_class=2)
     assert result.backend == "activity"
     assert result.source_label == "Authorized Camera — Activity Demo"
-    assert result.frames_processed == 8  # 4 classes × 2
+    assert result.frames_processed == 12  # 6 classes × 2
     assert len(result.alerts_created) >= 1
+    predicted = {a.category for a in result.assessments}
+    assert {"game_or_play", "dance", "potential_fight"} <= predicted
     categories = {a.category for a in result.alerts_created}
     assert categories & {
         "potential_fight",
@@ -31,6 +33,8 @@ def test_activity_pipeline_creates_alerts(tmp_path):
         "potential_weapon_object",
     }
     assert "ordinary" not in categories
+    assert "game_or_play" not in categories
+    assert "dance" not in categories
     meta = result.alerts_created[0].to_dict()["metadata"]
     assert meta.get("vision_backend") == "activity"
     assert "activity_checkpoint" in meta
@@ -42,4 +46,4 @@ def test_activity_pipeline_falls_back_to_mock(tmp_path):
         store, checkpoint=tmp_path / "no-such.joblib", per_class=2
     )
     assert result.backend == "mock"
-    assert result.frames_processed == 8
+    assert result.frames_processed == 12

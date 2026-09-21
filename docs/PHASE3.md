@@ -20,14 +20,20 @@ The Flask console, SQLite alerts, and reviewer actions (acknowledge / dismiss / 
 
 ## Categories
 
-Canonical labels (proposal / Phase 2):
+Canonical labels (proposal / Phase 2 + game / dance):
 
-- `ordinary`
-- `potential_fight`
-- `potential_fall`
-- `potential_weapon_object`
+| Canonical label | Plain language | Default `should_alert` |
+|-----------------|----------------|------------------------|
+| `ordinary` | ordinary | False |
+| `game_or_play` | game or play | False |
+| `dance` | dance | False |
+| `potential_fight` | potential confrontation | True |
+| `potential_fall` | potential fall | True |
+| `potential_weapon_object` | potential weapon-like object | True |
 
-Related informal folder names are accepted when loading data (`fight`, `fall`, `weapon`, `person_down`, …) and mapped onto those four classes. Phase 2 heuristic signals (`close_proximity`, `raised_object`, …) remain available when the activity model is **not** loaded.
+Related informal folder names are accepted when loading data (`fight`, `confrontation`, `altercation`, `play`, `sports`, `dancing`, `fall`, `weapon`, `person_down`, …) and mapped onto those classes. Phase 2 heuristic signals (`close_proximity`, `raised_object`, …) remain available when the activity model is **not** loaded.
+
+Game or play and dance are **logged and shown** on the Run Pipeline “Last run” summary so operators can see the differentiation. They do not page as threats unless `ALERT_ON_GAME_OR_DANCE=1`. See [PHASE3b.md](PHASE3b.md).
 
 ## Approach (CPU, no GPU)
 
@@ -46,7 +52,7 @@ This is small enough to train on a laptop in seconds. A tiny PyTorch CNN on fram
 - Color/HOG/geometry cues will **not** generalize to real hallways, lighting, clothing, or camera angles until you retrain on operator-supplied labeled video.
 - There is no pose estimator, tracker, or temporal transformer. Motion is a cheap frame-difference.
 - `potential_weapon_object` is a **visual proxy** (bright object near a figure), not weapon identification and not proof of possession or intent.
-- False positives and false negatives are expected. Every non-ordinary output is an **alert for a human**, never an enforcement action.
+- False positives and false negatives are expected. Confrontation, fall, and weapon-object outputs are **alerts for a human**, never an enforcement action. Game or play and dance are predict/log only by default so sports and dance are not treated like fights.
 
 ## Dataset layout
 
@@ -54,6 +60,8 @@ This is small enough to train on a laptop in seconds. A tiny PyTorch CNN on fram
 data/activity/
   train/
     ordinary/*.jpg
+    game_or_play/*.jpg
+    dance/*.jpg
     potential_fight/*.jpg
     potential_fall/*.jpg
     potential_weapon_object/*.jpg
@@ -137,18 +145,18 @@ ACTIVITY_CHECKPOINT=data/checkpoints/activity_demo.joblib
 | `yolo` | Ultralytics YOLO + Phase 2 heuristics; MOCK if YOLO is missing |
 | `mock` | Deterministic scripted detections (Phase 2 demo) |
 
-The risk engine treats a detection whose label is one of the four categories as a Phase 3 decision. Otherwise it uses the Phase 2 label heuristics. Alerts still require a human to acknowledge, dismiss, or escalate.
+The risk engine treats a detection whose label is one of the canonical categories (or an alias such as `confrontation` → `potential_fight`) as a Phase 3 decision. Otherwise it uses the Phase 2 label heuristics. Alerts still require a human to acknowledge, dismiss, or escalate.
 
 Console:
 
-1. **Run Pipeline → Phase 3 activity model** — synthetic class scenes through the checkpoint (or MOCK fallback).
-2. **Synthetic demo (MOCK)** — unchanged Phase 2 HITL walkthrough.
+1. **Run Pipeline → Phase 3 activity model** — synthetic class scenes through the checkpoint (or MOCK fallback). Last run lists every predicted category so game/play and dance stay visible even when no alert is created.
+2. **Synthetic demo (MOCK)** — Phase 2 HITL walkthrough, plus scripted game/dance frames that do not create threat alerts.
 3. **Authorized video upload** — `create_adapter()` (activity when the checkpoint is present).
 
 ## Retrain on real authorized data
 
 1. Sample frames from operator-approved video (`ingest/sampler.py` or any JPEG export).
-2. Label into the four class folders under `data/activity/train` (and val/test).
+2. Label into the class folders under `data/activity/train` (and val/test).
 3. Retrain with the same command (omit `--generate-demo`).
 4. Point `ACTIVITY_CHECKPOINT` at the new `.joblib`.
 5. Review metrics **and** reviewer agreement before any pilot. Do not treat a higher F1 as authorization to skip humans.

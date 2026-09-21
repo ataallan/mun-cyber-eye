@@ -29,6 +29,18 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
+class FrameAssessment:
+    """Per-frame risk prediction, including classes that do not create alerts."""
+
+    frame_index: int
+    category: str
+    confidence: float
+    risk_level: str
+    should_alert: bool
+    rationale: str = ""
+
+
+@dataclass
 class PipelineResult:
     frames_processed: int
     alerts_created: List[Alert]
@@ -38,6 +50,7 @@ class PipelineResult:
     location_label: str = ""
     error: Optional[str] = None
     category_counts: Dict[str, int] = field(default_factory=dict)
+    assessments: List[FrameAssessment] = field(default_factory=list)
 
 
 class CyberEyePipeline:
@@ -130,6 +143,7 @@ class CyberEyePipeline:
         location_label: Optional[str] = None,
     ) -> PipelineResult:
         alerts: List[Alert] = []
+        assessments: List[FrameAssessment] = []
         count = 0
         category_counts: Counter[str] = Counter()
         run_correlation = self.correlation_id or str(uuid.uuid4())
@@ -138,6 +152,16 @@ class CyberEyePipeline:
             detections = self.adapter.detect(frame.image_bgr, frame_index=frame.index)
             risk = self.engine.assess(detections)
             category_counts[risk.category.value] += 1
+            assessments.append(
+                FrameAssessment(
+                    frame_index=frame.index,
+                    category=risk.category.value,
+                    confidence=risk.confidence,
+                    risk_level=risk.risk_level.value,
+                    should_alert=risk.should_alert,
+                    rationale=risk.rationale,
+                )
+            )
 
             if not risk.should_alert:
                 continue
@@ -221,6 +245,7 @@ class CyberEyePipeline:
             )
             or "",
             category_counts=dict(category_counts),
+            assessments=assessments,
         )
 
     def _save_snapshot(

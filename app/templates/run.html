@@ -63,6 +63,24 @@
       </li>
       {% endif %}
     </ul>
+    {% if result.category_rows %}
+    <h3>Category summary</h3>
+    <p class="muted">Predictions for this run, including game or play and dance that do not create threat alerts by default.</p>
+    <table class="table">
+      <thead>
+        <tr><th>Category</th><th>Frames</th><th>Threat alerts</th></tr>
+      </thead>
+      <tbody>
+      {% for row in result.category_rows %}
+        <tr>
+          <td>{{ row.label }} <span class="mono muted">({{ row.category }})</span></td>
+          <td>{{ row.frames }}</td>
+          <td>{% if row.alerts %}{{ row.alerts }}{% else %}none{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
     {% if result.quiet %}
     <div class="quiet-run">
       <p>Video was analyzed; no elevated-risk frames under current heuristics / model (ordinary). That is expected for many real videos until models are trained on your site.</p>
