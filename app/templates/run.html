@@ -4,6 +4,7 @@
 <section class="card">
   <h1>Run detection pipeline</h1>
   <p class="muted">Pick a registered authorized camera, run all enabled cameras sequentially, or keep the synthetic MOCK / Phase 3 activity demo. Webcam capture is refused unless <code>ALLOW_WEBCAM=1</code>. Offline or unconfigured cameras are reported honestly — no fake detections.</p>
+  <p class="fineprint">The activity model does not “know most sports.” Named <code>sport_context</code> is a catalog + color/geometry assist (or a folder label). Body-aggression cues are OpenCV motion proxies, not a determination of assault. Face-expression assist is <strong>{% if face_aggression_enabled %}on (lab){% else %}off{% endif %}</strong> and never identifies a person or attaches a criminal label.</p>
 
   <form method="post" enctype="multipart/form-data" class="form" id="run-form">
     <fieldset>
@@ -62,10 +63,32 @@
         {% endfor %}
       </li>
       {% endif %}
+      {% if result.sport_contexts %}
+      <li>Sport context:
+        {% for row in result.sport_contexts %}
+          {{ row.label }} <span class="mono muted">({{ row.id }})</span> × {{ row.frames }}{% if not loop.last %}, {% endif %}
+        {% endfor %}
+      </li>
+      {% else %}
+      <li>Sport context: <span class="muted">none detected</span></li>
+      {% endif %}
+      <li>Body-aggression: max score {{ '%.2f'|format(result.aggression.max_score or 0) }}
+        {% if result.aggression.cues %}
+          · cues
+          {% for cue in result.aggression.cues %}
+            <code>{{ cue }}</code>{% if not loop.last %}, {% endif %}
+          {% endfor %}
+        {% else %}
+          · no cues
+        {% endif %}
+      </li>
+      <li>Face cue status: <code>{{ result.face_cue_status or 'disabled' }}</code>
+        {% if not result.face_enabled %}(ENABLE_FACE_AGGRESSION=0){% endif %}
+      </li>
     </ul>
     {% if result.category_rows %}
     <h3>Category summary</h3>
-    <p class="muted">Predictions for this run, including game or play and dance that do not create threat alerts by default.</p>
+    <p class="muted">Predictions for this run, including game or play and dance that do not create threat alerts by default. Intense sport stays <code>game_or_play</code> unless <code>ALERT_ON_INTENSE_SPORT=1</code>.</p>
     <table class="table">
       <thead>
         <tr><th>Category</th><th>Frames</th><th>Threat alerts</th></tr>
@@ -76,6 +99,34 @@
           <td>{{ row.label }} <span class="mono muted">({{ row.category }})</span></td>
           <td>{{ row.frames }}</td>
           <td>{% if row.alerts %}{{ row.alerts }}{% else %}none{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+    {% if result.assist_rows %}
+    <h3>Scene assists</h3>
+    <p class="muted">Per-frame activity class, optional sport context, body-aggression proxies, and face-cue status. Assistive only — humans verify.</p>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Frame</th>
+          <th>Activity</th>
+          <th>Sport</th>
+          <th>Aggression</th>
+          <th>Face</th>
+          <th>Threat alert</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for row in result.assist_rows %}
+        <tr>
+          <td class="mono">{{ row.frame }}</td>
+          <td>{{ row.label }} <span class="mono muted">({{ row.category }})</span></td>
+          <td>{% if row.sport %}{{ row.sport_label or row.sport }} <span class="mono muted">({{ row.sport }})</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+          <td>{{ '%.2f'|format(row.aggression or 0) }}{% if row.cues %} <span class="fineprint">{% for cue in row.cues %}<code>{{ cue }}</code> {% endfor %}</span>{% endif %}</td>
+          <td class="mono">{{ row.face }}</td>
+          <td>{% if row.alert %}yes{% else %}none{% endif %}</td>
         </tr>
       {% endfor %}
       </tbody>

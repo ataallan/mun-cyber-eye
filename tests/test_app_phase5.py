@@ -160,9 +160,15 @@ def test_run_synthetic_shows_game_dance_without_threat_alerts(app, client):
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert "Category summary" in body
+    assert "Scene assists" in body
     assert "game or play" in body
     assert "dance" in body
     assert "potential confrontation" in body
+    assert "Basketball" in body
+    assert "Sport context" in body
+    assert "Body-aggression" in body
+    assert "Face cue status" in body
+    assert "disabled" in body
     categories = {a.category for a in app.extensions["alert_store"].list_alerts()}
     assert "game_or_play" not in categories
     assert "dance" not in categories

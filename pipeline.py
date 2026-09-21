@@ -23,6 +23,7 @@ from ingest.errors import IngestError
 from ingest.sampler import FrameSampler, SampledFrame
 from ingest.source import iter_camera_frames
 from risk.engine import RiskEngine
+from vision.assists import AssistState, enrich_detections
 from vision.detector import Detection, VisionAdapter, create_adapter
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,11 @@ class FrameAssessment:
     risk_level: str
     should_alert: bool
     rationale: str = ""
+    sport_context: str = ""
+    sport_display: str = ""
+    aggression_score: float = 0.0
+    aggression_cues: list[str] = field(default_factory=list)
+    face_cue_status: str = "disabled"
 
 
 @dataclass
@@ -147,9 +153,13 @@ class CyberEyePipeline:
         count = 0
         category_counts: Counter[str] = Counter()
         run_correlation = self.correlation_id or str(uuid.uuid4())
+        assist_state = AssistState()
         for frame in frame_iter:
             count += 1
             detections = self.adapter.detect(frame.image_bgr, frame_index=frame.index)
+            detections, _assist = enrich_detections(
+                frame.image_bgr, detections, assist_state
+            )
             risk = self.engine.assess(detections)
             category_counts[risk.category.value] += 1
             assessments.append(
@@ -160,6 +170,11 @@ class CyberEyePipeline:
                     risk_level=risk.risk_level.value,
                     should_alert=risk.should_alert,
                     rationale=risk.rationale,
+                    sport_context=risk.sport_context or "",
+                    sport_display=risk.sport_display or "",
+                    aggression_score=risk.aggression_score,
+                    aggression_cues=list(risk.aggression_cues),
+                    face_cue_status=risk.face_cue_status or "disabled",
                 )
             )
 
@@ -184,7 +199,19 @@ class CyberEyePipeline:
             metadata = {
                 "vision_backend": self.adapter.name,
                 "contributing_labels": risk.contributing_labels,
+                "aggression": {
+                    "score": risk.aggression_score,
+                    "cues": list(risk.aggression_cues),
+                },
+                "face_aggression": {
+                    "status": risk.face_cue_status,
+                    "note": risk.face_note,
+                },
             }
+            if risk.sport_context:
+                metadata["sport_context"] = risk.sport_context
+                metadata["sport_display"] = risk.sport_display
+                metadata["sport_confidence"] = risk.sport_confidence
             if stamp_camera:
                 metadata["camera_id"] = stamp_camera
             if stamp_location:
@@ -318,6 +345,7 @@ def demo_activity_run(
     from vision.activity import try_load_activity_adapter
     from vision.dataset import ACTIVITY_CATEGORIES, render_demo_frame
     from vision.detector import MockVisionAdapter
+    from vision.sports_catalog import DEMO_SPORT_SCENES
 
     adapter = try_load_activity_adapter(checkpoint)
     if adapter is None:
@@ -343,6 +371,17 @@ def demo_activity_run(
                 )
             )
             idx += 1
+    for sport in DEMO_SPORT_SCENES:
+        img = render_demo_frame("game_or_play", seed=400 + idx * 3, sport_context=sport)
+        synthetic.append(
+            SampledFrame(
+                index=idx,
+                timestamp_sec=idx / 2.0,
+                image_bgr=img,
+                source_label="Authorized Camera — Activity Demo",
+            )
+        )
+        idx += 1
     return pipeline.run_frames(
         synthetic, source_label="Authorized Camera — Activity Demo"
     )

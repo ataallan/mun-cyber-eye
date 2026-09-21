@@ -114,6 +114,9 @@ If YOLO is missing and no activity checkpoint loads, the app uses honest **MOCK*
 | RTSP ingest | Real OpenCV open + timeout; honest `last_error` on failure |
 | Webcam ingest | Real **only if** `ALLOW_WEBCAM=1` (default refused) |
 | Phase 3 activity model (OpenCV + sklearn) | Real **if** checkpoint loads |
+| Sports catalog + optional `sport_context` | Real (assistive labels / demo court proxies — not “knows most sports”) |
+| Body-aggression OpenCV proxies | Real (motion / proximity / raised-arm; assistive) |
+| Face-expression assist | Optional, **off** (`ENABLE_FACE_AGGRESSION=0`); never identity or criminal labels |
 | Train / eval (accuracy, P/R/F1 per class) | Real (`python -m vision.train_activity` / `eval_activity`) |
 | Demo activity checkpoint | Bundled (`data/checkpoints/activity_demo.joblib`, synthetic data) |
 | Ultralytics YOLO adapter | Real **if** installed |
@@ -138,7 +141,7 @@ If YOLO is missing and no activity checkpoint loads, the app uses honest **MOCK*
 | `potential_fall` | potential fall | Yes — human review |
 | `potential_weapon_object` | potential weapon-like object | Yes — human review |
 
-Aliases `confrontation`, `fight`, and `altercation` map to `potential_fight`. Set `ALERT_ON_GAME_OR_DANCE=1` only if operators should also be paged for game/dance predictions. The bundled demo model is synthetic and will not generalize to real CCTV until retrained on labeled site video; game vs fight is hard even for humans.
+Aliases `confrontation`, `fight`, and `altercation` map to `potential_fight`. Folder names such as `game_or_play__basketball` add an optional `sport_context`. Set `ALERT_ON_GAME_OR_DANCE=1` only if operators should also be paged for game/dance predictions. Intense sport (high motion + named sport) stays log-only unless `ALERT_ON_INTENSE_SPORT=1`. Face-expression assist is off (`ENABLE_FACE_AGGRESSION=0`) and never identifies anyone. The bundled demo model is synthetic and will not generalize to real CCTV until retrained on labeled site video; it does **not** know most sports or reliably read facial aggression. See [docs/SPORTS_AND_AGGRESSION.md](docs/SPORTS_AND_AGGRESSION.md).
 
 ### Risk levels
 
@@ -157,7 +160,7 @@ app/             Flask console (templates, static, auth)
 data/activity/   Labeled frames (train/val/test/<category>)
 data/checkpoints/activity_demo.joblib
 data/uploads/    Operator-supplied authorized clips (gitignored)
-docs/            ARCHITECTURE.md, ETHICS_AND_SAFETY.md, PHASE3.md, PHASE3b.md, PHASE4.md, PHASE5.md
+docs/            ARCHITECTURE.md, ETHICS_AND_SAFETY.md, PHASE3.md, PHASE3b.md, SPORTS_AND_AGGRESSION.md, PHASE4.md, PHASE5.md
 pipeline.py      End-to-end orchestration
 run.py           Entrypoint
 tests/           pytest (risk + alerts + notify + mock + activity + cameras)
@@ -171,6 +174,7 @@ tests/           pytest (risk + alerts + notify + mock + activity + cameras)
 - [Phase 3b — game, dance, confrontation](docs/PHASE3b.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Authentication](docs/AUTH.md)
+- [Sports context and aggression assists](docs/SPORTS_AND_AGGRESSION.md)
 - [Ethics and safety](docs/ETHICS_AND_SAFETY.md)
 
 ## Mission (from proposal)

@@ -23,6 +23,8 @@ Confrontation aliases accepted by the loader and risk engine:
 
 `ordinary`, `game_or_play`, and `dance` are **predict / log only** by default (`should_alert=False`). Set `ALERT_ON_GAME_OR_DANCE=1` only if operators explicitly want those classes to create alerts too.
 
+When a catalog `sport_context` is present, fight heuristics are softened unless body-aggression cues are strong. High aggression during a named sport stays `game_or_play` (“possible intense play; human should verify”) and does **not** page unless `ALERT_ON_INTENSE_SPORT=1`. Details: [SPORTS_AND_AGGRESSION.md](SPORTS_AND_AGGRESSION.md).
+
 The Run Pipeline **Last run** panel lists every predicted category (including game and dance) even when no alert is created. Alert detail and the dashboard show the same names in plain language.
 
 Rationale text states clearly when the model thinks the scene is game/play or dance **rather than a fight**. Safety banner is unchanged: AI detects and alerts; humans verify and decide. No enforcement.

@@ -33,6 +33,9 @@ Mun Cyber Eye is an **assistance** system for authorized security personnel. It 
 
 - Computer vision can produce false positives and false negatives.
 - Heuristics in Phase 2 and the Phase 3 demo checkpoint are provisional; evaluate across lighting, angles, ages, clothing, and environments before pilots. Distinguishing game or play and dance from a real confrontation is difficult even for humans — do not treat a `potential_fight` label as proof.
+- The sports catalog and `sport_context` metadata are an **assistive lookup** (folder labels + simple court-color proxies). They do **not** mean the model knows most sports or can referee a real game.
+- Body-aggression scores are OpenCV motion / pose **proxies**. High motion during sport is often intense play. Do not treat `aggressive_motion` as proof of assault.
+- Optional face-expression assist (`ENABLE_FACE_AGGRESSION`, default **off**) is unreliable and assistive only. When enabled it may note a possible tense expression for a human to verify. It must **never** identify a person, infer demographics, or label a face as criminal.
 - The bundled activity model is trained on synthetic scenes. Retrain on authorized labeled video and publish per-class precision / recall / F1 before any field trial.
 - Measure reviewer agreement with AI alerts (see proposal evaluation metrics).
 - A higher F1 score does not authorize skipping human review.
@@ -43,7 +46,7 @@ This system must **not**:
 
 - Trigger locks, weapons, or physical interventions without a human decision path.
 - Publish public “wanted” or guilt labels from detections alone.
-- Label faces as criminal or attach identity-based guilt from a detection.
+- Label faces as criminal or attach identity-based guilt from a detection (including any face-expression score).
 - Be marketed as infallible weapon or violence detection.
 - Treat a live ingest hook as an enforcement trigger (no locks, dispatch, or detention on camera events).
 
