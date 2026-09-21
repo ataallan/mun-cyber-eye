@@ -1,7 +1,9 @@
 """Local operator accounts for the Mun Cyber Eye console.
 
 SQLite is the source of truth after optional env bootstrap users are seeded.
-Session keys stay ``user`` (username) and ``role``.
+Session keys stay ``user`` (username) and ``role``. Customer console sessions
+also carry ``email_2fa_ok`` after a successful email sign-in code. Password-only
+sessions (developer skip, or customer 2FA turned off) do not.
 
 Customer ``admin`` / ``operator`` run detection and review. Only ``developer``
 (Mun Cyber lab, env-seeded) may train models.
@@ -40,6 +42,14 @@ INACTIVE_LOGIN_MESSAGE = (
 )
 PENDING_2FA_SESSION_KEY = "pending_2fa_user"
 PENDING_2FA_NEXT_KEY = "pending_2fa_next"
+EMAIL_2FA_OK_KEY = "email_2fa_ok"
+EMAIL_2FA_AT_KEY = "email_2fa_at"
+SESSION_STARTED_KEY = "session_started_at"
+SESSION_HOURS_DEFAULT = 8
+NEEDS_EMAIL_2FA_MESSAGE = (
+    "Sign in again. An email sign-in code is required before the console opens."
+)
+SESSION_EXPIRED_MESSAGE = "Your sign-in session expired. Sign in again."
 LOGIN_CODE_DIGITS = 6
 LOGIN_CODE_MINUTES_DEFAULT = 10
 LOGIN_CODE_RESEND_SECONDS_DEFAULT = 45
@@ -847,9 +857,66 @@ def pending_login_code_username() -> str:
     return (session.get(PENDING_2FA_SESSION_KEY) or "").strip()
 
 
+def _email_2fa_stamp_ok() -> bool:
+    """True only after a successful email-code verify in this session."""
+    if session.get(EMAIL_2FA_OK_KEY) is not True:
+        return False
+    stamp = session.get(EMAIL_2FA_AT_KEY)
+    if not stamp:
+        return False
+    try:
+        _parse_utc(str(stamp))
+    except ValueError:
+        return False
+    return True
+
+
+def _configured_session_hours() -> float:
+    from flask import current_app
+
+    raw = current_app.config.get("SESSION_HOURS", SESSION_HOURS_DEFAULT)
+    try:
+        hours = float(raw)
+    except (TypeError, ValueError):
+        hours = float(SESSION_HOURS_DEFAULT)
+    if hours <= 0:
+        return float(SESSION_HOURS_DEFAULT)
+    return hours
+
+
+def _session_lifetime_exceeded() -> bool:
+    """Reject cookies with no start time or older than SESSION_HOURS."""
+    stamp = session.get(SESSION_STARTED_KEY)
+    if not stamp:
+        return True
+    try:
+        started = _parse_utc(str(stamp))
+    except ValueError:
+        return True
+    return _utc_now() - started > timedelta(hours=_configured_session_hours())
+
+
+def _reject_console_session(reason: str):
+    """Drop a cookie that must not open the console, then send the user to login."""
+    pending = reason == "pending"
+    session.clear()
+    if pending:
+        flash(PENDING_LOGIN_MESSAGE, "error")
+    elif reason == "needs_2fa":
+        flash(NEEDS_EMAIL_2FA_MESSAGE, "error")
+    elif reason == "expired":
+        flash(SESSION_EXPIRED_MESSAGE, "error")
+    else:
+        flash(INACTIVE_LOGIN_MESSAGE, "error")
+    return redirect(url_for("main.login"))
+
+
 def begin_login_code_challenge(user: User, next_url: str = "") -> None:
     session.pop("user", None)
     session.pop("role", None)
+    session.pop(EMAIL_2FA_OK_KEY, None)
+    session.pop(EMAIL_2FA_AT_KEY, None)
+    session.pop(SESSION_STARTED_KEY, None)
     session[PENDING_2FA_SESSION_KEY] = user.username
     if next_url:
         session[PENDING_2FA_NEXT_KEY] = next_url
@@ -874,7 +941,12 @@ def stash_demo_login_code(code: str) -> None:
 
 
 def console_session_guard():
-    """Return a redirect if the session is missing, pending, or inactive."""
+    """Return a redirect if the session is missing, pending, unverified, or stale.
+
+    Customer admin and operator cookies must carry ``email_2fa_ok`` when
+    ``two_factor_required_for`` is true. A password-only cookie from before
+    email codes were required cannot open the console.
+    """
     from flask import current_app
 
     username = session.get("user")
@@ -887,12 +959,12 @@ def console_session_guard():
         return None
     user = store.get_by_username(username)
     if user is None or not user.can_access_console():
-        session.clear()
-        if user is not None and not user.approved:
-            flash(PENDING_LOGIN_MESSAGE, "error")
-        else:
-            flash(INACTIVE_LOGIN_MESSAGE, "error")
-        return redirect(url_for("main.login"))
+        pending = user is not None and not user.approved
+        return _reject_console_session("pending" if pending else "inactive")
+    if two_factor_required_for(user) and not _email_2fa_stamp_ok():
+        return _reject_console_session("needs_2fa")
+    if _session_lifetime_exceeded():
+        return _reject_console_session("expired")
     session["role"] = user.role
     return None
 
@@ -984,16 +1056,36 @@ def guest_only(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
         if session.get("user"):
+            blocked = console_session_guard()
+            if blocked is not None:
+                return blocked
             return redirect(url_for("main.dashboard"))
         return view(*args, **kwargs)
 
     return wrapped
 
 
-def start_session(user: User) -> None:
+def start_session(user: User, *, email_2fa_verified: bool = False) -> None:
+    """Open a console session.
+
+    ``email_2fa_verified`` is set only after a successful email-code check.
+    Password-only sign-in (developer skip, or customer 2FA disabled) must
+    leave ``email_2fa_ok`` unset so a later required-2FA policy rejects it.
+
+    The cookie is a browser session cookie (not permanent). ``SESSION_HOURS``
+    still caps it if the browser keeps the cookie open.
+    """
     clear_login_code_challenge()
     session["user"] = user.username
     session["role"] = user.role
+    session[SESSION_STARTED_KEY] = _utc_stamp()
+    session.permanent = False
+    if email_2fa_verified:
+        session[EMAIL_2FA_OK_KEY] = True
+        session[EMAIL_2FA_AT_KEY] = _utc_stamp()
+    else:
+        session.pop(EMAIL_2FA_OK_KEY, None)
+        session.pop(EMAIL_2FA_AT_KEY, None)
 
 
 def safe_next_url(default_endpoint: str = "main.dashboard") -> str:

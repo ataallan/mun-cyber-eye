@@ -7,13 +7,46 @@
     <p class="auth-product">{{ product_name }}</p>
   </div>
   <h1>Enter sign-in code</h1>
-  <p class="muted">Password accepted for <strong>{{ username }}</strong>. Enter the one-time code sent to the login email on this account{% if login_email %} (<span class="mono">{{ login_email }}</span>){% endif %}. Codes expire in {{ minutes }} minutes and can be used once.</p>
-  <form method="post" action="{{ url_for('main.login_code') }}" class="form">
-    <label>6-digit code
-      <input class="auth-code-input" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,8}" maxlength="8" required autofocus>
+  <p class="muted">Password accepted for <strong>{{ username }}</strong>. Enter the one-time code sent to the login email on this account{% if login_email %} (<span class="mono">{{ login_email }}</span>){% endif %}. Codes expire in {{ minutes }} minutes and can be used once. The form submits when all {{ login_code_digits }} digits are entered. The button stays if you prefer to press it.</p>
+  <form id="login-code-form" method="post" action="{{ url_for('main.login_code') }}" class="form" autocomplete="off">
+    <label>{{ login_code_digits }}-digit code
+      <input id="login-code-input" class="auth-code-input" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{ {{- login_code_digits -}} }" maxlength="{{ login_code_digits }}" data-code-digits="{{ login_code_digits }}" required autofocus>
     </label>
     <button class="btn btn-primary" type="submit">Verify and open console</button>
   </form>
+  <script>
+    (function () {
+      var form = document.getElementById("login-code-form");
+      var input = document.getElementById("login-code-input");
+      if (!form || !input) return;
+      var digits = parseInt(input.getAttribute("data-code-digits") || "6", 10);
+      if (!digits || digits < 1) digits = 6;
+      var submitted = false;
+      function digitsOnly(value) {
+        return String(value || "").replace(/\D/g, "").slice(0, digits);
+      }
+      function maybeSubmit() {
+        var code = digitsOnly(input.value);
+        if (input.value !== code) input.value = code;
+        if (submitted || code.length !== digits) return;
+        submitted = true;
+        if (typeof form.requestSubmit === "function") form.requestSubmit();
+        else form.submit();
+      }
+      input.addEventListener("input", maybeSubmit);
+      input.addEventListener("keyup", maybeSubmit);
+      input.addEventListener("paste", function (event) {
+        var clipboard = event.clipboardData || window.clipboardData;
+        if (!clipboard) return;
+        var code = digitsOnly(clipboard.getData("text"));
+        if (!code) return;
+        event.preventDefault();
+        input.value = code;
+        maybeSubmit();
+      });
+      maybeSubmit();
+    })();
+  </script>
   <div class="auth-links">
     <form method="post" action="{{ url_for('main.resend_login_code') }}">
       <button class="btn btn-ghost" type="submit">Send a new code</button>

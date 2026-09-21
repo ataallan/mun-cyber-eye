@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
@@ -52,6 +53,32 @@ def _register(client, username="alice", email="alice@example.com", password="sec
         },
         follow_redirects=True,
     )
+
+
+def test_login_fields_start_empty_and_discourage_autofill(client):
+    """Password managers may still fill saved logins; the page must not."""
+    posted = client.post(
+        "/login",
+        data={"username": "alice", "password": "secret123"},
+    )
+    body = posted.get_data(as_text=True)
+    assert "secret123" not in body
+    assert posted.status_code == 200
+
+    page = client.get("/login")
+    html = page.get_data(as_text=True)
+    assert 'method="post" class="form" autocomplete="off"' in html
+    assert "current-password" not in html
+    assert 'autocomplete="username"' not in html
+    for name in ("username", "password"):
+        match = re.search(rf'<input[^>]*name="{name}"[^>]*>', html)
+        assert match, html
+        tag = match.group(0)
+        assert 'autocomplete="off"' in tag
+        assert "readonly" in tag
+        assert "value=" not in tag
+    assert 'type="password"' in html
+    assert "start empty" in html.lower()
 
 
 def test_login_page_has_logo_and_create_account(client):

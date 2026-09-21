@@ -26,7 +26,7 @@ python run.py
 
 Open **http://127.0.0.1:5055**
 
-There is **no default password**. On a fresh install, use **Create account** — the first account becomes site admin (choose a strong password) and is auto-approved. Later accounts are operators and stay pending until a site admin or developer approves them on **Accounts**. Unapproved users cannot sign in to cameras or alerts and never receive a sign-in code. After approval, customer admin/operator sign-in asks for a one-time code sent to the **login email** (`CUSTOMER_2FA_REQUIRED=1`; set `0` for local demos that skip it). Site admin runs cameras and review; **Train models** is Mun Cyber developer-only (empty `DEVELOPER_*` on customer installs; developers skip email 2FA by default).
+There is **no default password**. On a fresh install, use **Create account** — the first account becomes site admin (choose a strong password) and is auto-approved. Later accounts are operators and stay pending until a site admin or developer approves them on **Accounts**. Unapproved users cannot sign in to cameras or alerts and never receive a sign-in code. After approval, customer admin and operator sign-in asks for a one-time code sent to the **login email** (`CUSTOMER_2FA_REQUIRED=1`; set `0` for local demos that skip it). **Sign out** ends the console session; a saved browser password can still refill the login fields until you clear it for this site. Site admin runs cameras and review; **Train models** is Mun Cyber developer-only (empty `DEVELOPER_*` on customer installs; developers skip email 2FA by default).
 
 1. Create account / sign in  
 2. **Cameras** → confirm the seeded Demo Lab File camera, or add an authorized file / RTSP source  

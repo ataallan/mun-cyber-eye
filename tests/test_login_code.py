@@ -8,7 +8,9 @@ from unittest.mock import patch
 
 from app.auth import (
     LOGIN_CODE_MAX_ATTEMPTS,
+    NEEDS_EMAIL_2FA_MESSAGE,
     PENDING_LOGIN_MESSAGE,
+    SESSION_EXPIRED_MESSAGE,
     LoginCodeCooldown,
     UserStore,
 )
@@ -137,12 +139,22 @@ def test_approved_customer_must_enter_email_code(tmp_path):
     assert "Alert console" not in dash.get_data(as_text=True)
 
     wrong = client.post("/login-code", data={"code": "000000"}, follow_redirects=True)
-    assert "incorrect" in wrong.get_data(as_text=True).lower()
-    assert "Alert console" not in wrong.get_data(as_text=True)
+    wrong_body = wrong.get_data(as_text=True)
+    assert "incorrect" in wrong_body.lower()
+    assert "Alert console" not in wrong_body
+    wrong_input = re.search(r'<input[^>]*name="code"[^>]*>', wrong_body)
+    assert wrong_input, wrong_body
+    assert "value=" not in wrong_input.group(0)
+    assert "000000" not in wrong_input.group(0)
 
     ok = client.post("/login-code", data={"code": code}, follow_redirects=True)
     assert "Alert console" in ok.get_data(as_text=True)
     assert "reviewer" in ok.get_data(as_text=True)
+    with client.session_transaction() as sess:
+        assert sess.get("email_2fa_ok") is True
+        assert sess.get("email_2fa_at")
+        assert sess.get("session_started_at")
+        assert sess.permanent is False
     consumed = store.get_by_username("reviewer")
     assert consumed is not None
     assert consumed.login_code_hash is None
@@ -178,6 +190,11 @@ def test_developer_skips_email_2fa_by_default(tmp_path):
     assert "Alert console" in body
     assert "Enter sign-in code" not in body
     assert ">Train models</a>" in body
+    with client.session_transaction() as sess:
+        assert sess.get("user") == "muncyber"
+        assert "email_2fa_ok" not in sess
+    again = client.get("/")
+    assert "Alert console" in again.get_data(as_text=True)
     store: UserStore = app.extensions["user_store"]
     dev = store.get_by_username("muncyber")
     assert dev is not None
@@ -323,3 +340,168 @@ def test_resend_configured_claims_email_only_on_success(tmp_path):
     assert "A sign-in code was not emailed" in fail_body
     assert "A sign-in code was sent to the login email" not in fail_body
     assert "Enter sign-in code" in fail_body
+
+
+def _utc_stamp(when=None) -> str:
+    moment = when or datetime.now(timezone.utc)
+    return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def test_login_code_form_does_not_take_a_password(tmp_path):
+    app = _fresh_app(tmp_path)
+    client = app.test_client()
+    _register(client, "founder", "founder@example.com")
+    page = _login(client, "founder")
+    html = page.get_data(as_text=True)
+    assert 'class="form" autocomplete="off"' in html
+    assert 'autocomplete="one-time-code"' in html
+    assert 'inputmode="numeric"' in html
+    assert 'maxlength="6"' in html
+    assert 'pattern="[0-9]{6}"' in html
+    assert 'data-code-digits="6"' in html
+    assert "Verify and open console" in html
+    assert 'addEventListener("input"' in html
+    assert 'addEventListener("keyup"' in html
+    assert 'addEventListener("paste"' in html
+    assert "submitted" in html
+    assert 'type="password"' not in html
+    assert "secret123" not in html
+    code_input = re.search(r'<input[^>]*name="code"[^>]*>', html)
+    assert code_input, html
+    assert "value=" not in code_input.group(0)
+
+
+def test_password_only_cookie_cannot_skip_email_code(tmp_path):
+    """Admin and operator cookies without email_2fa_ok never open the console."""
+    app = _fresh_app(tmp_path)
+    client = app.test_client()
+    _register(client, "Allan", "allan@example.com")
+    _register(client, "reviewer", "reviewer@example.com")
+    store: UserStore = app.extensions["user_store"]
+    reviewer = store.get_by_username("reviewer")
+    assert reviewer is not None
+    store.approve_user(reviewer.id, "Allan")
+    started = _utc_stamp()
+
+    for username in ("Allan", "reviewer"):
+        with client.session_transaction() as sess:
+            sess["user"] = username
+            sess["role"] = "admin" if username == "Allan" else "operator"
+            sess["session_started_at"] = started
+            sess.pop("email_2fa_ok", None)
+            sess.pop("email_2fa_at", None)
+        blocked = client.get("/", follow_redirects=True)
+        body = blocked.get_data(as_text=True)
+        assert "Alert console" not in body
+        assert NEEDS_EMAIL_2FA_MESSAGE in body
+        assert "Operator sign-in" in body
+        with client.session_transaction() as sess:
+            assert "user" not in sess
+
+        with client.session_transaction() as sess:
+            sess["user"] = username
+            sess["role"] = "admin" if username == "Allan" else "operator"
+            sess["session_started_at"] = started
+        login = client.get("/login", follow_redirects=True)
+        login_body = login.get_data(as_text=True)
+        assert "Operator sign-in" in login_body
+        assert "Alert console" not in login_body
+        assert NEEDS_EMAIL_2FA_MESSAGE in login_body
+
+
+def test_code_verify_stamps_session_for_admin_and_operator(tmp_path):
+    app = _fresh_app(tmp_path)
+    client = app.test_client()
+    _register(client, "Allan", "allan@example.com")
+    challenge = _login(client, "Allan")
+    code = _demo_code(challenge.get_data(as_text=True))
+    ok = client.post("/login-code", data={"code": code}, follow_redirects=True)
+    assert "Alert console" in ok.get_data(as_text=True)
+    with client.session_transaction() as sess:
+        assert sess.get("email_2fa_ok") is True
+        assert sess.get("email_2fa_at")
+        assert sess.permanent is False
+    dash = client.get("/")
+    assert dash.status_code == 200
+    assert "Alert console" in dash.get_data(as_text=True)
+
+    client.get("/logout", follow_redirects=True)
+    with client.session_transaction() as sess:
+        assert "user" not in sess
+        assert "email_2fa_ok" not in sess
+    signed_out = client.get("/", follow_redirects=True)
+    assert "Operator sign-in" in signed_out.get_data(as_text=True)
+    assert "Alert console" not in signed_out.get_data(as_text=True)
+
+    _register(client, "reviewer", "reviewer@example.com")
+    store: UserStore = app.extensions["user_store"]
+    reviewer = store.get_by_username("reviewer")
+    assert reviewer is not None
+    store.approve_user(reviewer.id, "Allan")
+    op_page = _login(client, "reviewer")
+    op_code = _demo_code(op_page.get_data(as_text=True))
+    op_ok = client.post("/login-code", data={"code": op_code}, follow_redirects=True)
+    assert "Alert console" in op_ok.get_data(as_text=True)
+    with client.session_transaction() as sess:
+        assert sess.get("user") == "reviewer"
+        assert sess.get("role") == "operator"
+        assert sess.get("email_2fa_ok") is True
+
+
+def test_password_only_skip_does_not_stamp_and_is_rejected_when_required(tmp_path):
+    app = _fresh_app(tmp_path, CUSTOMER_2FA_REQUIRED=False)
+    client = app.test_client()
+    _register(client, "founder", "founder@example.com")
+    ok = _login(client, "founder")
+    assert "Alert console" in ok.get_data(as_text=True)
+    with client.session_transaction() as sess:
+        assert sess.get("user") == "founder"
+        assert "email_2fa_ok" not in sess
+    app.config["CUSTOMER_2FA_REQUIRED"] = True
+    blocked = client.get("/", follow_redirects=True)
+    body = blocked.get_data(as_text=True)
+    assert "Alert console" not in body
+    assert NEEDS_EMAIL_2FA_MESSAGE in body
+
+
+def test_legacy_cookie_without_start_time_expires(tmp_path):
+    app = _fresh_app(tmp_path, SESSION_HOURS=8)
+    client = app.test_client()
+    _register(client, "founder", "founder@example.com")
+    with client.session_transaction() as sess:
+        sess["user"] = "founder"
+        sess["role"] = "admin"
+        sess["email_2fa_ok"] = True
+        sess["email_2fa_at"] = _utc_stamp()
+    blocked = client.get("/", follow_redirects=True)
+    body = blocked.get_data(as_text=True)
+    assert "Alert console" not in body
+    assert SESSION_EXPIRED_MESSAGE in body
+
+    with client.session_transaction() as sess:
+        sess["user"] = "founder"
+        sess["role"] = "admin"
+        sess["email_2fa_ok"] = True
+        sess["email_2fa_at"] = _utc_stamp()
+        sess["session_started_at"] = _utc_stamp(
+            datetime.now(timezone.utc) - timedelta(hours=9)
+        )
+    stale = client.get("/", follow_redirects=True)
+    stale_body = stale.get_data(as_text=True)
+    assert "Alert console" not in stale_body
+    assert SESSION_EXPIRED_MESSAGE in stale_body
+
+
+def test_false_2fa_stamp_does_not_count(tmp_path):
+    app = _fresh_app(tmp_path)
+    client = app.test_client()
+    _register(client, "founder", "founder@example.com")
+    with client.session_transaction() as sess:
+        sess["user"] = "founder"
+        sess["role"] = "admin"
+        sess["session_started_at"] = _utc_stamp()
+        sess["email_2fa_ok"] = "true"
+        sess["email_2fa_at"] = _utc_stamp()
+    blocked = client.get("/", follow_redirects=True)
+    assert NEEDS_EMAIL_2FA_MESSAGE in blocked.get_data(as_text=True)
+    assert "Alert console" not in blocked.get_data(as_text=True)
