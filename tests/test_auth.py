@@ -41,7 +41,7 @@ def client(app):
     return app.test_client()
 
 
-def _register(client, username="alice", email="alice@example.com", password="secret123"):
+def _register(client, username="alice", email="alice@example.com", password="test-pass-12"):
     return client.post(
         "/register",
         data={
@@ -96,7 +96,7 @@ def test_register_then_login(client):
 
     ok = client.post(
         "/login",
-        data={"username": "alice", "password": "secret123"},
+        data={"username": "alice", "password": "test-pass-12"},
         follow_redirects=True,
     )
     assert ok.status_code == 200
@@ -129,8 +129,8 @@ def test_register_ignores_posted_developer_role(app, client):
         data={
             "username": "sneaky",
             "email": "sneaky@example.com",
-            "password": "secret123",
-            "confirm_password": "secret123",
+            "password": "test-pass-12",
+            "confirm_password": "test-pass-12",
             "role": "developer",
         },
         follow_redirects=True,
@@ -193,15 +193,15 @@ def test_register_validation(client):
         data={
             "username": "bob",
             "email": "other@example.com",
-            "password": "secret123",
-            "confirm_password": "secret123",
+            "password": "test-pass-12",
+            "confirm_password": "test-pass-12",
         },
     )
     assert "already taken" in again.get_data(as_text=True)
 
 
 def test_forgot_password_token_reset(client, app):
-    _register(client, username="casey", email="casey@example.com", password="oldpass12")
+    _register(client, username="casey", email="casey@example.com", password="old-pass-12x")
     rv = client.post(
         "/forgot-password",
         data={"identifier": "casey@example.com"},
@@ -222,8 +222,8 @@ def test_forgot_password_token_reset(client, app):
         "/reset-password",
         data={
             "token": token,
-            "password": "newpass99",
-            "confirm_password": "newpass99",
+            "password": "new-pass-12x",
+            "confirm_password": "new-pass-12x",
         },
         follow_redirects=True,
     )
@@ -231,13 +231,13 @@ def test_forgot_password_token_reset(client, app):
 
     still_old = client.post(
         "/login",
-        data={"username": "casey", "password": "oldpass12"},
+        data={"username": "casey", "password": "old-pass-12x"},
     )
     assert "Invalid credentials" in still_old.get_data(as_text=True)
 
     ok = client.post(
         "/login",
-        data={"username": "casey", "password": "newpass99"},
+        data={"username": "casey", "password": "new-pass-12x"},
         follow_redirects=True,
     )
     assert "Alert console" in ok.get_data(as_text=True)
@@ -260,7 +260,7 @@ def test_expired_reset_token_rejected(app, client):
     user = store.create_user(
         username="dana",
         email="dana@example.com",
-        password="secret123",
+        password="test-pass-12",
     )
     token = store.create_reset_token(user.id, ttl_minutes=45)
     expired = (datetime.now(timezone.utc) - timedelta(minutes=5)).strftime(
@@ -426,11 +426,311 @@ def test_legacy_auth_db_accepts_developer_role(tmp_path):
     user = store.create_user(
         username="labdev",
         email="labdev@localhost",
-        password="dev-pass-99",
+        password="lab-secret-99",
         role="developer",
     )
     assert user.role == "developer"
     reloaded = store.get_by_username("labdev")
     assert reloaded is not None
     assert reloaded.role == "developer"
+
+
+def test_register_page_states_password_rules(client):
+    rv = client.get("/register")
+    body = rv.get_data(as_text=True)
+    assert "at least 12 characters" in body.lower()
+    assert "letter" in body.lower()
+    assert "digit" in body.lower()
+    assert "changeme" in body.lower()
+    assert "two-factor authentication is not available" in body.lower()
+    assert 'minlength="12"' in body
+
+
+def test_password_policy_rejects_weak_values():
+    from app.auth import validate_password
+
+    assert "at least 12" in validate_password("short1")
+    assert "letter and one digit" in validate_password("abcdefghijkl")
+    assert "letter and one digit" in validate_password("123456789012")
+    for weak in (
+        "changeme",
+        "changeme1234",
+        "password",
+        "password123",
+        "Password1234",
+        "admin",
+        "operator",
+        "operator1234",
+        "qwerty123456",
+        "abcdef123456",
+        "123456abcdef",
+    ):
+        err = validate_password(weak)
+        assert err, f"expected reject for {weak!r}"
+        assert "common" in err.lower() or "easy to guess" in err.lower() or "at least 12" in err
+    assert validate_password("test-pass-12") is None
+    assert validate_password("lab-secret-99") is None
+    assert "do not match" in validate_password("test-pass-12", "other-pass-12").lower()
+
+
+def test_register_rejects_changeme_and_short_passwords(client):
+    short = client.post(
+        "/register",
+        data={
+            "username": "newbie",
+            "email": "newbie@example.com",
+            "password": "changeme",
+            "confirm_password": "changeme",
+        },
+    )
+    assert short.status_code == 200
+    body = short.get_data(as_text=True)
+    assert "too common" in body.lower() or "at least 12" in body.lower()
+    store_fail = client.post(
+        "/register",
+        data={
+            "username": "newbie",
+            "email": "newbie@example.com",
+            "password": "password123",
+            "confirm_password": "password123",
+        },
+    )
+    assert "too common" in store_fail.get_data(as_text=True).lower() or "at least 12" in store_fail.get_data(as_text=True).lower()
+
+
+def test_env_example_does_not_seed_operator_changeme():
+    from pathlib import Path
+
+    text = Path(__file__).resolve().parent.parent.joinpath(".env.example").read_text()
+    assert "ADMIN_USERNAME=\n" in text
+    assert "ADMIN_PASSWORD=\n" in text
+    assert "DEVELOPER_USERNAME=\n" in text
+    assert "DEVELOPER_PASSWORD=\n" in text
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#") or not stripped:
+            continue
+        assert not stripped.startswith("ADMIN_USERNAME=operator")
+        assert not stripped.startswith("OPERATOR_USERNAME=operator")
+        assert "PASSWORD=changeme" not in stripped.replace(" ", "")
+
+
+def _insert_legacy_operator(db_path, *, password="changeme", email="operator@localhost", role="admin"):
+    from werkzeug.security import generate_password_hash
+
+    store = UserStore(db_path)
+    with store._conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO users (
+                id, username, email, password_hash, role, active,
+                created_at, approved, approved_at, approved_by
+            ) VALUES (?, 'operator', ?, ?, ?, 1, '2024-01-01T00:00:00Z',
+                      1, '2024-01-01T00:00:00Z', 'legacy')
+            """,
+            ("legacy-op", email, generate_password_hash(password), role),
+        )
+    return store
+
+
+def test_legacy_operator_changeme_login_always_rejected(tmp_path):
+    db = tmp_path / "auth.db"
+    store = _insert_legacy_operator(db)
+    user, status = store.attempt_login("operator", "changeme")
+    assert user is None
+    assert status == "invalid"
+    application = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test-secret",
+            "ADMIN_USERNAME": "",
+            "ADMIN_PASSWORD": "",
+            "DEVELOPER_USERNAME": "",
+            "DEVELOPER_PASSWORD": "",
+            "DISABLE_LEGACY_OPERATOR": False,
+            "ALERT_DB_PATH": str(tmp_path / "alerts.db"),
+            "AUTH_DB_PATH": str(db),
+            "SNAPSHOT_DIR": str(tmp_path / "snapshots"),
+            "SEED_DEMO_CAMERAS": False,
+        }
+    )
+    leftover = application.extensions["user_store"].get_by_username("operator")
+    assert leftover is not None
+    assert leftover.active is True
+    client = application.test_client()
+    rv = client.post("/login", data={"username": "operator", "password": "changeme"})
+    assert rv.status_code == 200
+    assert "Invalid credentials" in rv.get_data(as_text=True)
+    assert "Alert console" not in rv.get_data(as_text=True)
+
+
+def test_boot_deactivates_legacy_operator_changeme(tmp_path):
+    db = tmp_path / "auth.db"
+    _insert_legacy_operator(db, password="changeme", email="ops@example.com", role="admin")
+    application = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test-secret",
+            "ADMIN_USERNAME": "",
+            "ADMIN_PASSWORD": "",
+            "DISABLE_LEGACY_OPERATOR": True,
+            "ALERT_DB_PATH": str(tmp_path / "alerts.db"),
+            "AUTH_DB_PATH": str(db),
+            "SNAPSHOT_DIR": str(tmp_path / "snapshots"),
+            "SEED_DEMO_CAMERAS": False,
+        }
+    )
+    store: UserStore = application.extensions["user_store"]
+    user = store.get_by_username("operator")
+    assert user is not None
+    assert user.active is False
+    actions = [row["action"] for row in application.extensions["alert_store"].list_system_audit()]
+    assert "disable_legacy_operator" in actions
+    client = application.test_client()
+    rv = client.post("/login", data={"username": "operator", "password": "changeme"})
+    assert "Invalid credentials" in rv.get_data(as_text=True)
+
+
+def test_boot_deactivates_operator_localhost_email_even_with_strong_password(tmp_path):
+    db = tmp_path / "auth.db"
+    _insert_legacy_operator(
+        db, password="test-pass-12", email="operator@localhost", role="admin"
+    )
+    application = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test-secret",
+            "ADMIN_USERNAME": "",
+            "ADMIN_PASSWORD": "",
+            "DISABLE_LEGACY_OPERATOR": True,
+            "ALERT_DB_PATH": str(tmp_path / "alerts.db"),
+            "AUTH_DB_PATH": str(db),
+            "SNAPSHOT_DIR": str(tmp_path / "snapshots"),
+            "SEED_DEMO_CAMERAS": False,
+        }
+    )
+    user = application.extensions["user_store"].get_by_username("operator")
+    assert user is not None
+    assert user.active is False
+
+
+def test_intentional_operator_username_with_strong_password_stays_active(tmp_path):
+    db = tmp_path / "auth.db"
+    _insert_legacy_operator(
+        db, password="test-pass-12", email="ops@example.com", role="operator"
+    )
+    application = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test-secret",
+            "ADMIN_USERNAME": "",
+            "ADMIN_PASSWORD": "",
+            "DISABLE_LEGACY_OPERATOR": True,
+            "ALERT_DB_PATH": str(tmp_path / "alerts.db"),
+            "AUTH_DB_PATH": str(db),
+            "SNAPSHOT_DIR": str(tmp_path / "snapshots"),
+            "SEED_DEMO_CAMERAS": False,
+        }
+    )
+    store: UserStore = application.extensions["user_store"]
+    user = store.get_by_username("operator")
+    assert user is not None
+    assert user.active is True
+    client = application.test_client()
+    denied = client.post("/login", data={"username": "operator", "password": "changeme"})
+    assert "Invalid credentials" in denied.get_data(as_text=True)
+    ok = client.post(
+        "/login",
+        data={"username": "operator", "password": "test-pass-12"},
+        follow_redirects=True,
+    )
+    assert "Alert console" in ok.get_data(as_text=True)
+
+
+def test_env_seed_refuses_operator_changeme(tmp_path):
+    application = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test-secret",
+            "ADMIN_USERNAME": "operator",
+            "ADMIN_PASSWORD": "changeme",
+            "ADMIN_EMAIL": "operator@localhost",
+            "ALERT_DB_PATH": str(tmp_path / "alerts.db"),
+            "AUTH_DB_PATH": str(tmp_path / "auth.db"),
+            "SNAPSHOT_DIR": str(tmp_path / "snapshots"),
+            "SEED_DEMO_CAMERAS": False,
+        }
+    )
+    store: UserStore = application.extensions["user_store"]
+    assert store.get_by_username("operator") is None
+    assert store.count() == 0
+
+
+def test_env_seed_operator_localhost_email_is_deactivated(tmp_path):
+    application = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test-secret",
+            "ADMIN_USERNAME": "",
+            "ADMIN_PASSWORD": "",
+            "OPERATOR_USERNAME": "operator",
+            "OPERATOR_PASSWORD": "test-pass-12",
+            "DISABLE_LEGACY_OPERATOR": True,
+            "ALERT_DB_PATH": str(tmp_path / "alerts.db"),
+            "AUTH_DB_PATH": str(tmp_path / "auth.db"),
+            "SNAPSHOT_DIR": str(tmp_path / "snapshots"),
+            "SEED_DEMO_CAMERAS": False,
+        }
+    )
+    user = application.extensions["user_store"].get_by_username("operator")
+    assert user is not None
+    assert user.email == "operator@localhost"
+    assert user.active is False
+
+
+def test_env_seed_operator_custom_email_stays_active(tmp_path):
+    application = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test-secret",
+            "ADMIN_USERNAME": "",
+            "ADMIN_PASSWORD": "",
+            "OPERATOR_USERNAME": "operator",
+            "OPERATOR_PASSWORD": "test-pass-12",
+            "OPERATOR_EMAIL": "ops@example.com",
+            "DISABLE_LEGACY_OPERATOR": True,
+            "ALERT_DB_PATH": str(tmp_path / "alerts.db"),
+            "AUTH_DB_PATH": str(tmp_path / "auth.db"),
+            "SNAPSHOT_DIR": str(tmp_path / "snapshots"),
+            "SEED_DEMO_CAMERAS": False,
+        }
+    )
+    user = application.extensions["user_store"].get_by_username("operator")
+    assert user is not None
+    assert user.active is True
+
+
+def test_create_user_and_reset_enforce_password_policy(tmp_path):
+    store = UserStore(tmp_path / "auth.db")
+    with pytest.raises(ValueError, match="at least 12|too common"):
+        store.create_user(
+            username="pat",
+            email="pat@example.com",
+            password="changeme",
+        )
+    user = store.create_user(
+        username="pat",
+        email="pat@example.com",
+        password="old-pass-12x",
+    )
+    with pytest.raises(ValueError, match="at least 12|too common"):
+        store.set_password(user.id, "password123")
+    token = store.create_reset_token(user.id)
+    with pytest.raises(ValueError, match="at least 12|too common"):
+        store.consume_reset_token(token, "admin")
+    token = store.create_reset_token(user.id)
+    store.consume_reset_token(token, "new-pass-12x")
+    ok, status = store.attempt_login("pat", "new-pass-12x")
+    assert status == "ok"
+    assert ok is not None
 

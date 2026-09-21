@@ -60,10 +60,10 @@ def app(tmp_path):
             "ADMIN_SYNC_PASSWORD": True,
             "ADMIN_ROLE": "admin",
             "OPERATOR_USERNAME": "reviewer",
-            "OPERATOR_PASSWORD": "reviewpass",
+            "OPERATOR_PASSWORD": "review-pass-12",
             "OPERATOR_EMAIL": "reviewer@localhost",
             "DEVELOPER_USERNAME": "labdev",
-            "DEVELOPER_PASSWORD": "dev-pass-99",
+            "DEVELOPER_PASSWORD": "lab-secret-99",
             "DEVELOPER_EMAIL": "labdev@localhost",
             "ALERT_DB_PATH": str(tmp_path / "alerts.db"),
             "AUTH_DB_PATH": str(tmp_path / "auth.db"),
@@ -86,7 +86,7 @@ def client(app):
     return app.test_client()
 
 
-def _login(client, username="labdev", password="dev-pass-99"):
+def _login(client, username="labdev", password="lab-secret-99"):
     return client.post(
         "/login",
         data={"username": username, "password": password},
@@ -298,7 +298,7 @@ def test_extract_video_rejects_unknown_object_and_bad_type(client, tmp_path):
 
 
 def test_operator_cannot_extract_video(client):
-    _login(client, "reviewer", "reviewpass")
+    _login(client, "reviewer", "review-pass-12")
     page = client.get("/admin/train", follow_redirects=True)
     assert "Extract frames from video" not in page.get_data(as_text=True)
     denied = client.post(

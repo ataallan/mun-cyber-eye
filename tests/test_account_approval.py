@@ -31,7 +31,7 @@ def _fresh_app(tmp_path, **extra):
     return create_app(config)
 
 
-def _register(client, username, email, password="secret123"):
+def _register(client, username, email, password="test-pass-12"):
     return client.post(
         "/register",
         data={
@@ -44,7 +44,7 @@ def _register(client, username, email, password="secret123"):
     )
 
 
-def _login(client, username, password="secret123", follow=True):
+def _login(client, username, password="test-pass-12", follow=True):
     return client.post(
         "/login",
         data={"username": username, "password": password},
@@ -214,7 +214,7 @@ def test_pending_password_reset_does_not_grant_access(tmp_path):
     app = _fresh_app(tmp_path)
     client = app.test_client()
     _register(client, "founder", "founder@example.com")
-    _register(client, "reviewer", "reviewer@example.com", password="oldpass12")
+    _register(client, "reviewer", "reviewer@example.com", password="old-pass-12x")
     store: UserStore = app.extensions["user_store"]
     reviewer = store.get_by_username("reviewer")
     assert reviewer is not None
@@ -234,7 +234,7 @@ def test_pending_password_reset_does_not_grant_access(tmp_path):
     assert "invalid or has expired" in reset_get.get_data(as_text=True)
 
     store.approve_user(reviewer.id, "founder")
-    still = _login(client, "reviewer", "oldpass12")
+    still = _login(client, "reviewer", "old-pass-12x")
     assert "Alert console" in still.get_data(as_text=True)
 
 

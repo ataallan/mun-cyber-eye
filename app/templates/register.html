@@ -8,11 +8,12 @@
   </div>
   {% if needs_setup %}
   <h1>Create the first admin account</h1>
-  <p class="muted">Choose a username and a strong password (at least 8 characters). This first account becomes site admin and is auto-approved so you can approve later customers. It cannot train models. No default password is shipped.</p>
+  <p class="muted">This first account becomes site admin and is auto-approved so you can approve later customers. It cannot train models. No default password is shipped.</p>
   {% else %}
   <h1>Create account</h1>
   <p class="muted">Register as an operator to review alerts. A site admin or Mun Cyber developer must approve your account before you can sign in to cameras, alerts, or Run Pipeline. New accounts do not grant autonomous control — humans verify and decide.</p>
   {% endif %}
+  <p class="muted">{{ password_policy_help }}</p>
   <form method="post" class="form">
     <label>Username
       <input type="text" name="username" autocomplete="username" required minlength="3" maxlength="32">
@@ -24,16 +25,16 @@
       <input type="email" name="security_email" autocomplete="off" placeholder="security@example.com">
     </label>
     <label>Password
-      <input type="password" name="password" autocomplete="new-password" required minlength="8">
+      <input type="password" name="password" autocomplete="new-password" required minlength="{{ min_password_len }}">
     </label>
     <label>Confirm password
-      <input type="password" name="confirm_password" autocomplete="new-password" required minlength="8">
+      <input type="password" name="confirm_password" autocomplete="new-password" required minlength="{{ min_password_len }}">
     </label>
     <button class="btn btn-primary" type="submit">Create account</button>
   </form>
   <p class="auth-links">
     <span>Already have an account? <a href="{{ url_for('main.login') }}">Sign in</a></span>
   </p>
-  <p class="fineprint">Authorized use only. Operator accounts review alerts; they do not trigger enforcement. Later accounts are operators and stay pending until approved. Model training is reserved for Mun Cyber developer accounts and is never granted by Create account.</p>
+  <p class="fineprint">Authorized use only. Operator accounts review alerts; they do not trigger enforcement. Later accounts are operators and stay pending until approved. Model training is reserved for Mun Cyber developer accounts and is never granted by Create account. This Capstone console does not enforce 2FA.</p>
 </section>
 {% endblock %}

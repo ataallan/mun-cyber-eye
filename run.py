@@ -36,7 +36,9 @@ def main() -> None:
         "AI detects and alerts. Humans verify and decide.\n"
         "Detection runs from registered authorized cameras.\n"
         "Video uploads are for training only.\n"
-        "No default password is shipped — create the first admin account."
+        "No default password is shipped — create the first admin account.\n"
+        "Passwords need 12+ characters with a letter and a digit.\n"
+        "2FA is not enforced on this Capstone console."
     )
     if _env_flag("MUN_OPEN_BROWSER", "0"):
         def _open() -> None:
