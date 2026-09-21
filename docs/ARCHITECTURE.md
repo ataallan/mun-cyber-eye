@@ -45,7 +45,7 @@ Camera registry (SQLite)  →  authorized file / RTSP / webcam / MOCK
 | `app/` | Dark-theme Flask console for review and authorized notification |
 | `data/activity/` | Labeled train/val/test frames |
 | `data/checkpoints/` | Default `activity_demo.joblib` |
-| `docs/` | Architecture, ethics & safety, Phase 3, sports/aggression, scene context, objects, gunshots/falls/aimed/thrown, Phase 4, Phase 5 |
+| `docs/` | Architecture, ethics & safety, product ops, standalone Windows, Phase 3, sports/aggression, scene context, objects, gunshots/falls/aimed/thrown, Phase 4, Phase 5 |
 | `pipeline.py` | End-to-end orchestration |
 | `run.py` | Console entrypoint |
 
@@ -53,8 +53,8 @@ Camera registry (SQLite)  →  authorized file / RTSP / webcam / MOCK
 
 1. Risk engine sets `should_alert=True` → structured alert created (`status=open`, `delivery_status=pending`).
 2. Optional outbound delivery: Resend email to authorized recipients and/or SIEM webhook. Missing keys are `queued` / `undelivered` — never reported as sent.
-3. Operator signs in (SQLite users; env admin is seeded on boot). `admin` or `operator` may manage recipients and resend. See [AUTH.md](AUTH.md).
-4. Operator **acknowledges**, **dismisses**, or **escalates** with optional note. Admins may train or activate a checkpoint (`/admin/train`).
+3. Operator signs in (SQLite users; first Create account is admin; optional env bootstrap only if both username and password are set). `admin` or `operator` may manage recipients and resend. See [AUTH.md](AUTH.md).
+4. Operator **acknowledges**, **dismisses**, **escalates**, or **reopens** with optional note. There is no delete that wipes the alert. Admins may train or activate a checkpoint (`/admin/train`).
 5. Every review action and notify/resend attempt is written to `audit_log` with actor + timestamp. Channel attempts go to `delivery_log`. Train / activate / labeled-frame uploads go to `system_audit`.
 
 Structured fields and delivery statuses are documented in [PHASE4.md](PHASE4.md).
@@ -76,7 +76,7 @@ Phase 3 training and metrics are documented in [PHASE3.md](PHASE3.md).
 - `data/auth.db` — console login accounts (admin / operator)  
 - `data/cameras.db` — authorized camera registry + last_seen / last_error  
 - `data/snapshots/` — JPEG frames attached to alerts  
-- `data/uploads/` — operator-supplied authorized video files (gitignored)  
+- `data/uploads/` — leftover train-extract source files may sit here (gitignored); not a customer video library  
 - `data/activity/` — labeled activity frames (`train` / `val` / `test`)  
 - `data/objects/` — labeled object/structure frames (sibling of activity)  
 - `data/checkpoints/activity_demo.joblib` — default activity model  

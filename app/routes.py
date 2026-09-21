@@ -19,8 +19,6 @@ from flask import (
     session,
     url_for,
 )
-from werkzeug.utils import secure_filename
-
 from alerts.notify import parse_env_recipients, send_resend_email
 from alerts.schema import category_display_name, structured_payload
 from vision.dataset import ACTIVITY_CATEGORIES
@@ -148,6 +146,7 @@ def _password_reset_email(username: str, reset_url: str, minutes: int) -> tuple[
 @bp.route("/login", methods=["GET", "POST"])
 @guest_only
 def login():
+    needs_setup = _users().count() == 0
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
@@ -157,7 +156,11 @@ def login():
             flash("Signed in. Alerts require human verification.", "ok")
             return redirect(safe_next_url())
         flash("Invalid credentials.", "error")
-    return render_template("login.html", next=request.args.get("next", ""))
+    return render_template(
+        "login.html",
+        next=request.args.get("next", ""),
+        needs_setup=needs_setup,
+    )
 
 
 @bp.route("/register", methods=["GET", "POST"])
@@ -178,22 +181,34 @@ def register():
         )
         if err:
             flash(err, "error")
-            return render_template("register.html")
+            return render_template(
+                "register.html", needs_setup=_users().count() == 0
+            )
         try:
+            is_first = _users().count() == 0
             user = _users().create_user(
                 username=username,
                 email=email,
                 password=password,
-                role="operator",
+                role="admin" if is_first else "operator",
             )
             if security_email:
                 _users().set_security_email(user.id, security_email)
         except ValueError as exc:
             flash(str(exc), "error")
-            return render_template("register.html")
-        flash("Account created. Sign in with your new operator credentials.", "ok")
+            return render_template(
+                "register.html", needs_setup=_users().count() == 0
+            )
+        if user.role == "admin":
+            flash(
+                "First account created as site admin. Sign in with the password you chose. "
+                "No default password is shipped.",
+                "ok",
+            )
+        else:
+            flash("Account created. Sign in with your new operator credentials.", "ok")
         return redirect(url_for("main.login"))
-    return render_template("register.html")
+    return render_template("register.html", needs_setup=_users().count() == 0)
 
 
 @bp.route("/forgot-password", methods=["GET", "POST"])
@@ -436,33 +451,20 @@ def recipient_active(recipient_id: int):
 
 
 QUIET_RUN_MESSAGE = (
-    "Video was analyzed; no elevated-risk frames under current heuristics / "
-    "model (ordinary). That is expected for many real videos until models "
+    "Frames were analyzed; no elevated-risk frames under current heuristics / "
+    "model (ordinary). That is expected for many real cameras until models "
     "are trained on your site."
 )
 
 
 def _attached_upload():
+    """Detect a stray file on Run Pipeline. Uploads are training-only, not detection."""
     upload = request.files.get("video")
     if upload is None:
         return None
     if not (upload.filename or "").strip():
         return None
     return upload
-
-
-def _save_uploaded_video(upload) -> tuple[Path, str]:
-    raw = (upload.filename or "").strip()
-    safe = secure_filename(raw) or "upload.bin"
-    dest = Path(current_app.config["UPLOAD_DIR"])
-    dest.mkdir(parents=True, exist_ok=True)
-    path = dest / safe
-    upload.save(path)
-    return path, safe
-
-
-def _upload_source_label(filename: str) -> str:
-    return f"authorized upload — {filename}"
 
 
 def _pipeline_result_summary(results, *, mode: str = "", filename: str = "") -> dict:
@@ -707,7 +709,6 @@ def _flash_run_outcome(summary: dict) -> None:
     backend = summary.get("backend") or "unknown"
     frames = summary.get("frames") or 0
     alerts = summary.get("alerts") or 0
-    filename = summary.get("filename") or ""
     if summary.get("failures"):
         flash(
             f"Processed {frames} frames; "
@@ -715,13 +716,6 @@ def _flash_run_outcome(summary: dict) -> None:
             f"{summary['failures']} camera(s) reported an honest error "
             "(offline or missing credentials) — no fake detections.",
             "warn",
-        )
-    elif filename:
-        flash(
-            f"Ran authorized video file upload ({filename}). "
-            f"Vision backend: {backend}. "
-            f"Processed {frames} frames; {alerts} alert(s) queued for human review.",
-            "ok",
         )
     else:
         flash(
@@ -927,7 +921,7 @@ def account_edit(user_id: str):
 @bp.route("/run", methods=["GET", "POST"])
 @login_required
 def run_pipeline():
-    """Operator-triggered pipeline run on a registry camera, upload, or MOCK."""
+    """Operator-triggered run on registered cameras (product path) or lab MOCK."""
     result_summary = None
     cameras = _cameras().list_cameras()
     if request.method == "POST":
@@ -941,55 +935,31 @@ def run_pipeline():
         if str(root) not in sys.path:
             sys.path.insert(0, str(root))
 
-        from pipeline import CyberEyePipeline, demo_activity_run, demo_synthetic_run
-        from vision.detector import create_adapter
+        from pipeline import demo_activity_run, demo_synthetic_run
 
         os.environ["VISION_BACKEND"] = current_app.config["VISION_BACKEND"]
         os.environ["ACTIVITY_CHECKPOINT"] = current_app.config["ACTIVITY_CHECKPOINT"]
         snapshot_dir = current_app.config["SNAPSHOT_DIR"]
 
-        upload = _attached_upload()
-        requested_mode = (request.form.get("mode") or "synthetic").strip() or "synthetic"
-        mode = "upload" if upload is not None else requested_mode
+        if _attached_upload() is not None:
+            flash(
+                "Video file uploads are for training only "
+                "(Train models → Extract frames from video). "
+                "This run ignored the attached file. Detection uses registered cameras.",
+                "warn",
+            )
+
+        mode = (request.form.get("mode") or "camera").strip() or "camera"
 
         try:
             if mode == "upload":
-                if upload is None:
-                    flash("Select an authorized video file, or use synthetic demo.", "error")
-                    return redirect(url_for("main.run_pipeline"))
-                path, safe = _save_uploaded_video(upload)
-                source_label = _upload_source_label(safe)
-                adapter = create_adapter(
-                    current_app.config["VISION_BACKEND"],
-                    checkpoint=current_app.config.get("ACTIVITY_CHECKPOINT"),
+                flash(
+                    "Authorized video file upload is not a customer detection path. "
+                    "Use Train models to extract labeled frames, or run registered cameras.",
+                    "error",
                 )
-                pipe = CyberEyePipeline(
-                    store=store,
-                    adapter=adapter,
-                    snapshot_dir=snapshot_dir,
-                    notifier=notifier,
-                    location_label=current_app.config.get("DEFAULT_LOCATION_LABEL"),
-                    camera_id=current_app.config.get("DEFAULT_CAMERA_ID"),
-                    activity_data_root=current_app.config.get("ACTIVITY_DATA_ROOT"),
-                    notify_extra_recipients=actor_emails,
-                )
-                result = pipe.run_video(
-                    path,
-                    sample_fps=current_app.config["SAMPLE_FPS"],
-                    max_frames=current_app.config["MAX_FRAMES_PER_RUN"],
-                    source_label=source_label,
-                )
-                result_summary = _pipeline_result_summary(
-                    result, mode="upload", filename=safe
-                )
-                if requested_mode != "upload":
-                    flash(
-                        f"Attached video “{safe}” — processed as Authorized video file "
-                        f"upload (form mode was {requested_mode}; the file takes "
-                        "precedence so MOCK is not used).",
-                        "ok",
-                    )
-            elif mode == "synthetic":
+                return redirect(url_for("main.run_pipeline"))
+            if mode == "synthetic":
                 result = demo_synthetic_run(
                     store,
                     frames=16,
@@ -1021,7 +991,10 @@ def run_pipeline():
                 )
                 result_summary = _pipeline_result_summary(results, mode="camera")
             else:
-                flash("Select an authorized video file, or use synthetic demo.", "error")
+                flash(
+                    "Select registered cameras (product path) or a lab-only MOCK demo.",
+                    "error",
+                )
                 return redirect(url_for("main.run_pipeline"))
 
             _flash_run_outcome(result_summary)
@@ -1147,7 +1120,7 @@ def admin_train_activate():
     )
     flash(
         f"Active checkpoint is now {dest}. "
-        "Run Pipeline and uploads will use this file. "
+        "Registered-camera runs use this file. "
         "Pointer: data/active_checkpoint.json (not a secret).",
         "ok",
     )

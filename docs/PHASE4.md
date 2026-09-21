@@ -87,8 +87,9 @@ Roles:
 
 | Login | Role | Recipients + resend |
 |-------|------|---------------------|
-| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | `admin` (default) | Yes |
-| `OPERATOR_USERNAME` / `OPERATOR_PASSWORD` | `operator` | Yes |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` when **both** are set | `admin` (default) | Yes |
+| First Create account (fresh install) | `admin` | Yes |
+| `OPERATOR_USERNAME` / `OPERATOR_PASSWORD` when both are set | `operator` | Yes |
 
 Unauthenticated users cannot manage recipients.
 

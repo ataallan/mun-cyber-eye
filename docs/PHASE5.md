@@ -1,6 +1,6 @@
 # Phase 5 — Live / multi-camera ingest
 
-**Mun Cyber Eye** turns the Phase 4 “run once on a video or MOCK” prototype into a **camera registry + live ingest path**. The risk engine, structured alert schema, notify adapters, and human review console are unchanged.
+**Mun Cyber Eye** turns the Phase 4 prototype into a **camera registry + live ingest path**. Detection is automation from those authorized cameras when the pipeline runs. Video file uploads are for **training only**. The risk engine, structured alert schema, notify adapters, and human review console are unchanged.
 
 **AI detects and alerts. Humans verify and decide.**
 
@@ -76,8 +76,8 @@ Alerts created from a registry camera carry that camera’s `camera_id` and `loc
 
 | Path | Who | Purpose |
 |------|-----|---------|
-| `/cameras` | admin / operator | List, add, edit, enable / disable |
-| `/run` | signed-in reviewer | MOCK, activity demo, one camera, all enabled, or upload. Attaching a video file auto-selects **Authorized video file upload** (server-side if a filename is present, so Synthetic MOCK cannot run silently). Zero-alert runs still report frames processed. Last run lists optional home/community objects when YOLO is available; otherwise `objects_backend=unavailable` (nothing invented). |
+| `/cameras` | admin / operator | List, add, edit, enable / disable (no permanent delete) |
+| `/run` | signed-in reviewer | Registered cameras (product path), optional lab-only MOCK / activity demo. Video files are not a detection path; use Train models to extract frames. Last run lists optional home/community objects when YOLO is available; otherwise `objects_backend=unavailable` (nothing invented). |
 | `/` | signed-in reviewer | Alert console + camera health |
 
 ## Safety
@@ -89,10 +89,10 @@ Alerts created from a registry camera carry that camera’s `camera_id` and `loc
 
 ## Quick start: register and run
 
-1. Sign in as `admin` or `operator`.
+1. Sign in (Create account on a fresh install — no default password).
 2. Open **Cameras**. Confirm the seeded Demo Lab File camera (or **Add camera** → type `file`, URI `MOCK` or an authorized path).
-3. **Run Pipeline** → Registered camera → that camera (or “All enabled”). For an authorized clip, select **Authorized video file upload** or attach the file (upload is auto-selected so Synthetic MOCK cannot run silently).
-4. Open an alert: `camera_id` and `location_label` match the registry row.
+3. **Run Pipeline** → Registered authorized cameras → that camera (or “All enabled”). Lab-only MOCK is not the customer path. To label a clip, use **Train models → Extract frames from video**.
+4. Open an alert: `camera_id` and `location_label` match the registry row. Acknowledge / dismiss / escalate / reopen — the row is retained.
 5. To try RTSP: set `RTSP_DEMO_URI` in `.env`, enable the stub camera. A bad or empty URI marks `last_error` and creates no alerts.
 
 ```bash

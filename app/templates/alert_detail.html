@@ -118,6 +118,7 @@
 
   <section class="actions">
     <h2>Human decision</h2>
+    <p class="fineprint">Acknowledge, dismiss, escalate, or reopen. Every action is audited. Alerts are retained — there is no delete that wipes the row.</p>
     <form method="post" action="{{ url_for('main.alert_action', alert_id=alert.id) }}" class="form inline-form">
       <label>Note (optional)
         <input type="text" name="note" placeholder="Verification notes…">

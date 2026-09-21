@@ -383,8 +383,8 @@ def app(tmp_path):
         {
             "TESTING": True,
             "SECRET_KEY": "test",
-            "ADMIN_USERNAME": "operator",
-            "ADMIN_PASSWORD": "changeme",
+            "ADMIN_USERNAME": "siteadmin",
+            "ADMIN_PASSWORD": "test-pass-12",
             "ADMIN_ROLE": "admin",
             "ALERT_DB_PATH": str(tmp_path / "app.db"),
             "AUTH_DB_PATH": str(tmp_path / "auth.db"),
@@ -404,7 +404,7 @@ def client(app):
 def test_last_run_and_alert_detail_show_safety_cues(app, client):
     client.post(
         "/login",
-        data={"username": "operator", "password": "changeme"},
+        data={"username": "siteadmin", "password": "test-pass-12"},
         follow_redirects=True,
     )
     run = client.post("/run", data={"mode": "synthetic"}, follow_redirects=True)
