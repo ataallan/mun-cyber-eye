@@ -7,7 +7,6 @@ missing, callers should fall back to Phase 2 YOLO heuristics or MOCK.
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,6 +14,7 @@ from typing import Any, List, Optional
 
 import numpy as np
 
+from vision.checkpoint_config import resolve_checkpoint_path
 from vision.dataset import ACTIVITY_CATEGORIES
 from vision.detector import Detection, VisionAdapter
 from vision.features import FEATURE_DIM, FEATURE_VERSION, extract_frame_features
@@ -29,10 +29,8 @@ def project_root() -> Path:
 
 
 def default_checkpoint_path() -> Path:
-    env = os.getenv("ACTIVITY_CHECKPOINT", "").strip()
-    if env:
-        return Path(env)
-    return project_root() / DEFAULT_CHECKPOINT_REL
+    """Resolve the runtime checkpoint: active_checkpoint.json, else env, else demo."""
+    return resolve_checkpoint_path()
 
 
 @dataclass
@@ -95,6 +93,47 @@ def save_checkpoint(bundle: ActivityCheckpoint, path: str | Path) -> Path:
     joblib.dump(bundle.to_dict(), dest, protocol=4)
     logger.info("Wrote activity checkpoint %s", dest)
     return dest
+
+
+def inspect_checkpoint(path: str | Path) -> dict:
+    """Describe whether a checkpoint exists, loads, and which categories it knows."""
+    dest = Path(path)
+    info = {
+        "path": str(dest),
+        "exists": dest.is_file(),
+        "loads": False,
+        "error": "",
+        "categories": [],
+        "metrics": {},
+        "model_type": "",
+        "created_at": "",
+        "sklearn_version": "",
+        "feature_version": None,
+        "feature_dim": None,
+        "notes": "",
+    }
+    if not dest.is_file():
+        info["error"] = "Checkpoint file is not present."
+        return info
+    try:
+        bundle = load_checkpoint(dest)
+    except Exception as exc:  # corrupt, version mismatch, missing sklearn
+        info["error"] = str(exc)
+        return info
+    info.update(
+        {
+            "loads": True,
+            "categories": list(bundle.categories),
+            "metrics": dict(bundle.metrics or {}),
+            "model_type": bundle.model_type,
+            "created_at": bundle.created_at,
+            "sklearn_version": bundle.sklearn_version,
+            "feature_version": bundle.feature_version,
+            "feature_dim": bundle.feature_dim,
+            "notes": bundle.notes,
+        }
+    )
+    return info
 
 
 def load_checkpoint(path: str | Path) -> ActivityCheckpoint:

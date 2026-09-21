@@ -124,6 +124,25 @@ body {
 
 .form { display: grid; gap: 0.9rem; margin-top: 1rem; }
 .form label { display: grid; gap: 0.35rem; font-size: 0.9rem; color: var(--muted); }
+.form label.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  color: var(--text);
+  grid-template-columns: none;
+}
+.form label.check input { margin-top: 0.3rem; }
+.callout {
+  border-radius: 10px;
+  padding: 0.8rem 1rem;
+  margin: 0 0 1rem;
+  border: 1px solid var(--border);
+}
+.callout-safety { background: #143528; border-color: #2f6b4e; }
+.callout-warn { background: #3d3118; border-color: #8a6a2a; }
+.card + .card { margin-top: 1rem; }
+.card h2 { margin: 0 0 0.4rem; font-size: 1.15rem; }
+.card h3 { margin: 1rem 0 0.4rem; font-size: 1rem; }
 .form input[type="text"],
 .form input[type="password"],
 .form input[type="email"],

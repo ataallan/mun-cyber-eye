@@ -81,6 +81,8 @@ See [ETHICS_AND_SAFETY.md](ETHICS_AND_SAFETY.md).
 
 ## Console
 
+Admins can upload sport-folder frames and retrain from **Train models** (`/admin/train`) without dropping this assist layer. Run Pipeline still uses the active checkpoint plus `sport_context` / aggression extras.
+
 **Run Pipeline → Last run** shows:
 
 - Activity class counts (including game / dance that do not page)

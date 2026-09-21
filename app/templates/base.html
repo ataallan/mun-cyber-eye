@@ -24,6 +24,9 @@
     <nav class="nav">
       <a href="{{ url_for('main.dashboard') }}">Alerts</a>
       <a href="{{ url_for('main.run_pipeline') }}">Run Pipeline</a>
+      {% if session.get('role') == 'admin' %}
+      <a href="{{ url_for('main.admin_train') }}">Train models</a>
+      {% endif %}
       {% if session.get('role') in ['admin', 'operator'] %}
       <a href="{{ url_for('main.cameras') }}">Cameras</a>
       <a href="{{ url_for('main.recipients') }}">Recipients</a>

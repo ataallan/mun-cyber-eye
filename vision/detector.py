@@ -10,6 +10,7 @@ import logging
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, List, Optional
 
 import numpy as np
@@ -194,23 +195,30 @@ class YoloVisionAdapter(VisionAdapter):
         return detections
 
 
-def _try_activity_adapter() -> Optional[VisionAdapter]:
+def _try_activity_adapter(
+    checkpoint: Optional[str | Path] = None,
+) -> Optional[VisionAdapter]:
     """Load Phase 3 activity checkpoint when present; never raise to caller."""
     try:
         from vision.activity import try_load_activity_adapter
 
-        return try_load_activity_adapter()
+        return try_load_activity_adapter(checkpoint)
     except Exception as exc:
         logger.info("Activity model not loaded (%s)", exc)
         return None
 
 
-def create_adapter(backend: Optional[str] = None) -> VisionAdapter:
+def create_adapter(
+    backend: Optional[str] = None,
+    checkpoint: Optional[str | Path] = None,
+) -> VisionAdapter:
     """Create a vision adapter.
 
     backend: auto | activity | yolo | mock (default from VISION_BACKEND env or auto)
 
     ``auto`` prefers a Phase 3 activity checkpoint, then YOLO, then honest MOCK.
+    When ``checkpoint`` is omitted, ``data/active_checkpoint.json`` wins over
+    ``ACTIVITY_CHECKPOINT`` (see ``vision.checkpoint_config``).
     """
     choice = (backend or os.getenv("VISION_BACKEND", "auto")).strip().lower()
 
@@ -219,7 +227,7 @@ def create_adapter(backend: Optional[str] = None) -> VisionAdapter:
         return MockVisionAdapter()
 
     if choice == "activity":
-        adapter = _try_activity_adapter()
+        adapter = _try_activity_adapter(checkpoint)
         if adapter is not None:
             logger.info("Vision backend: activity (Phase 3)")
             return adapter
@@ -230,7 +238,7 @@ def create_adapter(backend: Optional[str] = None) -> VisionAdapter:
 
     if choice in {"yolo", "auto"}:
         if choice == "auto":
-            adapter = _try_activity_adapter()
+            adapter = _try_activity_adapter(checkpoint)
             if adapter is not None:
                 logger.info("Vision backend: activity (Phase 3 checkpoint found)")
                 return adapter

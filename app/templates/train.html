@@ -1,0 +1,283 @@
+{% extends "base.html" %}
+{% block title %}Train models · {{ product_name }}{% endblock %}
+{% block content %}
+<section class="hero">
+  <h1>Model training</h1>
+  <p class="muted">Train and activate the Phase 3 activity checkpoint from labeled frames. The CLI remains available; this page is the same <code>train_activity_model</code> path without SSH.</p>
+</section>
+
+<div class="callout callout-safety" role="status">
+  <strong>Safety:</strong> Training improves <em>assistive</em> detection only. Humans still verify every alert. The system does not enforce, detain, or lock anything.
+</div>
+<div class="callout callout-warn" role="status">
+  <strong>Honest limit:</strong> Synthetic-only training (the demo generator) does <em>not</em> generalize to real CCTV. Site-specific game, dance, or confrontation examples must be labeled frames from authorized cameras.
+</div>
+
+<section class="card">
+  <h2>Active checkpoint</h2>
+  <p class="muted">Runtime pointer: <code>{{ checkpoint.active_pointer }}</code>
+    · source <code>{{ checkpoint.source }}</code>
+    · env <code>ACTIVITY_CHECKPOINT</code> is the fallback when the pointer file is absent.
+  </p>
+  <dl class="kv">
+    <dt>Path</dt>
+    <dd class="mono">{{ checkpoint.path }}</dd>
+    <dt>Loads</dt>
+    <dd>
+      {% if checkpoint.loads %}
+        <span class="badge health-ok">yes</span>
+      {% else %}
+        <span class="badge health-error">no</span>
+        {% if checkpoint.error %}<span class="fineprint">{{ checkpoint.error }}</span>{% endif %}
+      {% endif %}
+    </dd>
+    <dt>Categories</dt>
+    <dd>
+      {% if checkpoint.categories %}
+        {% for cat in checkpoint.categories %}
+          <span class="badge status-open">{{ cat }}</span>
+        {% endfor %}
+      {% else %}
+        <span class="muted">Unknown until a checkpoint loads. Dataset classes:
+          {% for cat in categories %}<code>{{ cat }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
+        </span>
+      {% endif %}
+    </dd>
+    <dt>Model</dt>
+    <dd>{{ checkpoint.model_type or '—' }} {% if checkpoint.sklearn_version %}· sklearn {{ checkpoint.sklearn_version }}{% endif %}</dd>
+    <dt>Created</dt>
+    <dd class="mono">{{ checkpoint.created_at or '—' }}</dd>
+    <dt>Features</dt>
+    <dd>{% if checkpoint.feature_version is not none %}v{{ checkpoint.feature_version }} · dim {{ checkpoint.feature_dim }}{% else %}—{% endif %}</dd>
+  </dl>
+  {% if checkpoint.notes %}
+  <p class="fineprint">{{ checkpoint.notes }}</p>
+  {% endif %}
+
+  {% set stored = checkpoint.metrics or {} %}
+  {% if stored.val or stored.test %}
+  <h3>Last-known metrics (stored in checkpoint)</h3>
+  <table class="table">
+    <thead>
+      <tr><th>Split</th><th>Accuracy</th><th>Macro P</th><th>Macro R</th><th>Macro F1</th><th>n</th></tr>
+    </thead>
+    <tbody>
+    {% for split in ['val', 'test'] %}
+      {% if stored[split] %}
+      <tr>
+        <td>{{ split }}</td>
+        <td>{{ stored[split].accuracy }}</td>
+        <td>{{ stored[split].macro.precision if stored[split].macro else '—' }}</td>
+        <td>{{ stored[split].macro.recall if stored[split].macro else '—' }}</td>
+        <td>{{ stored[split].macro.f1 if stored[split].macro else '—' }}</td>
+        <td>{{ stored[split].n_samples }}</td>
+      </tr>
+      {% endif %}
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if stored.test and stored.test.per_class %}
+  <table class="table">
+    <thead>
+      <tr><th>Class</th><th>Precision</th><th>Recall</th><th>F1</th><th>Support</th></tr>
+    </thead>
+    <tbody>
+    {% for cat, row in stored.test.per_class.items() %}
+      <tr>
+        <td class="mono">{{ cat }}</td>
+        <td>{{ row.precision }}</td>
+        <td>{{ row.recall }}</td>
+        <td>{{ row.f1 }}</td>
+        <td>{{ row.support }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Dataset inventory</h2>
+  <p class="muted">Counts from <code>{{ dataset.root }}</code> via <code>describe_dataset</code>. Upload site-specific examples without SSH.</p>
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Class</th>
+        {% for split in splits %}<th>{{ split }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+    {% for cat in categories %}
+      <tr>
+        <td class="mono">{{ cat }}</td>
+        {% for split in splits %}
+        <td>{{ dataset.splits[split][cat] if dataset.splits[split] is defined else 0 }}</td>
+        {% endfor %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if dataset.sport_contexts %}
+  <h3>Sport-context folders</h3>
+  <p class="fineprint">Counted from <code>game_or_play__&lt;sport&gt;</code>, nested <code>game_or_play/&lt;sport&gt;</code>, or a catalog sport name. Assistive label only — the model does not “know most sports.”</p>
+  <table class="table">
+    <thead>
+      <tr><th>Sport</th><th>Id</th><th>Frames</th></tr>
+    </thead>
+    <tbody>
+    {% for sport_id, row in dataset.sport_contexts.items() %}
+      <tr>
+        <td>{{ row.label }}</td>
+        <td class="mono">{{ row.id }}</td>
+        <td>{{ row.frames }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
+{% if last_metrics or last_eval or metric_reports %}
+<section class="card result-box">
+  <h2>Latest report</h2>
+  {% for split, text in metric_reports.items() %}
+    <h3>{{ split }}</h3>
+    <pre class="payload">{{ text }}</pre>
+  {% endfor %}
+</section>
+{% endif %}
+
+{% if is_admin %}
+<section class="card">
+  <h2>Train from labeled data</h2>
+  <p class="muted">Calls <code>vision.train_activity.train_activity_model</code>. CPU sklearn training is typically a few seconds — this request waits for the result.</p>
+  <form method="post" action="{{ url_for('main.admin_train_run') }}" class="form">
+    <label>Model type
+      <select name="model_type">
+        <option value="forest" selected>forest (RandomForest)</option>
+        <option value="logreg">logreg (LogisticRegression)</option>
+      </select>
+    </label>
+    <label>Output filename (under <code>data/checkpoints/</code>)
+      <input type="text" name="output_name" value="activity_custom.joblib" autocomplete="off">
+    </label>
+    <label class="check">
+      <input type="checkbox" name="generate_demo" value="1">
+      Generate synthetic demo data first if the dataset is empty
+    </label>
+    <label class="check">
+      <input type="checkbox" name="overwrite_demo_images" value="1">
+      Overwrite existing synthetic demo images
+    </label>
+    <label class="check">
+      <input type="checkbox" name="confirm_overwrite_demo" value="1">
+      Confirm overwrite of <code>activity_demo.joblib</code> (bundled demo)
+    </label>
+    <button class="btn btn-primary" type="submit">Train from labeled data</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Activate checkpoint</h2>
+  <p class="muted">Writes the chosen path to <code>data/active_checkpoint.json</code>. The running app and <code>create_adapter</code> read that file when present; otherwise they use <code>ACTIVITY_CHECKPOINT</code>. No secrets are edited.</p>
+  <form method="post" action="{{ url_for('main.admin_train_activate') }}" class="form">
+    <label>Checkpoint
+      <select name="checkpoint_path">
+        {% for ckpt in checkpoints %}
+        <option value="{{ ckpt }}" {% if ckpt|string == checkpoint.path %}selected{% endif %}>{{ ckpt.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% if not checkpoints %}
+    <p class="fineprint">No <code>.joblib</code> files under the checkpoints directory yet.</p>
+    {% endif %}
+    <button class="btn btn-primary" type="submit" {% if not checkpoints %}disabled{% endif %}>Activate checkpoint</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Evaluate</h2>
+  <p class="muted">Runs <code>eval_activity</code> on val or test and prints accuracy plus per-class P/R/F1.</p>
+  <form method="post" action="{{ url_for('main.admin_train_evaluate') }}" class="form">
+    <label>Checkpoint
+      <select name="checkpoint_path">
+        <option value="{{ checkpoint.path }}">Active — {{ checkpoint.path }}</option>
+        {% for ckpt in checkpoints %}
+        <option value="{{ ckpt }}">{{ ckpt.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Split
+      <select name="split">
+        <option value="test" selected>test</option>
+        <option value="val">val</option>
+      </select>
+    </label>
+    <button class="btn btn-ghost" type="submit">Evaluate</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Upload labeled frames</h2>
+  <p class="muted">Add authorized, site-specific examples (game, dance, confrontation, fall, …) without SSH. Category names are validated; path traversal is rejected. Sport zips may use <code>train/game_or_play__basketball/*.jpg</code>, <code>train/game_or_play/basketball/*.jpg</code>, or <code>train/basketball/*.jpg</code>.</p>
+  <form method="post" action="{{ url_for('main.admin_train_upload') }}" enctype="multipart/form-data" class="form">
+    <label>Category
+      <select name="category">
+        {% for cat in categories %}
+        <option value="{{ cat }}">{{ cat }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Optional sport context (writes <code>game_or_play__&lt;sport&gt;</code>)
+      <select name="sport_context">
+        <option value="">none</option>
+        {% for sport in sports %}
+        <option value="{{ sport.id }}">{{ sport.display_name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Split
+      <select name="split">
+        <option value="train" selected>train</option>
+        <option value="val">val</option>
+        <option value="test">test</option>
+      </select>
+    </label>
+    <label>Images (multi-file)
+      <input type="file" name="images" accept="image/jpeg,image/png,image/bmp,.jpg,.jpeg,.png,.bmp" multiple>
+    </label>
+    <label>Or a zip of <code>train/&lt;category&gt;/*.jpg</code>
+      <input type="file" name="zipfile" accept=".zip,application/zip">
+    </label>
+    <button class="btn btn-primary" type="submit">Upload labeled frames</button>
+  </form>
+</section>
+{% else %}
+<section class="card">
+  <h2>Admin actions</h2>
+  <p class="muted">You can view checkpoint status and dataset counts. Only an <code>admin</code> can train, evaluate, activate, or upload. The seeded <code>ADMIN_USERNAME</code> account is admin; registered users are operators unless promoted in SQLite.</p>
+</section>
+{% endif %}
+
+{% if audit %}
+<section class="card">
+  <h2>Training audit</h2>
+  <table class="table">
+    <thead>
+      <tr><th>Time (UTC)</th><th>Action</th><th>Actor</th><th>Note</th></tr>
+    </thead>
+    <tbody>
+    {% for row in audit %}
+      <tr>
+        <td class="mono">{{ row.created_at }}</td>
+        <td>{{ row.action }}</td>
+        <td>{{ row.actor }}</td>
+        <td class="fineprint">{{ row.note }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+{% endblock %}

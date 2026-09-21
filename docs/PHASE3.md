@@ -16,7 +16,7 @@
 | Default demo checkpoint | `data/checkpoints/activity_demo.joblib` |
 | Pipeline fallback | `vision.detector.create_adapter` |
 
-The Flask console, SQLite alerts, and reviewer actions (acknowledge / dismiss / escalate) are unchanged. Phase 3 only adds a trainable vision path in front of the same risk + alert contract.
+The Flask console, SQLite alerts, and reviewer actions (acknowledge / dismiss / escalate) stay on the same contract. Admins can also train and activate a checkpoint from **Train models** (`/admin/train`) — see [ADMIN_TRAINING.md](ADMIN_TRAINING.md).
 
 ## Categories
 
@@ -153,14 +153,15 @@ The risk engine treats a detection whose label is one of the canonical categorie
 
 Console:
 
-1. **Run Pipeline → Phase 3 activity model** — synthetic class scenes through the checkpoint (or MOCK fallback). Last run lists every predicted category so game/play and dance stay visible even when no alert is created.
-2. **Synthetic demo (MOCK)** — Phase 2 HITL walkthrough, plus scripted game/dance frames that do not create threat alerts.
-3. **Authorized video upload** — `create_adapter()` (activity when the checkpoint is present).
+1. **Train models** (`/admin/train`, admin only) — dataset counts, train, evaluate, activate, upload labeled frames (including sport folders).
+2. **Run Pipeline → Phase 3 activity model** — synthetic class scenes through the active checkpoint (or MOCK fallback). Last run lists every predicted category so game/play and dance stay visible even when no alert is created, plus optional `sport_context` and aggression assists.
+3. **Synthetic demo (MOCK)** — Phase 2 HITL walkthrough, plus scripted game/dance frames that do not create threat alerts.
+4. **Authorized video upload** — `create_adapter()` (activity when the checkpoint is present).
 
 ## Retrain on real authorized data
 
 1. Sample frames from operator-approved video (`ingest/sampler.py` or any JPEG export).
 2. Label into the class folders under `data/activity/train` (and val/test).
 3. Retrain with the same command (omit `--generate-demo`).
-4. Point `ACTIVITY_CHECKPOINT` at the new `.joblib`.
+4. Point `ACTIVITY_CHECKPOINT` at the new `.joblib`, or activate it from **Train models** (writes `data/active_checkpoint.json`; no secrets file is edited).
 5. Review metrics **and** reviewer agreement before any pilot. Do not treat a higher F1 as authorization to skip humans.

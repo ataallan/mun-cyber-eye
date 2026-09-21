@@ -94,7 +94,7 @@ python -m vision.eval_activity \
 
 `VISION_BACKEND=auto` (default) uses the Phase 3 checkpoint when present, then YOLO, then MOCK.  
 `VISION_BACKEND=mock` keeps the Phase 2 scripted demo.  
-`ACTIVITY_CHECKPOINT` overrides the default path. Full notes: [docs/PHASE3.md](docs/PHASE3.md).
+`ACTIVITY_CHECKPOINT` is the fallback path. An admin can train and activate a new file from **Train models** (`/admin/train`); that writes `data/active_checkpoint.json`, which wins over the env value. Full notes: [docs/PHASE3.md](docs/PHASE3.md) and [docs/ADMIN_TRAINING.md](docs/ADMIN_TRAINING.md).
 
 ### Optional YOLO
 
@@ -117,7 +117,7 @@ If YOLO is missing and no activity checkpoint loads, the app uses honest **MOCK*
 | Sports catalog + optional `sport_context` | Real (assistive labels / demo court proxies — not “knows most sports”) |
 | Body-aggression OpenCV proxies | Real (motion / proximity / raised-arm; assistive) |
 | Face-expression assist | Optional, **off** (`ENABLE_FACE_AGGRESSION=0`); never identity or criminal labels |
-| Train / eval (accuracy, P/R/F1 per class) | Real (`python -m vision.train_activity` / `eval_activity`) |
+| Train / eval (accuracy, P/R/F1 per class) | Real (CLI + Admin → Train models) |
 | Demo activity checkpoint | Bundled (`data/checkpoints/activity_demo.joblib`, synthetic data) |
 | Ultralytics YOLO adapter | Real **if** installed |
 | MOCK vision adapter | Real, deterministic demo |
@@ -175,6 +175,7 @@ tests/           pytest (risk + alerts + notify + mock + activity + cameras)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Authentication](docs/AUTH.md)
 - [Sports context and aggression assists](docs/SPORTS_AND_AGGRESSION.md)
+- [Admin model training](docs/ADMIN_TRAINING.md)
 - [Ethics and safety](docs/ETHICS_AND_SAFETY.md)
 
 ## Mission (from proposal)

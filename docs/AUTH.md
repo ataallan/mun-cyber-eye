@@ -18,6 +18,7 @@ Login checks the hashed password in the `users` table. After seed, the database 
 | `/forgot-password` | Request a time-limited reset (45 minutes by default) |
 | `/reset-password?token=…` | Set a new password |
 | `/logout` | Clear the session |
+| `/admin/train` (`/train`) | Model training — **admin** trains / activates / uploads; operators may view status |
 
 ## Password reset and email
 
@@ -32,5 +33,11 @@ Optional Resend delivery uses `RESEND_API_KEY` and `RESEND_FROM` (`alerts/notify
 `users` lives in `AUTH_DB_PATH` (default `data/auth.db`), separate from the Phase 4-style operators email directory and from `alerts`. Fields: `id`, `username`, `email`, `password_hash` (Werkzeug), `role` (`admin` \| `operator`), `active`, `created_at`, `reset_token`, `reset_expires`.
 
 ## Safety
+
+## Roles and model training
+
+Registered users are always created as `operator`. Only `role == admin` can train a checkpoint, activate it, or upload labeled frames. The seeded `ADMIN_USERNAME` / `ADMIN_PASSWORD` account is admin when `ADMIN_ROLE=admin` (the default). There is no promote UI; change `users.role` in `AUTH_DB_PATH` to grant training.
+
+See [ADMIN_TRAINING.md](ADMIN_TRAINING.md).
 
 Authorized use only. Registration creates a human reviewer, not an automated responder.
