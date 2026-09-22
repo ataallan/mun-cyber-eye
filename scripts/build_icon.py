@@ -4,7 +4,7 @@
 Customers receive these files already built:
 
 - ``app/static/img/mun-cyber-eye.ico`` — multi-size icon
-- ``app/static/img/mun-cyber-eye-mark.png`` — eye-only header mark
+- ``app/static/img/mun-cyber-eye-mark.png`` — square eye-only header mark
 
 The auth cards keep ``mun-cyber-eye-logo.png``, which includes the wordmark.
 Run this from the repo root only when the logo artwork changes:
@@ -119,34 +119,16 @@ def _mark_png_entries_readable(path: Path) -> None:
     path.write_bytes(data)
 
 
-def _eye_band(src: Image.Image, pad: int = 12) -> Image.Image:
-    """Wide crop of the eye. The wordmark under it stays out of the header."""
-    bands = _mark_bands(src)
-    image = src.convert("RGBA")
-    if not bands:
-        return image
-    left, top, right, bottom = max(
-        bands, key=lambda band: (band[3] - band[1], band[2] - band[0])
-    )
-    width, height = image.size
-    return image.crop(
-        (
-            max(0, left - pad),
-            max(0, top - pad),
-            min(width, right + pad),
-            min(height, bottom + pad),
-        )
-    )
-
-
-def build_mark(logo: Path = LOGO, dest: Path = MARK, max_width: int = 512) -> Path:
-    """Eye-only header mark. Wider than the header slot so it stays sharp."""
-    mark = _eye_band(Image.open(logo))
-    if mark.width > max_width:
-        height = max(1, round(mark.height * max_width / mark.width))
-        mark = mark.resize((max_width, height), Image.Resampling.LANCZOS)
+def build_mark(logo: Path = LOGO, dest: Path = MARK, size: int = 256) -> Path:
+    """Square eye for the console header. The wordmark stays on the auth hero."""
+    eye = _eye_crop(Image.open(logo))
+    pad = max(2, round(size * 0.04))
+    inner = size - pad * 2
+    fitted = eye.resize((inner, inner), Image.Resampling.LANCZOS)
+    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    canvas.paste(fitted, (pad, pad), fitted)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    mark.save(dest, format="PNG", optimize=True)
+    canvas.save(dest, format="PNG", optimize=True)
     return dest
 
 
