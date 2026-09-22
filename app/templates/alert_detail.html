@@ -133,6 +133,60 @@
     </form>
   </section>
 
+  {% if can_train %}
+  <section class="actions" id="correct-label">
+    <h2>Correct label</h2>
+    {% if not learn_source %}
+    <p>No clip to learn from.</p>
+    {% else %}
+    {% if label_correction and label_correction.folder %}
+    <p class="fineprint">Last correction: {{ label_correction.frames }} frame(s) under train/{{ label_correction.folder }}.{% if label_correction.activated %} Live checkpoint updated.{% endif %}</p>
+    {% endif %}
+    <p class="fineprint">{% if learn_source.kind == 'archive_segment' %}Archive segment{% else %}Incident clip{% endif %}</p>
+    <form method="post" action="{{ url_for('main.alert_correct_label', alert_id=alert.id) }}" class="form">
+      <label>True activity
+        <select name="category">
+          {% for cat in categories %}
+          <option value="{{ cat }}" {% if cat == selected_category %}selected{% endif %}>{{ cat|category_label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Sport context
+        <select name="sport_context">
+          <option value="">None</option>
+          {% for sport in sports %}
+          <option value="{{ sport.id }}" {% if sport.id == selected_sport %}selected{% endif %}>{{ sport.display_name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Place
+        <select name="place_type" class="place-type-select">
+          <option value="">None</option>
+          {% for place in places %}
+          <option value="{{ place.id }}" {% if place.id == selected_place %}selected{% endif %}>{{ place.display_name }}</option>
+          {% endfor %}
+          <option value="__custom__">Other…</option>
+        </select>
+      </label>
+      <label class="place-type-custom-wrap" style="display:none">Custom place
+        <input type="text" name="place_type_custom" placeholder="Warehouse bay 3" autocomplete="off">
+      </label>
+      <div class="btn-row">
+        <button class="btn btn-primary" name="intent" value="send" type="submit">Send to training</button>
+        <a class="btn btn-ghost" href="{{ url_for('main.admin_train') }}">Train models</a>
+      </div>
+      <label class="check">
+        <input type="checkbox" name="confirm_train_activate" value="1">
+        Train and replace the live checkpoint
+      </label>
+      <div class="btn-row">
+        <button class="btn btn-warn" name="intent" value="train_activate" type="submit">Train and activate</button>
+      </div>
+    </form>
+    {% endif %}
+  </section>
+  {% endif %}
+
   <section class="actions">
     <h2>Delivery</h2>
     {% if can_resend %}
@@ -183,4 +237,21 @@
     </table>
   </section>
 </article>
+{% endblock %}
+{% block scripts %}
+{% if can_train and learn_source %}
+<script>
+(function () {
+  document.querySelectorAll(".place-type-select").forEach(function (sel) {
+    function placeSync() {
+      var form = sel.closest("form");
+      var wrap = form ? form.querySelector(".place-type-custom-wrap") : null;
+      if (wrap) wrap.style.display = sel.value === "__custom__" ? "" : "none";
+    }
+    sel.addEventListener("change", placeSync);
+    placeSync();
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}

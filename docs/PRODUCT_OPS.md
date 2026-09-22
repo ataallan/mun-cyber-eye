@@ -54,6 +54,8 @@ Site admin and operator run cameras, alerts, My cameras, recipients, and Run Pip
 
 Model training is reserved for the **developer** role (Mun Cyber Technologies). Seed it only on lab machines with **both** `DEVELOPER_USERNAME` and `DEVELOPER_PASSWORD` (optional `DEVELOPER_EMAIL`). Customer `.env.example` leaves these empty. Never `operator` / `changeme`. Developers can also approve customer accounts. Ordinary operators cannot.
 
+A developer can correct an alert's activity label from the review page. That samples the incident clip (or a matching archive segment) into the training set. It does not dismiss the alert. The live checkpoint changes only if they confirm **Train and activate**. See [ADMIN_TRAINING.md](ADMIN_TRAINING.md).
+
 ## Retention — no UI wipe
 
 The console does **not** hard-delete these records:

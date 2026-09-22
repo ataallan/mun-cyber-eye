@@ -17,4 +17,4 @@ Optional sport context on play folders: `game_or_play__basketball/`, `game_or_pl
 python -m vision.train_activity --generate-demo
 ```
 
-Mun Cyber developers can also upload frames and train from the console (**Train models**, `/admin/train`). Customer site admins cannot. See [docs/ADMIN_TRAINING.md](../../docs/ADMIN_TRAINING.md) and [docs/PHASE3.md](../../docs/PHASE3.md).
+Mun Cyber developers can also upload frames and train from the console (**Train models**, `/admin/train`), or send frames from an alert's incident clip on the review page. Sending frames does not activate a checkpoint. Customer site admins cannot. See [docs/ADMIN_TRAINING.md](../../docs/ADMIN_TRAINING.md) and [docs/PHASE3.md](../../docs/PHASE3.md).

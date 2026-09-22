@@ -7,6 +7,7 @@ safe upload and active-checkpoint activation. Training math stays in vision/.
 from __future__ import annotations
 
 import io
+import json
 import zipfile
 from pathlib import Path
 from typing import Any, Iterable
@@ -51,8 +52,10 @@ MAX_UPLOAD_BYTES = 8 * 1024 * 1024
 MAX_VIDEO_UPLOAD_BYTES = 64 * 1024 * 1024
 MAX_ZIP_MEMBERS = 400
 VIDEO_SUFFIXES = {".mp4", ".avi", ".mov", ".mkv"}
+CLIP_VIDEO_SUFFIXES = VIDEO_SUFFIXES | {".webm"}
 VIDEO_EXTRACT_KINDS = ("activity", "sport", "place", "object", "dangerous")
 MAX_VIDEO_EXTRACT_FRAMES = 240
+NO_CLIP_MESSAGE = "No clip to learn from."
 
 
 def data_root_from_config(config: dict) -> Path:
@@ -441,6 +444,247 @@ def resolve_label_dest(
     return dest, folder
 
 
+def _clamp_extract_limits(sample_fps: float, max_frames: int) -> tuple[float, int]:
+    try:
+        fps = float(sample_fps)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Sample FPS must be a number.") from exc
+    fps = max(0.1, min(fps, 15.0))
+    try:
+        cap = int(max_frames)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Max frames must be an integer.") from exc
+    cap = max(1, min(cap, MAX_VIDEO_EXTRACT_FRAMES))
+    return fps, cap
+
+
+def _safe_frame_stem(stem: str, fallback: str = "frame") -> str:
+    raw = (stem or "").strip() or fallback
+    safe = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in raw)
+    safe = safe.strip("._")[:40]
+    return safe or fallback
+
+
+def _write_sampled_frames(
+    video_path: Path,
+    dest_dir: Path,
+    *,
+    sample_fps: float,
+    max_frames: int,
+    stem: str,
+    source_label: str,
+) -> int:
+    """Sample ``video_path`` with FrameSampler and write JPEGs into ``dest_dir``."""
+    sampler = FrameSampler(
+        video_path,
+        sample_fps=sample_fps,
+        max_frames=max_frames,
+        source_label=source_label,
+    )
+    written = 0
+    safe_stem = _safe_frame_stem(stem)
+    for frame in sampler.frames():
+        name = f"{safe_stem}_f{frame.index:05d}.jpg"
+        out = dest_dir / name
+        _assert_under(out, dest_dir)
+        ok = cv2.imwrite(str(out), frame.image_bgr)
+        if not ok:
+            raise ValueError(f"Failed to write sampled frame {name}.")
+        written += 1
+    return written
+
+
+def correction_label_args(
+    category: str, sport_context: str = "", place_type: str = ""
+) -> dict[str, str]:
+    """Map a review correction onto the existing activity / sport / place folders."""
+    sport = (sport_context or "").strip()
+    place = (place_type or "").strip()
+    cat = (category or "").strip()
+    if sport and place:
+        raise ValueError("Choose a sport context or a place.")
+    if sport:
+        return {
+            "kind": "sport",
+            "category": "game_or_play",
+            "sport_context": sport,
+            "place_type": "",
+        }
+    if place:
+        return {
+            "kind": "place",
+            "category": cat or "ordinary",
+            "sport_context": "",
+            "place_type": place,
+        }
+    if not cat:
+        raise ValueError("Choose an activity class.")
+    return {
+        "kind": "activity",
+        "category": cat,
+        "sport_context": "",
+        "place_type": "",
+    }
+
+
+def _contained_video(path: Path, root: Path) -> Path | None:
+    try:
+        root_res = root.resolve()
+        resolved = path.resolve()
+    except OSError:
+        return None
+    if not resolved.is_file():
+        return None
+    if resolved.suffix.lower() not in CLIP_VIDEO_SUFFIXES:
+        return None
+    if resolved != root_res and root_res not in resolved.parents:
+        return None
+    return resolved
+
+
+def _clip_path_candidates(alert: Any) -> list[str]:
+    paths: list[str] = []
+    clip = str(getattr(alert, "clip_path", None) or "").strip()
+    if clip:
+        paths.append(clip)
+    raw = getattr(alert, "metadata_json", None) or ""
+    meta: Any = {}
+    if raw:
+        try:
+            meta = json.loads(raw)
+        except json.JSONDecodeError:
+            meta = {}
+    incident = meta.get("incident_clip") if isinstance(meta, dict) else None
+    if isinstance(incident, dict):
+        extra = str(incident.get("path") or "").strip()
+        if extra and extra not in paths:
+            paths.append(extra)
+    return paths
+
+
+def learning_video_for_alert(
+    config: dict,
+    alert: Any,
+    *,
+    archive_root: str | Path | None = None,
+    segments: Iterable[Any] | None = None,
+) -> dict[str, Any]:
+    """Prefer the incident clip. Fall back to an archive segment that covers the alert.
+
+    Raises ValueError with ``No clip to learn from.`` when neither file is usable.
+    Paths outside the clip or archive directory are ignored.
+    """
+    clip_root = Path(config.get("CLIP_DIR") or "")
+    for raw in _clip_path_candidates(alert):
+        candidate = Path(raw)
+        if not candidate.is_absolute():
+            candidate = clip_root / candidate
+        found = _contained_video(candidate, clip_root)
+        if found is not None:
+            return {"path": found, "kind": "incident_clip", "name": found.name}
+
+    camera_id = str(getattr(alert, "camera_id", "") or "").strip()
+    when = str(getattr(alert, "created_at", "") or "").strip()
+    root = Path(archive_root) if archive_root is not None else Path(config.get("ARCHIVE_DIR") or "")
+    if camera_id and when and segments:
+        matches = []
+        for seg in segments:
+            if str(getattr(seg, "camera_id", "") or "") != camera_id:
+                continue
+            started = str(getattr(seg, "started_at", "") or "")
+            ended = str(getattr(seg, "ended_at", "") or "")
+            if started and when < started:
+                continue
+            if ended and when > ended:
+                continue
+            if not started and not ended:
+                continue
+            rel_raw = str(getattr(seg, "relpath", "") or "").strip()
+            if not rel_raw:
+                continue
+            rel = Path(rel_raw)
+            if rel.is_absolute() or any(part == ".." for part in rel.parts):
+                continue
+            found = _contained_video(root / rel, root)
+            if found is None:
+                continue
+            matches.append((started, found, str(getattr(seg, "id", "") or "")))
+        matches.sort(key=lambda item: item[0], reverse=True)
+        if matches:
+            _started, found, segment_id = matches[0]
+            return {
+                "path": found,
+                "kind": "archive_segment",
+                "name": found.name,
+                "segment_id": segment_id,
+            }
+    raise ValueError(NO_CLIP_MESSAGE)
+
+
+def extract_clip_frames(
+    config: dict,
+    video_path: str | Path,
+    *,
+    kind: str,
+    split: str = "train",
+    category: str = "",
+    sport_context: str = "",
+    place_type: str = "",
+    object_id: str = "",
+    sample_fps: float = 2.0,
+    max_frames: int = 40,
+    stem: str = "clip",
+    source_label: str = "",
+) -> dict[str, Any]:
+    """Sample an on-disk clip into labeled JPEGs. Does not train or activate."""
+    path = Path(video_path)
+    if not path.is_file():
+        raise ValueError(NO_CLIP_MESSAGE)
+    if path.suffix.lower() not in CLIP_VIDEO_SUFFIXES:
+        raise ValueError(
+            f"Unsupported video type: {path.name}. Use mp4, avi, mov, mkv, or webm."
+        )
+    fps, cap = _clamp_extract_limits(sample_fps, max_frames)
+    dest_dir, folder = resolve_label_dest(
+        config,
+        kind=kind,
+        split=split,
+        category=category,
+        sport_context=sport_context,
+        place_type=place_type,
+        object_id=object_id,
+    )
+    label = source_label or f"authorized clip — {path.name}"
+    try:
+        written = _write_sampled_frames(
+            path,
+            dest_dir,
+            sample_fps=fps,
+            max_frames=cap,
+            stem=stem,
+            source_label=label,
+        )
+    except FileNotFoundError as exc:
+        raise ValueError(NO_CLIP_MESSAGE) from exc
+    except RuntimeError as exc:
+        raise ValueError(str(exc) or "Unable to open the video.") from exc
+    if written == 0:
+        raise ValueError(
+            "No frames could be sampled from that clip. "
+            "Check the file is a valid incident clip."
+        )
+    return {
+        "frames": written,
+        "folder": folder,
+        "dest": str(dest_dir),
+        "split": split,
+        "kind": kind,
+        "sample_fps": fps,
+        "max_frames": cap,
+        "source": path.name,
+    }
+
+
 def extract_video_frames(
     config: dict,
     upload,
@@ -477,16 +721,7 @@ def extract_video_frames(
             f"Video exceeds the {MAX_VIDEO_UPLOAD_BYTES // (1024 * 1024)} MB limit."
         )
 
-    try:
-        fps = float(sample_fps)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("Sample FPS must be a number.") from exc
-    fps = max(0.1, min(fps, 15.0))
-    try:
-        cap = int(max_frames)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("Max frames must be an integer.") from exc
-    cap = max(1, min(cap, MAX_VIDEO_EXTRACT_FRAMES))
+    fps, cap = _clamp_extract_limits(sample_fps, max_frames)
 
     dest_dir, folder = resolve_label_dest(
         config,
@@ -504,22 +739,14 @@ def extract_video_frames(
     video_path.write_bytes(payload)
 
     try:
-        sampler = FrameSampler(
+        written = _write_sampled_frames(
             video_path,
+            dest_dir,
             sample_fps=fps,
             max_frames=cap,
+            stem=Path(safe).stem,
             source_label=f"authorized labeling video — {safe}",
         )
-        written = 0
-        stem = Path(safe).stem[:40] or "frame"
-        for frame in sampler.frames():
-            name = f"{stem}_f{frame.index:05d}.jpg"
-            out = dest_dir / name
-            _assert_under(out, dest_dir.parent.parent)
-            ok = cv2.imwrite(str(out), frame.image_bgr)
-            if not ok:
-                raise ValueError(f"Failed to write sampled frame {name}.")
-            written += 1
     except FileNotFoundError as exc:
         raise ValueError(str(exc)) from exc
     except RuntimeError as exc:
