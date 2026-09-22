@@ -68,6 +68,8 @@ SKIP_REL_PREFIXES = (
     "data/objects/val/",
     "data/snapshots/",
     "data/uploads/",
+    "data/clips/",
+    "data/archive/",
 )
 SKIP_SUFFIXES = {".avi", ".db", ".lnk", ".mkv", ".mov", ".mp4", ".onnx", ".pt", ".pyc", ".pyo"}
 TEXT_SUFFIXES = {".bat", ".example", ".iss", ".json", ".md", ".ps1", ".py", ".txt", ".yml", ".yaml"}

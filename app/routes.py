@@ -10,6 +10,7 @@ from pathlib import Path
 
 from flask import (
     Blueprint,
+    abort,
     current_app,
     flash,
     redirect,
@@ -28,6 +29,7 @@ from vision.dangerous_objects import all_dangerous_objects, dangerous_display_na
 from vision.objects_catalog import all_objects, object_display_name
 from vision.scene_context import all_places, place_display_name, validate_place_type
 from vision.sports_catalog import all_sports, sport_display_name
+from ingest.archive import archive_window_bounds, format_utc, parse_utc
 from ingest.cameras import (
     camera_from_form,
     linked_accounts_from_form,
@@ -101,6 +103,81 @@ def _users():
 
 def _cameras():
     return current_app.extensions["camera_store"]
+
+
+def _archive():
+    return current_app.extensions["archive"]
+
+
+def _archive_redirect():
+    nxt = (request.form.get("next") or "").strip()
+    if nxt == "archive":
+        return redirect(url_for("main.archive"))
+    if nxt == "run":
+        return redirect(url_for("main.run_pipeline"))
+    return redirect(url_for("main.dashboard"))
+
+
+def _retention_from_form():
+    custom = (request.form.get("retention_days_custom") or "").strip()
+    raw = custom or (request.form.get("retention_days") or "").strip()
+    if not raw:
+        return None
+    try:
+        days = int(raw)
+    except (TypeError, ValueError):
+        return None
+    if days < 1 or days > 90:
+        return None
+    return days
+
+
+def _archive_window(raw: str, retention_days: int) -> str:
+    choice = (raw or "").strip().lower()
+    if choice == "today":
+        return "today"
+    if choice.isdigit():
+        days = int(choice)
+        if 1 <= days <= 90:
+            return str(days)
+    if retention_days in (1, 5):
+        return str(retention_days)
+    if 1 <= int(retention_days) <= 90:
+        return str(int(retention_days))
+    return "1"
+
+
+def _local_time_label(iso_value: str) -> str:
+    try:
+        moment = parse_utc(iso_value).astimezone()
+    except (TypeError, ValueError):
+        return iso_value or ""
+    return moment.strftime("%Y-%m-%d %H:%M")
+
+
+def _duration_label(started_at: str, ended_at: str) -> str:
+    try:
+        seconds = int((parse_utc(ended_at) - parse_utc(started_at)).total_seconds())
+    except (TypeError, ValueError):
+        return ""
+    seconds = max(0, seconds)
+    if seconds == 0:
+        return "<1s"
+    if seconds < 60:
+        return f"{seconds}s"
+    minutes, remainder = divmod(seconds, 60)
+    if remainder == 0:
+        return f"{minutes} min"
+    return f"{minutes} min {remainder}s"
+
+
+def _size_label(nbytes: int) -> str:
+    size = max(0, int(nbytes or 0))
+    if size < 1024:
+        return f"{size} B"
+    if size < 1024 * 1024:
+        return f"{size / 1024:.0f} KB"
+    return f"{size / (1024 * 1024):.1f} MB"
 
 
 def _console_users():
@@ -580,6 +657,108 @@ def monitor_stop():
     _store().record_system_audit("monitor_stop", actor, "continuous monitoring off")
     flash("Monitoring stopped.", "ok")
     return redirect(url_for("main.dashboard"))
+
+
+@bp.route("/archive/start", methods=["POST"])
+@login_required
+def archive_start():
+    actor = session.get("user", "operator")
+    _archive().set_enabled(True, actor=actor)
+    _store().record_system_audit("archive_start", actor, "video archive on")
+    flash("Archive on. It records while monitoring is on.", "ok")
+    return _archive_redirect()
+
+
+@bp.route("/archive/stop", methods=["POST"])
+@login_required
+def archive_stop():
+    actor = session.get("user", "operator")
+    _archive().set_enabled(False, actor=actor)
+    _store().record_system_audit("archive_stop", actor, "video archive off")
+    flash("Archive off. Segments already saved stay until they age out.", "ok")
+    return _archive_redirect()
+
+
+@bp.route("/archive/settings", methods=["POST"])
+@login_required
+def archive_settings():
+    days = _retention_from_form()
+    if days is None:
+        flash("Retention must be a whole number of days from 1 to 90.", "error")
+        return _archive_redirect()
+    actor = session.get("user", "operator")
+    _archive().set_retention(days, actor=actor)
+    _store().record_system_audit("archive_retention", actor, f"retention_days={days}")
+    flash(f"Archive retention set to {days} day{'s' if days != 1 else ''}.", "ok")
+    return _archive_redirect()
+
+
+@bp.route("/archive")
+@login_required
+def archive():
+    service = _archive()
+    status = service.status()
+    cameras = _cameras().list_cameras()
+    camera_id = (request.args.get("camera_id") or "").strip()
+    if camera_id and not any(camera.id == camera_id for camera in cameras):
+        camera_id = ""
+    window = _archive_window(request.args.get("window") or "", status["retention_days"])
+    start, end = archive_window_bounds(window)
+    segments = service.store.list_segments(
+        camera_id=camera_id,
+        start=format_utc(start),
+        end=format_utc(end),
+    )
+    names = {camera.id: camera.name for camera in cameras}
+    locations = {camera.id: camera.location_label for camera in cameras}
+    rows = []
+    for segment in segments:
+        suffix = segment.suffix
+        rows.append(
+            {
+                "id": segment.id,
+                "camera_id": segment.camera_id,
+                "camera_name": names.get(segment.camera_id) or segment.camera_id,
+                "location_label": locations.get(segment.camera_id) or "",
+                "started_label": _local_time_label(segment.started_at),
+                "duration_label": _duration_label(segment.started_at, segment.ended_at),
+                "size_label": _size_label(segment.nbytes),
+                "browser_playable": suffix == ".mp4",
+            }
+        )
+    play_id = (request.args.get("play") or "").strip()
+    current = next((row for row in rows if row["id"] == play_id), None)
+    if current is None and rows:
+        current = rows[0]
+    windows = [("today", "Today"), ("1", "1 day"), ("5", "5 days")]
+    if window not in {key for key, _label in windows}:
+        windows.append((window, f"{window} days"))
+    return render_template(
+        "archive.html",
+        archive_rows=rows,
+        current_segment=current,
+        cameras=cameras,
+        camera_id=camera_id,
+        window=window,
+        windows=windows,
+    )
+
+
+@bp.route("/archive/media/<segment_id>")
+@login_required
+def archive_media(segment_id: str):
+    if not segment_id or any(ch not in "0123456789abcdef" for ch in segment_id):
+        abort(404)
+    segment = _archive().store.get(segment_id)
+    if segment is None or not segment.relpath:
+        abort(404)
+    root = Path(current_app.config["ARCHIVE_DIR"]).resolve()
+    path = (root / segment.relpath).resolve()
+    if path != root and root not in path.parents:
+        abort(404)
+    if not path.is_file():
+        abort(404)
+    return send_from_directory(path.parent, path.name)
 
 
 @bp.route("/alerts/<alert_id>")
@@ -1662,4 +1841,5 @@ def health():
             "enabled": len(_cameras().list_cameras(enabled_only=True)),
         },
         "monitoring": current_app.extensions["monitor"].status(),
+        "archive": current_app.extensions["archive"].status(),
     }

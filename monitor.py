@@ -83,23 +83,24 @@ class MonitorService:
             self._desired = "on"
             self._status["desired"] = "on"
             self._persist()
-            if self._thread is not None and self._thread.is_alive():
-                return self._status_unlocked()
-            self._stop.clear()
-            self._seen_files.clear()
-            self._pipeline = None
-            self._status["started_at"] = _utc_now()
-            self._status["alerts_created"] = 0
-            self._status["cycles"] = 0
-            self._status["last_error"] = ""
-            self._thread = threading.Thread(
-                target=self._loop,
-                name="mun-cyber-eye-monitor",
-                daemon=True,
-            )
-            self._thread.start()
-            logger.info("Continuous monitoring started by %s", actor)
-            return self._status_unlocked()
+            if self._thread is None or not self._thread.is_alive():
+                self._stop.clear()
+                self._seen_files.clear()
+                self._pipeline = None
+                self._status["started_at"] = _utc_now()
+                self._status["alerts_created"] = 0
+                self._status["cycles"] = 0
+                self._status["last_error"] = ""
+                self._thread = threading.Thread(
+                    target=self._loop,
+                    name="mun-cyber-eye-monitor",
+                    daemon=True,
+                )
+                self._thread.start()
+                logger.info("Continuous monitoring started by %s", actor)
+            status = self._status_unlocked()
+        self._sync_archive()
+        return status
 
     def stop(self, actor: str = "operator", join_timeout: float = 45.0) -> dict[str, Any]:
         with self._lock:
@@ -123,7 +124,9 @@ class MonitorService:
                 self._thread = None
                 self._status["running"] = False
             logger.info("Continuous monitoring stop requested by %s", actor)
-            return self._status_unlocked()
+            status = self._status_unlocked()
+        self._sync_archive()
+        return status
 
     def status(self) -> dict[str, Any]:
         with self._lock:
@@ -332,6 +335,19 @@ class MonitorService:
         self._status["running"] = alive
         self._status["desired"] = self._desired
         return data
+
+    def _sync_archive(self) -> None:
+        """Archive records only while monitoring is running."""
+        try:
+            archive = self.app.extensions.get("archive")
+        except Exception:
+            return
+        if archive is None:
+            return
+        try:
+            archive.sync()
+        except Exception:
+            logger.exception("Archive sync failed")
 
     def _state_path(self) -> Path:
         return Path(self.app.config.get("MONITOR_STATE_PATH") or "data/monitor_state.json")

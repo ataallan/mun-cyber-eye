@@ -20,4 +20,52 @@
   {% if monitor_status.cycles %}
   <p class="fineprint">Sweeps: {{ monitor_status.cycles }} · Alerts this session: {{ monitor_status.alerts_created }}</p>
   {% endif %}
+
+  <div class="archive-block">
+    <div class="detail-head">
+      <h3>Archive</h3>
+      {% if archive_status.recording %}
+        <span class="badge health-ok">Recording</span>
+      {% elif archive_status.enabled %}
+        <span class="badge status-open">On</span>
+      {% else %}
+        <span class="badge status-dismissed">Off</span>
+      {% endif %}
+    </div>
+    <p class="fineprint">Optional. Records enabled cameras while monitoring is on. Separate from incident clips. {{ archive_status.disk_note }}</p>
+    {% if archive_status.last_error %}
+    <p class="callout callout-warn">{{ archive_status.last_error }}</p>
+    {% endif %}
+    {% for item in archive_status.errors %}
+    <p class="fineprint">{{ item.message }}</p>
+    {% endfor %}
+    {% for note in archive_status.notices %}
+    <p class="fineprint">{{ note }}</p>
+    {% endfor %}
+    <form method="post" action="{{ url_for('main.archive_settings') }}" class="archive-controls">
+      <input type="hidden" name="next" value="{{ 'run' if request.endpoint == 'main.run_pipeline' else 'dashboard' }}">
+      <label>Keep
+        <select name="retention_days">
+          <option value="1" {% if archive_status.retention_days == 1 %}selected{% endif %}>1 day</option>
+          <option value="5" {% if archive_status.retention_days == 5 %}selected{% endif %}>5 days</option>
+        </select>
+      </label>
+      <label>Days
+        <input type="number" name="retention_days_custom" min="1" max="90" placeholder="1–90"{% if archive_status.retention_days not in [1, 5] %} value="{{ archive_status.retention_days }}"{% endif %}>
+      </label>
+      <button class="btn btn-ghost" type="submit">Save</button>
+      <a class="btn btn-ghost" href="{{ url_for('main.archive') }}">Review</a>
+    </form>
+    {% if archive_status.enabled %}
+    <form method="post" action="{{ url_for('main.archive_stop') }}">
+      <input type="hidden" name="next" value="{{ 'run' if request.endpoint == 'main.run_pipeline' else 'dashboard' }}">
+      <button class="btn btn-warn" type="submit">Stop archive</button>
+    </form>
+    {% else %}
+    <form method="post" action="{{ url_for('main.archive_start') }}">
+      <input type="hidden" name="next" value="{{ 'run' if request.endpoint == 'main.run_pipeline' else 'dashboard' }}">
+      <button class="btn btn-primary" type="submit">Start archive</button>
+    </form>
+    {% endif %}
+  </div>
 </section>

@@ -125,6 +125,16 @@ def create_app(test_config: dict | None = None) -> Flask:
         MONITOR_ALERT_COOLDOWN_SEC=os.getenv("MONITOR_ALERT_COOLDOWN_SEC", "60"),
         MONITOR_MAX_FRAMES_PER_PASS=os.getenv("MONITOR_MAX_FRAMES_PER_PASS", "24"),
         MONITOR_CYCLE_PAUSE_SEC=os.getenv("MONITOR_CYCLE_PAUSE_SEC", "0.5"),
+        ARCHIVE_ENABLED=os.getenv("ARCHIVE_ENABLED", "0"),
+        ARCHIVE_RETENTION_DAYS=os.getenv("ARCHIVE_RETENTION_DAYS", "1"),
+        ARCHIVE_SEGMENT_SEC=os.getenv("ARCHIVE_SEGMENT_SEC", "120"),
+        ARCHIVE_FPS=os.getenv("ARCHIVE_FPS", "8"),
+        ARCHIVE_DIR=os.getenv("ARCHIVE_DIR", str(root / "data" / "archive")),
+        ARCHIVE_DB_PATH=os.getenv("ARCHIVE_DB_PATH", str(root / "data" / "archive.db")),
+        ARCHIVE_STATE_PATH=os.getenv(
+            "ARCHIVE_STATE_PATH", str(root / "data" / "archive_state.json")
+        ),
+        ARCHIVE_MIN_FREE_MB=os.getenv("ARCHIVE_MIN_FREE_MB", "64"),
         UPLOAD_DIR=os.getenv("UPLOAD_DIR", str(root / "data" / "uploads")),
         ALLOW_WEBCAM=_env_flag("ALLOW_WEBCAM", "0"),
         RTSP_CONNECT_TIMEOUT_SEC=float(os.getenv("RTSP_CONNECT_TIMEOUT_SEC", "8")),
@@ -236,6 +246,29 @@ def create_app(test_config: dict | None = None) -> Flask:
         app.config["MONITOR_AUTOSTART"] = _as_bool(
             app.config.get("MONITOR_AUTOSTART"), False
         )
+    if app.config.get("TESTING"):
+        media_root = Path(app.config["SNAPSHOT_DIR"]).parent
+        if "ARCHIVE_DIR" not in test_overrides:
+            app.config["ARCHIVE_DIR"] = str(media_root / "archive")
+        if "ARCHIVE_DB_PATH" not in test_overrides:
+            app.config["ARCHIVE_DB_PATH"] = str(media_root / "archive.db")
+        if "ARCHIVE_STATE_PATH" not in test_overrides:
+            app.config["ARCHIVE_STATE_PATH"] = str(media_root / "archive_state.json")
+    app.config["ARCHIVE_DIR"] = _abs(
+        app.config.get("ARCHIVE_DIR") or str(root / "data" / "archive")
+    )
+    app.config["ARCHIVE_DB_PATH"] = _abs(
+        app.config.get("ARCHIVE_DB_PATH") or str(root / "data" / "archive.db")
+    )
+    app.config["ARCHIVE_STATE_PATH"] = _abs(
+        app.config.get("ARCHIVE_STATE_PATH") or str(root / "data" / "archive_state.json")
+    )
+    if "ARCHIVE_ENABLED" not in test_overrides and app.config.get("TESTING"):
+        app.config["ARCHIVE_ENABLED"] = False
+    else:
+        app.config["ARCHIVE_ENABLED"] = _as_bool(
+            app.config.get("ARCHIVE_ENABLED"), False
+        )
     app.config["UPLOAD_DIR"] = _abs(
         app.config.get("UPLOAD_DIR") or str(Path(app.config["SNAPSHOT_DIR"]).parent / "uploads")
     )
@@ -283,11 +316,32 @@ def create_app(test_config: dict | None = None) -> Flask:
     for key, default in (
         ("MAX_INCIDENT_CLIPS", 400),
         ("MONITOR_MAX_FRAMES_PER_PASS", 24),
+        ("ARCHIVE_RETENTION_DAYS", 1),
+        ("ARCHIVE_SEGMENT_SEC", 120),
     ):
         try:
             app.config[key] = int(app.config.get(key, default))
         except (TypeError, ValueError):
             app.config[key] = default
+    try:
+        app.config["ARCHIVE_FPS"] = float(app.config.get("ARCHIVE_FPS", 8))
+    except (TypeError, ValueError):
+        app.config["ARCHIVE_FPS"] = 8.0
+    if "ARCHIVE_MIN_FREE_BYTES" in test_overrides:
+        try:
+            app.config["ARCHIVE_MIN_FREE_BYTES"] = max(
+                0, int(app.config.get("ARCHIVE_MIN_FREE_BYTES") or 0)
+            )
+        except (TypeError, ValueError):
+            app.config["ARCHIVE_MIN_FREE_BYTES"] = 0
+    else:
+        try:
+            free_mb = float(app.config.get("ARCHIVE_MIN_FREE_MB", 64))
+        except (TypeError, ValueError):
+            free_mb = 64.0
+        if free_mb < 0:
+            free_mb = 0.0
+        app.config["ARCHIVE_MIN_FREE_BYTES"] = int(free_mb * 1024 * 1024)
     try:
         minutes = app.config.get("LOGIN_CODE_MINUTES", 10)
         if minutes is None or minutes == "":
@@ -314,6 +368,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     Path(app.config["CAMERA_DB_PATH"]).parent.mkdir(parents=True, exist_ok=True)
     Path(app.config["SNAPSHOT_DIR"]).mkdir(parents=True, exist_ok=True)
     Path(app.config["CLIP_DIR"]).mkdir(parents=True, exist_ok=True)
+    Path(app.config["ARCHIVE_DIR"]).mkdir(parents=True, exist_ok=True)
     Path(app.config["UPLOAD_DIR"]).mkdir(parents=True, exist_ok=True)
     Path(app.config["ACTIVITY_DATA_ROOT"]).mkdir(parents=True, exist_ok=True)
     Path(app.config["OBJECTS_DATA_ROOT"]).mkdir(parents=True, exist_ok=True)
@@ -350,10 +405,12 @@ def create_app(test_config: dict | None = None) -> Flask:
         user_store=user_store,
     )
 
+    from archive_service import ArchiveService
     from monitor import MonitorService
 
     monitor = MonitorService(app)
     app.extensions["monitor"] = monitor
+    app.extensions["archive"] = ArchiveService(app)
     monitor.restore()
 
     from alerts.schema import category_display_name
@@ -382,6 +439,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             "allow_webcam": bool(app.config.get("ALLOW_WEBCAM")),
             "face_aggression_enabled": _env_flag("ENABLE_FACE_AGGRESSION", "0"),
             "monitor_status": app.extensions["monitor"].status(),
+            "archive_status": app.extensions["archive"].status(),
             "can_train": can_train(session.get("role")),
             "can_approve_accounts": can_approve_accounts(session.get("role")),
         }
