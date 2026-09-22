@@ -82,7 +82,7 @@ def test_operator_forbidden_from_train_actions(client, tmp_path):
     assert page.status_code == 200
     body = page.get_data(as_text=True)
     assert ">Train models</a>" not in body
-    assert "Only Mun Cyber developer accounts" in body
+    assert "Only developer accounts can train models." in body
     assert "Train from labeled data" not in body
     assert "Extract frames from video" not in body
 
@@ -96,7 +96,7 @@ def test_operator_forbidden_from_train_actions(client, tmp_path):
         follow_redirects=True,
     )
     assert denied.status_code == 200
-    assert "Only Mun Cyber developer accounts" in denied.get_data(as_text=True)
+    assert "Only developer accounts can train models." in denied.get_data(as_text=True)
     assert not list((tmp_path / "checkpoints").glob("*.joblib"))
 
     activate = client.post(
@@ -104,7 +104,7 @@ def test_operator_forbidden_from_train_actions(client, tmp_path):
         data={"checkpoint_path": "activity_custom.joblib"},
         follow_redirects=True,
     )
-    assert "Only Mun Cyber developer accounts" in activate.get_data(as_text=True)
+    assert "Only developer accounts can train models." in activate.get_data(as_text=True)
 
 
 def test_site_admin_cannot_train(client, tmp_path):
@@ -112,7 +112,7 @@ def test_site_admin_cannot_train(client, tmp_path):
     dash = client.get("/")
     assert ">Train models</a>" not in dash.get_data(as_text=True)
     hidden = client.get("/admin/train", follow_redirects=True)
-    assert "Only Mun Cyber developer accounts" in hidden.get_data(as_text=True)
+    assert "Only developer accounts can train models." in hidden.get_data(as_text=True)
     denied = client.post(
         "/admin/train/run",
         data={
@@ -122,7 +122,7 @@ def test_site_admin_cannot_train(client, tmp_path):
         },
         follow_redirects=True,
     )
-    assert "Only Mun Cyber developer accounts" in denied.get_data(as_text=True)
+    assert "Only developer accounts can train models." in denied.get_data(as_text=True)
     assert not list((tmp_path / "checkpoints").glob("*.joblib"))
 
 
@@ -452,18 +452,18 @@ def test_first_register_site_admin_cannot_train(tmp_path):
         },
         follow_redirects=True,
     )
-    assert "Only Mun Cyber developer accounts" in denied.get_data(as_text=True)
+    assert "Only developer accounts can train models." in denied.get_data(as_text=True)
     assert not list((tmp_path / "checkpoints").glob("*.joblib"))
     upload = client.post(
         "/admin/train/upload",
         data={"category": "ordinary", "split": "train"},
         follow_redirects=True,
     )
-    assert "Only Mun Cyber developer accounts" in upload.get_data(as_text=True)
+    assert "Only developer accounts can train models." in upload.get_data(as_text=True)
     extract = client.post(
         "/admin/train/extract-video",
         data={"kind": "activity", "category": "ordinary"},
         follow_redirects=True,
     )
-    assert "Only Mun Cyber developer accounts" in extract.get_data(as_text=True)
+    assert "Only developer accounts can train models." in extract.get_data(as_text=True)
 

@@ -90,7 +90,7 @@ def iter_camera_frames(
 def mock_frames(
     max_frames: int = 16,
     sample_fps: float = 2.0,
-    source_label: str = "Authorized Camera — Synthetic Demo",
+    source_label: str = "Synthetic sample",
 ) -> Generator[SampledFrame, None, None]:
     """Deterministic blank-pattern frames for CI and the seeded demo camera."""
     fps = max(0.1, float(sample_fps))

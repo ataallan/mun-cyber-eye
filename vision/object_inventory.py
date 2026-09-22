@@ -23,18 +23,9 @@ from vision.objects_catalog import (
 
 logger = logging.getLogger(__name__)
 
-UNAVAILABLE_NOTE = (
-    "Object inventory backend unavailable (ultralytics YOLO not installed "
-    "or failed to load). No home/community objects were invented."
-)
-YOLO_NOTE = (
-    "Catalog objects mapped from YOLO/COCO detections. Assistive only — "
-    "not a complete inventory of every appliance or structure. Humans verify."
-)
-MOCK_NOTE = (
-    "Scripted MOCK demo objects for synthetic runs only. Not used on real "
-    "uploads or registered cameras."
-)
+UNAVAILABLE_NOTE = "Object detection is unavailable."
+YOLO_NOTE = ""
+MOCK_NOTE = ""
 
 
 @dataclass

@@ -375,7 +375,7 @@ class RiskEngine:
                 )
             level = RiskLevel.HIGH if conf >= 0.65 or ctx.use_intensity_label == "possible_strike" else RiskLevel.ELEVATED
             rationale = (
-                "Phase 3 activity model flagged a potential weapon-like or dangerous "
+                "Activity model flagged a potential weapon-like or dangerous "
                 "object pattern. Requires human verification — not a determination "
                 "of weapon possession."
                 + self._weapon_suffix(ctx)
@@ -384,7 +384,7 @@ class RiskEngine:
         elif category == ActivityCategory.POTENTIAL_FIGHT:
             level = RiskLevel.HIGH if conf >= 0.75 else RiskLevel.ELEVATED
             rationale = (
-                "Phase 3 activity model flagged movement/interaction patterns "
+                "Activity model flagged movement/interaction patterns "
                 "consistent with a potential physical confrontation (not game or "
                 "play, and not dance). Alert for authorized human review only."
                 + self._face_rationale_suffix(ctx)
@@ -393,7 +393,7 @@ class RiskEngine:
         else:
             level = RiskLevel.HIGH if conf >= 0.8 else RiskLevel.ELEVATED
             rationale = (
-                "Phase 3 activity model flagged pose/orientation patterns "
+                "Activity model flagged pose/orientation patterns "
                 "consistent with a potential fall or person down. Human "
                 "verification required."
                 + self._fall_manner_suffix(ctx)
@@ -624,11 +624,7 @@ class RiskEngine:
         should_alert: bool,
         ctx: Optional[SceneContext] = None,
     ) -> str:
-        queued = (
-            "Alert queued because ALERT_ON_GAME_OR_DANCE is enabled. "
-            if should_alert
-            else "No threat alert queued. "
-        )
+        queued = "Alert queued. " if should_alert else "No threat alert queued. "
         sport_bit = ""
         if ctx and ctx.sport_context:
             sport_bit = (
@@ -644,7 +640,7 @@ class RiskEngine:
             sport_bit += " Street play — verify."
         if category == ActivityCategory.GAME_OR_PLAY:
             return (
-                "Phase 3 activity model classified the scene as game or play "
+                "Activity model classified the scene as game or play "
                 "(sports, games, or playful roughhousing), not a fight."
                 + sport_bit
                 + " "
@@ -653,13 +649,13 @@ class RiskEngine:
             )
         if category == ActivityCategory.DANCE:
             return (
-                "Phase 3 activity model classified the scene as dance / "
+                "Activity model classified the scene as dance / "
                 "choreographed movement, not a confrontation. "
                 + queued
                 + "Human operators may still review the live source."
             )
         return (
-            "Phase 3 activity model classified the scene as ordinary. "
+            "Activity model classified the scene as ordinary. "
             "No alert queued. Human operators may still review the live source."
         )
 

@@ -75,7 +75,7 @@ def test_pending_login_blocked_until_approve(tmp_path):
     client = app.test_client()
     _register(client, "founder", "founder@example.com")
     pending_page = _register(client, "reviewer", "reviewer@example.com")
-    assert "pending admin approval" in pending_page.get_data(as_text=True).lower()
+    assert "account pending approval" in pending_page.get_data(as_text=True).lower()
 
     store: UserStore = app.extensions["user_store"]
     reviewer = store.get_by_username("reviewer")
@@ -164,14 +164,14 @@ def test_operator_cannot_approve(tmp_path):
     _login(client, "reviewer")
     page = client.get("/accounts", follow_redirects=True)
     body = page.get_data(as_text=True)
-    assert "Only a site admin or Mun Cyber developer can approve accounts." in body
+    assert "Only an administrator can approve accounts." in body
     assert ">Accounts</a>" not in client.get("/").get_data(as_text=True)
 
     denied = client.post(
         f"/accounts/{later.id}/approve",
         follow_redirects=True,
     )
-    assert "Only a site admin or Mun Cyber developer can approve accounts." in denied.get_data(
+    assert "Only an administrator can approve accounts." in denied.get_data(
         as_text=True
     )
     still = store.get_by_username("later")
@@ -189,7 +189,7 @@ def test_developer_can_approve_pending_customer(tmp_path):
     )
     client = app.test_client()
     created = _register(client, "customer", "customer@example.com")
-    assert "pending admin approval" in created.get_data(as_text=True).lower()
+    assert "account pending approval" in created.get_data(as_text=True).lower()
     store: UserStore = app.extensions["user_store"]
     customer = store.get_by_username("customer")
     assert customer is not None

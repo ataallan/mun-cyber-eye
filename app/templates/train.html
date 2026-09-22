@@ -3,22 +3,10 @@
 {% block content %}
 <section class="hero">
   <h1>Model training</h1>
-  <p class="muted">Train and activate the Phase 3 activity checkpoint from labeled frames. <strong>Video file uploads are for training only</strong> — extract JPEG frames into a label folder. They are not a live detection path. Videos are sampled to frames; the sklearn activity trainer still learns from images. The CLI remains available; this page is the same <code>train_activity_model</code> path without SSH.</p>
 </section>
-
-<div class="callout callout-safety" role="status">
-  <strong>Safety:</strong> Training improves <em>assistive</em> detection only. Humans still verify every alert. The system does not enforce, detain, or lock anything.
-</div>
-<div class="callout callout-warn" role="status">
-  <strong>Honest limit:</strong> Synthetic-only training (the demo generator) does <em>not</em> generalize to real CCTV. Site-specific game, dance, or confrontation examples must be labeled frames from authorized cameras.
-</div>
 
 <section class="card">
   <h2>Active checkpoint</h2>
-  <p class="muted">Runtime pointer: <code>{{ checkpoint.active_pointer }}</code>
-    · source <code>{{ checkpoint.source }}</code>
-    · env <code>ACTIVITY_CHECKPOINT</code> is the fallback when the pointer file is absent.
-  </p>
   <dl class="kv">
     <dt>Path</dt>
     <dd class="mono">{{ checkpoint.path }}</dd>
@@ -38,25 +26,22 @@
           <span class="badge status-open">{{ cat }}</span>
         {% endfor %}
       {% else %}
-        <span class="muted">Unknown until a checkpoint loads. Dataset classes:
-          {% for cat in categories %}<code>{{ cat }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
+        <span class="muted">
+          {% for cat in categories %}{{ cat }}{% if not loop.last %}, {% endif %}{% endfor %}
         </span>
       {% endif %}
     </dd>
     <dt>Model</dt>
-    <dd>{{ checkpoint.model_type or '—' }} {% if checkpoint.sklearn_version %}· sklearn {{ checkpoint.sklearn_version }}{% endif %}</dd>
+    <dd>{{ checkpoint.model_type or '—' }}</dd>
     <dt>Created</dt>
     <dd class="mono">{{ checkpoint.created_at or '—' }}</dd>
     <dt>Features</dt>
     <dd>{% if checkpoint.feature_version is not none %}v{{ checkpoint.feature_version }} · dim {{ checkpoint.feature_dim }}{% else %}—{% endif %}</dd>
   </dl>
-  {% if checkpoint.notes %}
-  <p class="fineprint">{{ checkpoint.notes }}</p>
-  {% endif %}
 
   {% set stored = checkpoint.metrics or {} %}
   {% if stored.val or stored.test %}
-  <h3>Last-known metrics (stored in checkpoint)</h3>
+  <h3>Metrics</h3>
   <table class="table">
     <thead>
       <tr><th>Split</th><th>Accuracy</th><th>Macro P</th><th>Macro R</th><th>Macro F1</th><th>n</th></tr>
@@ -98,8 +83,7 @@
 </section>
 
 <section class="card">
-  <h2>Dataset inventory</h2>
-  <p class="muted">Counts from <code>{{ dataset.root }}</code> via <code>describe_dataset</code>. Upload site-specific examples without SSH.</p>
+  <h2>Dataset</h2>
   <table class="table">
     <thead>
       <tr>
@@ -119,8 +103,7 @@
     </tbody>
   </table>
   {% if dataset.place_types %}
-  <h3>Scene / place folders</h3>
-  <p class="fineprint">Counted from <code>scene__&lt;place_type&gt;</code> or sport folders that imply a default place (basketball → basketball court). Catalog setting only — not recognition of a named arena.</p>
+  <h3>Places</h3>
   <table class="table">
     <thead>
       <tr><th>Place</th><th>Id</th><th>Frames</th></tr>
@@ -137,8 +120,7 @@
   </table>
   {% endif %}
   {% if dataset.sport_contexts %}
-  <h3>Sport-context folders</h3>
-  <p class="fineprint">Counted from <code>game_or_play__&lt;sport&gt;</code>, nested <code>game_or_play/&lt;sport&gt;</code>, or a catalog sport name. Assistive label only — the model does not “know most sports.”</p>
+  <h3>Sports</h3>
   <table class="table">
     <thead>
       <tr><th>Sport</th><th>Id</th><th>Frames</th></tr>
@@ -157,8 +139,7 @@
 </section>
 
 <section class="card">
-  <h2>Object / structure catalog</h2>
-  <p class="muted">Counts from <code>{{ objects_dataset.root }}</code> (<code>data/objects/{train,val,test}/&lt;object_id&gt;/</code>). Home furniture and community structures are an assistive inventory — YOLO maps overlapping COCO labels; unlabeled ids need operator frames. The activity trainer does not learn these folders.</p>
+  <h2>Objects</h2>
   {% if objects_dataset.n_images %}
   <table class="table">
     <thead>
@@ -184,17 +165,15 @@
     </tbody>
   </table>
   {% else %}
-  <p class="fineprint">No labeled object frames yet. Extract a video into an object class below, or add JPEGs under <code>data/objects/train/&lt;object_id&gt;/</code>.</p>
+  <p class="muted">No labeled object frames.</p>
   {% endif %}
-  <p class="fineprint">{{ objects|length }} catalog classes
+  <p class="fineprint">{{ objects|length }} classes
     · {{ objects_dataset.n_classes_with_images or 0 }} with images
-    · {{ objects_dataset.n_images or 0 }} frames.
-    Runtime detection uses YOLO when installed; otherwise Last run reports <code>objects_backend=unavailable</code> and does not invent a refrigerator.</p>
+    · {{ objects_dataset.n_images or 0 }} frames.</p>
 </section>
 
 <section class="card">
-  <h2>Dangerous / weapon-like catalog</h2>
-  <p class="muted">Counts from <code>{{ dangerous_dataset.root }}</code> (<code>data/dangerous/{train,val,test}/&lt;id&gt;/</code>). Separate from furniture so an idle chair is not a weapon. Use intensity is a pipeline assist, not a sklearn class. Toys, tools, and phones false-fire. Humans verify.</p>
+  <h2>Dangerous objects</h2>
   {% if dangerous_dataset.n_images %}
   <table class="table">
     <thead>
@@ -222,12 +201,11 @@
     </tbody>
   </table>
   {% else %}
-  <p class="fineprint">No labeled dangerous-object frames yet. Extract a video into a catalog class below, or add JPEGs under <code>data/dangerous/train/&lt;id&gt;/</code>. Activity class <code>potential_weapon_object</code> is a separate six-class folder.</p>
+  <p class="muted">No labeled dangerous-object frames.</p>
   {% endif %}
-  <p class="fineprint">{{ dangerous_objects|length }} catalog classes
+  <p class="fineprint">{{ dangerous_objects|length }} classes
     · {{ dangerous_dataset.n_classes_with_images or 0 }} with images
-    · {{ dangerous_dataset.n_images or 0 }} frames.
-    Runtime use-against-person intensity is an indicator only — not proof of assault or intent.</p>
+    · {{ dangerous_dataset.n_images or 0 }} frames.</p>
 </section>
 
 {% if last_metrics or last_eval or metric_reports %}
@@ -243,28 +221,27 @@
 {% if can_train %}
 <section class="card">
   <h2>Train from labeled data</h2>
-  <p class="muted">Calls <code>vision.train_activity.train_activity_model</code>. CPU sklearn training is typically a few seconds — this request waits for the result.</p>
   <form method="post" action="{{ url_for('main.admin_train_run') }}" class="form">
     <label>Model type
       <select name="model_type">
-        <option value="forest" selected>forest (RandomForest)</option>
-        <option value="logreg">logreg (LogisticRegression)</option>
+        <option value="forest" selected>Random forest</option>
+        <option value="logreg">Logistic regression</option>
       </select>
     </label>
-    <label>Output filename (under <code>data/checkpoints/</code>)
+    <label>Output filename
       <input type="text" name="output_name" value="activity_custom.joblib" autocomplete="off">
     </label>
     <label class="check">
       <input type="checkbox" name="generate_demo" value="1">
-      Generate synthetic demo data first if the dataset is empty
+      Generate sample frames if the dataset is empty
     </label>
     <label class="check">
       <input type="checkbox" name="overwrite_demo_images" value="1">
-      Overwrite existing synthetic demo images
+      Overwrite existing sample frames
     </label>
     <label class="check">
       <input type="checkbox" name="confirm_overwrite_demo" value="1">
-      Confirm overwrite of <code>activity_demo.joblib</code> (bundled demo)
+      Confirm overwrite of the bundled checkpoint
     </label>
     <button class="btn btn-primary" type="submit">Train from labeled data</button>
   </form>
@@ -272,15 +249,14 @@
 
 <section class="card">
   <h2>Train object model</h2>
-  <p class="muted">Optional CPU sklearn classifier on <code>data/objects/</code> frames. Needs at least two catalog classes with a few images each. Runtime inventory still prefers YOLO; this checkpoint is not used to invent objects on real uploads. Does not replace or break activity training.</p>
   <form method="post" action="{{ url_for('main.admin_train_objects') }}" class="form">
     <label>Model type
       <select name="model_type">
-        <option value="forest" selected>forest (RandomForest)</option>
-        <option value="logreg">logreg (LogisticRegression)</option>
+        <option value="forest" selected>Random forest</option>
+        <option value="logreg">Logistic regression</option>
       </select>
     </label>
-    <label>Output filename (under <code>data/checkpoints/</code>)
+    <label>Output filename
       <input type="text" name="output_name" value="objects_custom.joblib" autocomplete="off">
     </label>
     <button class="btn btn-ghost" type="submit">Train object model</button>
@@ -289,7 +265,6 @@
 
 <section class="card">
   <h2>Activate checkpoint</h2>
-  <p class="muted">Writes the chosen path to <code>data/active_checkpoint.json</code>. The running app and <code>create_adapter</code> read that file when present; otherwise they use <code>ACTIVITY_CHECKPOINT</code>. No secrets are edited.</p>
   <form method="post" action="{{ url_for('main.admin_train_activate') }}" class="form">
     <label>Checkpoint
       <select name="checkpoint_path">
@@ -299,7 +274,7 @@
       </select>
     </label>
     {% if not checkpoints %}
-    <p class="fineprint">No <code>.joblib</code> files under the checkpoints directory yet.</p>
+    <p class="fineprint">No checkpoints yet.</p>
     {% endif %}
     <button class="btn btn-primary" type="submit" {% if not checkpoints %}disabled{% endif %}>Activate checkpoint</button>
   </form>
@@ -307,7 +282,6 @@
 
 <section class="card">
   <h2>Evaluate</h2>
-  <p class="muted">Runs <code>eval_activity</code> on val or test and prints accuracy plus per-class P/R/F1.</p>
   <form method="post" action="{{ url_for('main.admin_train_evaluate') }}" class="form">
     <label>Checkpoint
       <select name="checkpoint_path">
@@ -329,7 +303,6 @@
 
 <section class="card">
   <h2>Upload labeled frames</h2>
-  <p class="muted">Add authorized, site-specific examples (game, dance, confrontation, fall, …) without SSH. Category names are validated; path traversal is rejected. Sport zips may use <code>train/game_or_play__basketball/*.jpg</code>, <code>train/game_or_play/basketball/*.jpg</code>, or <code>train/basketball/*.jpg</code>. Scene tags use <code>train/scene__street/*.jpg</code> or <code>train/game_or_play__scene__street/*.jpg</code>.</p>
   <form method="post" action="{{ url_for('main.admin_train_upload') }}" enctype="multipart/form-data" class="form">
     <label>Category
       <select name="category">
@@ -338,7 +311,7 @@
         {% endfor %}
       </select>
     </label>
-    <label>Optional sport context (writes <code>game_or_play__&lt;sport&gt;</code>)
+    <label>Sport
       <select name="sport_context">
         <option value="">none</option>
         {% for sport in sports %}
@@ -346,7 +319,7 @@
         {% endfor %}
       </select>
     </label>
-    <label>Optional place type (writes <code>scene__&lt;place&gt;</code>)
+    <label>Place type
       <select name="place_type" class="place-type-select">
         <option value="">none</option>
         {% for place in places %}
@@ -355,10 +328,9 @@
         <option value="__custom__">Other / custom…</option>
       </select>
     </label>
-    <label class="place-type-custom-wrap" style="display:none">Other / custom place
-      <input type="text" name="place_type_custom" placeholder="rooftop café, warehouse bay 3" autocomplete="off">
+    <label class="place-type-custom-wrap" style="display:none">Custom place
+      <input type="text" name="place_type_custom" placeholder="Warehouse bay 3" autocomplete="off">
     </label>
-    <p class="fineprint">Place tags help the scene-context assist. Catalog or any typed setting (slugified). Custom places have no synthetic painter. They are not a claim the model understands every sports arena. Uniforms are not labeled as identity or guilt.</p>
     <label>Split
       <select name="split">
         <option value="train" selected>train</option>
@@ -366,10 +338,10 @@
         <option value="test">test</option>
       </select>
     </label>
-    <label>Images (multi-file)
+    <label>Images
       <input type="file" name="images" accept="image/jpeg,image/png,image/bmp,.jpg,.jpeg,.png,.bmp" multiple>
     </label>
-    <label>Or a zip of <code>train/&lt;category&gt;/*.jpg</code>
+    <label>Zip
       <input type="file" name="zipfile" accept=".zip,application/zip">
     </label>
     <button class="btn btn-primary" type="submit">Upload labeled frames</button>
@@ -377,8 +349,7 @@
 </section>
 
 <section class="card">
-  <h2>Extract frames from video (training only)</h2>
-  <p class="muted">This is the product upload path: an <strong>authorized</strong> mp4 / avi / mov / mkv is sampled to labeled JPEGs. It does <strong>not</strong> run live detection. The existing <code>FrameSampler</code> writes JPEGs into the chosen label folder. Videos are sampled to frames; the sklearn activity trainer still learns from images. Path traversal is rejected. Object-class frames go to <code>data/objects/train/&lt;object_id&gt;/</code>. Dangerous-object frames go to <code>data/dangerous/train/&lt;id&gt;/</code>. Activity class <code>potential_weapon_object</code> remains available under “activity class.” Leftover source files may remain on disk; there is no video library or delete UI.</p>
+  <h2>Extract frames from video</h2>
   <form method="post" action="{{ url_for('main.admin_train_extract_video') }}" enctype="multipart/form-data" class="form" id="extract-video-form">
     <label>Label kind
       <select name="kind" id="extract-kind">
@@ -413,7 +384,7 @@
         <option value="__custom__">Other / custom…</option>
       </select>
       <span class="place-type-custom-wrap" style="display:none">
-        <input type="text" name="place_type_custom" placeholder="rooftop café, warehouse bay 3" autocomplete="off">
+        <input type="text" name="place_type_custom" placeholder="Warehouse bay 3" autocomplete="off">
       </span>
     </label>
     <label id="extract-object-wrap">Object class
@@ -448,7 +419,6 @@
     <label>Video file
       <input type="file" name="video" accept="video/mp4,video/x-msvideo,video/quicktime,video/x-matroska,.mp4,.avi,.mov,.mkv" required>
     </label>
-    <p class="fineprint">Authorized sources only. After extract, use <strong>Train from labeled data</strong> for activity classes, or <strong>Train object model</strong> when enough object images exist.</p>
     <button class="btn btn-primary" type="submit">Extract frames from video</button>
   </form>
 </section>
@@ -485,8 +455,8 @@
 </script>
 {% else %}
 <section class="card">
-  <h2>Admin actions</h2>
-  <p class="muted">You can view checkpoint status and dataset counts. Only an <code>admin</code> can train, evaluate, activate, or upload. The first Create account on a fresh install is admin; later registered users are operators unless promoted in SQLite. Optional env bootstrap (<code>ADMIN_USERNAME</code> + <code>ADMIN_PASSWORD</code>) is only used when you set both — no default password is shipped.</p>
+  <h2>Training</h2>
+  <p class="muted">View only.</p>
 </section>
 {% endif %}
 

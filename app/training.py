@@ -163,7 +163,7 @@ def run_training(
     )
     if dest.name == DEMO_CHECKPOINT_NAME and dest.exists() and not confirm_overwrite_demo:
         raise ValueError(
-            "Overwriting the bundled demo checkpoint requires confirmation."
+            "Overwriting the bundled checkpoint requires confirmation."
         )
     dest.parent.mkdir(parents=True, exist_ok=True)
     try:

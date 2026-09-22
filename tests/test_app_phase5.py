@@ -109,8 +109,8 @@ def test_run_registered_file_camera_creates_stamped_alerts(app, client):
     )
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert "alert(s) queued for human review" in body
-    assert "Category summary" in body
+    assert "alert(s)" in body
+    assert "Categories" in body
     assert "game or play" in body
     assert "dance" in body
     assert "potential confrontation" in body
@@ -119,7 +119,7 @@ def test_run_registered_file_camera_creates_stamped_alerts(app, client):
     assert alerts
     assert all(a.camera_id == "demo-file-01" for a in alerts)
     assert all(a.location_label == "Demo Lab" for a in alerts)
-    assert "Place type" in body
+    assert "Place" in body
     assert "gymnasium" in body.lower()
     stamped = [
         a.to_dict()["metadata"]
@@ -171,17 +171,17 @@ def test_run_synthetic_shows_game_dance_without_threat_alerts(app, client):
     resp = client.post("/run", data={"mode": "synthetic"}, follow_redirects=True)
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert "Category summary" in body
+    assert "Categories" in body
     assert "Scene assists" in body
     assert "game or play" in body
     assert "dance" in body
     assert "potential confrontation" in body
     assert "Basketball" in body
-    assert "Sport context" in body
-    assert "Place type" in body
-    assert "Kit cues" in body
-    assert "Body-aggression" in body
-    assert "Face cue status" in body
+    assert "Sport" in body
+    assert "Place" in body
+    assert "Kit" in body
+    assert "Aggression" in body
+    assert "Face" in body
     assert "Fall manner" in body
     assert "Gunshot video proxy" in body
     assert "object_thrown_at_person" in body
@@ -200,7 +200,7 @@ def test_camera_form_lists_console_users_and_assigns_owner(app, client):
     form = client.get("/cameras/new")
     body = form.get_data(as_text=True)
     assert form.status_code == 200
-    assert "Accounts linked to this camera" in body
+    assert "Linked accounts" in body
     assert admin.email in body
     assert "siteadmin" in body
     assert "My cameras" in body
@@ -330,16 +330,16 @@ def test_run_page_lists_registry(client):
     _login(client)
     resp = client.get("/run")
     body = resp.get_data(as_text=True)
-    assert "Registered authorized cameras" in body
+    assert "Registered cameras" in body
     assert "demo-file-01" in body
     assert "All enabled cameras" in body
-    assert "product detection path" in body
-    assert "Lab / development only" in body
+    assert 'value="camera"' in body
+    assert 'value="synthetic"' in body
+    assert 'value="activity"' in body
     assert "Authorized video file upload" not in body
     assert "mode-upload" not in body
     assert "video-file" not in body
     assert ">Train models</a>" not in body
-    assert "shipped checkpoints" in body
 
 
 def _tiny_video(path: Path, frames: int = 40) -> Path:
@@ -372,9 +372,9 @@ def test_run_ignores_attached_file_and_keeps_synthetic(app, client, tmp_path):
     )
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert "training only" in body.lower()
+    assert "Attached video was ignored" in body
     assert "authorized upload — hallway.avi" not in body
-    assert "Synthetic Demo" in body
+    assert "Synthetic sample" in body
     saved = Path(app.config["UPLOAD_DIR"]) / "hallway.avi"
     assert not saved.is_file()
     alerts = app.extensions["alert_store"].list_alerts()
@@ -398,7 +398,7 @@ def test_run_camera_mode_ignores_attached_file(app, client, tmp_path):
     )
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert "training only" in body.lower()
+    assert "Attached video was ignored" in body
     assert "authorized upload — gate.avi" not in body
     alerts = app.extensions["alert_store"].list_alerts()
     assert alerts
@@ -421,7 +421,7 @@ def test_run_upload_mode_is_rejected(app, client, tmp_path):
     )
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert "not a customer detection path" in body.lower() or "training only" in body.lower()
+    assert "Video upload is not available" in body.lower() or "Attached video was ignored" in body
     assert "authorized upload — ordinary.avi" not in body
     assert len(app.extensions["alert_store"].list_alerts()) == before
 
@@ -431,7 +431,7 @@ def test_run_synthetic_without_file_still_uses_mock(app, client):
     resp = client.post("/run", data={"mode": "synthetic"}, follow_redirects=True)
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert "Synthetic Demo" in body
+    assert "Synthetic sample" in body
     alerts = app.extensions["alert_store"].list_alerts()
     assert alerts
     assert all("Synthetic" in a.source_label for a in alerts)

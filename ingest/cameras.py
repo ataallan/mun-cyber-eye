@@ -748,15 +748,8 @@ def _demo_camera_specs(project_root: str | Path | None = None) -> list[dict[str,
     file_uri = "MOCK"
     if demo_file.is_file():
         file_uri = str(Path("sample_data") / "demo.mp4")
-    authorized = (
-        "Authorized demo source. Uses MOCK synthetic frames unless a "
-        "sample clip is present at sample_data/demo.mp4. Replace the "
-        "URI with an authorized video file path for a real file run."
-    )
-    stub_note = (
-        "Authorized demo stub (MOCK). Place type is a catalog stamp for "
-        "operators — not a named venue or a determination of what happened."
-    )
+    authorized = "Authorized source."
+    stub_note = "Authorized source."
     return [
         {
             "camera_id": "demo-file-01",
@@ -777,11 +770,7 @@ def _demo_camera_specs(project_root: str | Path | None = None) -> list[dict[str,
             "uri": "env:RTSP_DEMO_URI",
             "enabled": False,
             "sample_fps": 2.0,
-            "notes": (
-                "Disabled by default. Set RTSP_DEMO_URI to an authorized RTSP "
-                "URL (credentials stay in the environment). Do not point this "
-                "at unauthorized streams."
-            ),
+            "notes": "Authorized source. Disabled until an RTSP address is configured.",
             "place_type": "street",
         },
         {

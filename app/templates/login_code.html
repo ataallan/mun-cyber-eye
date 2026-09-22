@@ -7,7 +7,7 @@
     <p class="auth-product">{{ product_name }}</p>
   </div>
   <h1>Enter sign-in code</h1>
-  <p class="muted">Password accepted for <strong>{{ username }}</strong>. Enter the one-time code sent to the login email on this account{% if login_email %} (<span class="mono">{{ login_email }}</span>){% endif %}. Codes expire in {{ minutes }} minutes and can be used once. The form submits when all {{ login_code_digits }} digits are entered. The button stays if you prefer to press it.</p>
+  <p class="muted">Sent to {% if login_email %}<span class="mono">{{ login_email }}</span>{% else %}the login email on this account{% endif %}. Expires in {{ minutes }} minutes.</p>
   <form id="login-code-form" method="post" action="{{ url_for('main.login_code') }}" class="form" autocomplete="off">
     <label>{{ login_code_digits }}-digit code
       <input id="login-code-input" class="auth-code-input" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{ {{- login_code_digits -}} }" maxlength="{{ login_code_digits }}" data-code-digits="{{ login_code_digits }}" required autofocus>
@@ -57,10 +57,9 @@
   </div>
   {% if demo_login_code %}
   <div class="result-box demo-reset">
-    <p class="muted">Local demo sign-in code (email is not configured, or AUTH_SHOW_LOGIN_CODE=1):</p>
+    <p class="muted">Sign-in code</p>
     <p class="mono auth-code-demo">{{ demo_login_code }}</p>
   </div>
   {% endif %}
-  <p class="fineprint">{{ email_note }} Pending (unapproved) accounts never receive a sign-in code. Email is sent only when Resend is configured — this page will not claim a message was sent otherwise. AI detects and alerts. Humans verify and decide.</p>
 </section>
 {% endblock %}

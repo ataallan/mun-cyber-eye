@@ -6,7 +6,6 @@
 {% endif %}
 <section class="card">
   <h1>{% if self_edit %}My cameras{% else %}{{ account.username }}{% endif %}</h1>
-  <p class="muted">Attach or detach any number of authorized cameras on this account (unlink only — cameras stay in the registry). Alert email uses the <strong>security email</strong> when set, otherwise the login email. Email is notify-only — humans verify and decide.</p>
 
   <dl class="kv">
     <dt>Username</dt><dd class="mono">{{ account.username }}</dd>
@@ -15,14 +14,13 @@
   </dl>
 
   <form method="post" class="form">
-    <label>Security email (optional — preferred for alerts)
+    <label>Security email
       <input type="email" name="security_email" value="{{ account.security_email or '' }}" placeholder="security@example.com" autocomplete="off">
     </label>
-    <p class="fineprint">Leave blank to use the login email. Do not enter a personal inbox unless that person is an authorized reviewer.</p>
+    <p class="fineprint">Alert email. Uses the login email when blank.</p>
 
     <fieldset>
       <legend>Cameras on this account</legend>
-      <p class="fineprint">Check every camera this account should be notified about. One account can cover many cameras; a camera can also have several accounts.</p>
       {% if cameras %}
       <div class="checklist">
         {% for c in cameras %}

@@ -272,9 +272,7 @@ Write-Host "  2. Install Python packages from requirements.txt when they are mis
 Write-Host "  3. Add a Desktop shortcut named Mun Cyber Eye"
 Write-Host "  4. Start the console at http://127.0.0.1:5055 and open your browser"
 Write-Host ""
-Write-Host "Ultralytics / torch is optional and is not part of this install."
-Write-Host "There is no default password. Create the first admin yourself."
-Write-Host "Detection runs from registered cameras. Video uploads are for training only."
+Write-Host "There is no default password. Create the first admin account in the browser."
 Write-Host ""
 
 if (-not (Test-Path -LiteralPath $script:Support)) {

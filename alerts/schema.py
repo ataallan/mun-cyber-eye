@@ -31,51 +31,33 @@ CATEGORY_DISPLAY_NAMES = {
 
 ADVISORY_ACTIONS = {
     "potential_fight": (
-        "Advisory only: review the authorized feed now. If a physical "
-        "confrontation is confirmed, follow site SOP and notify on-site "
-        "personnel. This is not a determination of assault and is not a "
-        "request to detain anyone."
+        "Advisory only: review the feed. If a confrontation is confirmed, "
+        "follow site procedure."
     ),
     "potential_fall": (
-        "Advisory only: review the feed for a possible person-down or medical "
-        "event. If confirmed, dispatch trained human responders per SOP. The "
-        "system will not call emergency services on its own."
+        "Advisory only: review the feed for a person down. If confirmed, "
+        "follow site procedure."
     ),
     "potential_weapon_object": (
-        "Advisory only: review the feed for a possible dangerous object. This "
-        "is not proof of weapon possession or intent. If confirmed, follow "
-        "site SOP and notify authorized personnel. Do not treat this as "
-        "authorization to use force."
+        "Advisory only: review the feed for a dangerous object. "
+        "Not proof of intent. If confirmed, follow site procedure."
     ),
     "potential_gunshot": (
-        "Advisory only: review the authorized feed for a possible gunshot "
-        "video proxy (flash / dive / firearm-like object). This is not a "
-        "confirmed gunshot and not ballistic proof. If a shot is confirmed, "
-        "follow site SOP. The system will not dispatch force or emergency "
-        "services on its own."
+        "Advisory only: review the feed for a possible gunshot. "
+        "This is not a confirmed gunshot. If confirmed, follow site procedure."
     ),
-    "ordinary": (
-        "Advisory only: no elevated response recommended. Continue normal "
-        "monitoring."
-    ),
+    "ordinary": "Advisory only: no elevated response recommended.",
     "game_or_play": (
-        "Advisory only: the model thinks this is game or play, not a fight. "
-        "No threat response is recommended by default. Continue normal "
-        "monitoring; a human may still review the feed if unsure."
+        "Advisory only: classified as game or play, not a fight. "
+        "No threat response recommended."
     ),
     "dance": (
-        "Advisory only: the model thinks this is dance or choreographed "
-        "movement, not a confrontation. No threat response is recommended "
-        "by default. Continue normal monitoring; a human may still review "
-        "the feed if unsure."
+        "Advisory only: classified as dance, not a confrontation. "
+        "No threat response recommended."
     ),
 }
 
-DEFAULT_ADVISORY = (
-    "Advisory only: a trained human must verify this alert before any "
-    "consequential response. The system does not lock doors, dispatch force, "
-    "or make legal determinations."
-)
+DEFAULT_ADVISORY = "Advisory only: verify this alert before any response."
 
 _DELIVERY_STATUSES = (
     "pending",

@@ -156,7 +156,7 @@ def _require_joblib():
         import joblib  # type: ignore
     except ImportError as exc:
         raise ImportError(
-            "joblib/scikit-learn is required to load the Phase 3 activity model"
+            "joblib/scikit-learn is required to load the activity model"
         ) from exc
     return joblib
 
