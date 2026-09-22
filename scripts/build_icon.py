@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
-"""Build the multi-size Mun Cyber Eye icon from the logo PNG.
+"""Build the Mun Cyber Eye icon and header mark from the logo PNG.
 
-Customers receive ``app/static/img/mun-cyber-eye.ico`` already built.
+Customers receive these files already built:
+
+- ``app/static/img/mun-cyber-eye.ico`` — multi-size icon
+- ``app/static/img/mun-cyber-eye-mark.png`` — square eye-only header mark
+
+The auth cards keep ``mun-cyber-eye-logo.png``, which includes the wordmark.
 Run this from the repo root only when the logo artwork changes:
 
     python scripts/build_icon.py
@@ -17,6 +22,7 @@ from PIL import Image, ImageDraw
 ROOT = Path(__file__).resolve().parent.parent
 LOGO = ROOT / "app" / "static" / "img" / "mun-cyber-eye-logo.png"
 ICO = ROOT / "app" / "static" / "img" / "mun-cyber-eye.ico"
+MARK = ROOT / "app" / "static" / "img" / "mun-cyber-eye-mark.png"
 SIZES = (16, 24, 32, 48, 64, 128, 256)
 # Console background, so the transparent pupil stays dark on a light desktop.
 TILE = (11, 18, 32, 255)
@@ -113,6 +119,19 @@ def _mark_png_entries_readable(path: Path) -> None:
     path.write_bytes(data)
 
 
+def build_mark(logo: Path = LOGO, dest: Path = MARK, size: int = 256) -> Path:
+    """Square eye for the console header. The wordmark stays on the auth hero."""
+    eye = _eye_crop(Image.open(logo))
+    pad = max(2, round(size * 0.04))
+    inner = size - pad * 2
+    fitted = eye.resize((inner, inner), Image.Resampling.LANCZOS)
+    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    canvas.paste(fitted, (pad, pad), fitted)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    canvas.save(dest, format="PNG", optimize=True)
+    return dest
+
+
 def build_icon(logo: Path = LOGO, dest: Path = ICO) -> Path:
     eye = _eye_crop(Image.open(logo))
     icons = [_render(eye, size) for size in SIZES]
@@ -128,8 +147,10 @@ def build_icon(logo: Path = LOGO, dest: Path = ICO) -> Path:
 
 
 def main() -> None:
-    path = build_icon()
-    print(f"Wrote {path}")
+    icon = build_icon()
+    mark = build_mark()
+    print(f"Wrote {icon}")
+    print(f"Wrote {mark}")
 
 
 if __name__ == "__main__":

@@ -42,6 +42,7 @@ REQUIRED_ZIP_PATHS = (
     "scripts/build_icon.py",
     "app/static/img/mun-cyber-eye.ico",
     "app/static/img/mun-cyber-eye-logo.png",
+    "app/static/img/mun-cyber-eye-mark.png",
     "requirements.txt",
     "run.py",
     ".env.example",

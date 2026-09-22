@@ -3,10 +3,7 @@
 {% block title %}Sign in · {{ product_name }}{% endblock %}
 {% block content %}
 <section class="card auth-card">
-  <div class="auth-brand">
-    <img class="auth-logo" src="{{ url_for('static', filename='img/mun-cyber-eye-logo.png') }}" alt="Mun Cyber Eye logo">
-    <p class="auth-product">{{ product_name }}</p>
-  </div>
+  {% include "_auth_brand.html" %}
   <h1>Operator sign-in</h1>
   {% if needs_setup %}
   <p class="muted">No accounts yet. <a href="{{ url_for('main.register') }}">Create the first admin account</a>. No default password is included.</p>

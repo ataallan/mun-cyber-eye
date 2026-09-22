@@ -3,10 +3,7 @@
 {% block title %}Create account · {{ product_name }}{% endblock %}
 {% block content %}
 <section class="card auth-card">
-  <div class="auth-brand">
-    <img class="auth-logo" src="{{ url_for('static', filename='img/mun-cyber-eye-logo.png') }}" alt="Mun Cyber Eye logo">
-    <p class="auth-product">{{ product_name }}</p>
-  </div>
+  {% include "_auth_brand.html" %}
   {% if needs_setup %}
   <h1>Create the first admin account</h1>
   <p class="muted">Password must be at least 8 characters. This account is the site admin.</p>
