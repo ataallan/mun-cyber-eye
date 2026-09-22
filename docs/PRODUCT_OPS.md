@@ -26,6 +26,18 @@ When monitoring raises an alert, it saves a short clip from the sampled feed aro
 
 `MAX_INCIDENT_CLIPS` (default 400) deletes the oldest clip **files** only. Alert rows stay. There is still no UI wipe for alerts or cameras.
 
+## Video archive
+
+Optional, and **off by default** (`ARCHIVE_ENABLED=0`). **Start archive** / **Stop archive** on the alert console, or set the env flag. The choice is saved in `data/archive_state.json` and then wins over the env flag. Recording runs only while **monitoring** is also on.
+
+Enabled cameras are written in short segments (default about **2 minutes**, `ARCHIVE_SEGMENT_SEC` from 60 to 300) under `data/archive/<camera_id>/`. RTSP and webcam (only if `ALLOW_WEBCAM=1`) keep recording until you stop. A file camera is copied once per console session, again if that file changes. Synthetic `MOCK` cameras are not archived.
+
+This is not the incident-clip path. Alerts still keep their short clips in `data/clips/`. Archive is the longer recording for review by camera and time. An NVR remains optional if the site already has one.
+
+**Retention** defaults to **1 day** (`ARCHIVE_RETENTION_DAYS`). The console offers **1 day** and **5 days**, or any whole number from 1 to 90. Segments older than that window are deleted when the console process is running. That prune does not delete alert rows or incident clips.
+
+**Disk.** At the default 8 frames/second, plan on roughly **0.3–1.1 GB per camera per hour** before H.264 (about **7–26 GB per camera per day**). Five days is about five times the one-day footprint. Finished segments are smaller when `ffmpeg` is installed. If free space drops below `ARCHIVE_MIN_FREE_MB` (default 64) or a stream dies, the archive panel says so and does not invent footage.
+
 ## Video files are for training only
 
 Developer **Train models → Extract frames from video** samples an authorized clip into labeled JPEGs. That is not live detection. Uploads remain training-only and **developer-only**. Customer site admins and operators do not see this UI.
@@ -52,6 +64,7 @@ The console does **not** hard-delete these records:
 | Cameras | Enable / Disable; attach or detach from My cameras / account linkage | Permanent camera delete |
 | Videos | One-shot train extract; leftover files may remain on disk | Video library UI or delete library |
 | Incident clips | Kept with the alert for review. Oldest files may be pruned at `MAX_INCIDENT_CLIPS` | Delete / wipe the alert or its clip from the UI |
+| Archive segments | Play by camera and time. Files older than the retention window are removed | Delete an alert, or a button that wipes archive history on demand |
 
 Alerts stay in SQLite with their audit log so a review history cannot be erased from the UI. Disabled cameras remain in the registry. Train extract leftovers under `data/uploads/` (or the extract destination) are not a customer media library.
 

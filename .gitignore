@@ -14,6 +14,9 @@ data/auth.db
 data/cameras.db
 data/snapshots/
 data/clips/
+data/archive/
+data/archive.db
+data/archive_state.json
 data/monitor_state.json
 data/uploads/*
 !data/uploads/.gitkeep

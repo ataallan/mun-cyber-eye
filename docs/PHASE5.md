@@ -74,6 +74,8 @@ On first boot the app seeds the authorized demo set (create-if-missing). Empty `
 
 A suspected incident saves a short clip (`ingest/clips.py`) from the frames already sampled: default 5s before and 5s after the detection (~10s, cap 15s) under `data/clips/`. The alert row stores `clip_path` and the review page plays it. The same camera and category is quiet for `MONITOR_ALERT_COOLDOWN_SEC` (default 60) so a continuous event does not flood alerts. Notify (owner `security_email` / login email and other recipients) still runs when that alert is created. `MAX_INCIDENT_CLIPS` may delete old clip files; it does not delete alert rows.
 
+**Video archive** (`archive_service.py`, `ingest/archive.py`) is optional and off by default (`ARCHIVE_ENABLED=0`). While archive and monitoring are both on, each enabled RTSP, file, or allowed webcam is recorded in short segments under `data/archive/<camera_id>/` (default about 2 minutes). `MOCK` is not archived. **Review** on the Archive page plays segments by camera and by today / 1 day / 5 days. `ARCHIVE_RETENTION_DAYS` (default 1) deletes older segment files only. Disk cost and the split from incident clips are in [PRODUCT_OPS.md](PRODUCT_OPS.md).
+
 Alerts created from a registry camera carry that camera’s `camera_id` and `location_label` (not only `DEFAULT_CAMERA_*` env).
 
 ## Console
@@ -82,8 +84,10 @@ Alerts created from a registry camera carry that camera’s `camera_id` and `loc
 |------|-----|---------|
 | `/cameras` | admin / operator | List, add, edit, enable / disable (no permanent delete) |
 | `/run` | signed-in reviewer | One-shot check of registered cameras, plus optional lab-only MOCK / activity demo. Video files are not a detection path; developers extract frames on Train models. |
-| `/` | signed-in reviewer | Alert console, Start / Stop monitoring, camera health |
+| `/` | signed-in reviewer | Alert console, Start / Stop monitoring, archive on/off, camera health |
 | `/monitor/start`, `/monitor/stop` | signed-in reviewer | Turn continuous monitoring on or off |
+| `/archive` | signed-in reviewer | Play archive segments by camera and time range |
+| `/archive/start`, `/archive/stop` | signed-in reviewer | Turn the optional archive on or off |
 | `/clips/<file>` | signed-in reviewer | Play an incident clip linked from an alert |
 
 ## Safety

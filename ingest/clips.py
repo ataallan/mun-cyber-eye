@@ -209,7 +209,12 @@ def _write_mp4v(
     return path.is_file() and path.stat().st_size > 0
 
 
-def _transcode_h264(src: Path, dest: Path) -> bool:
+def transcode_h264(src: Path, dest: Path, *, timeout: float = 60) -> bool:
+    """Convert a clip to H.264 MP4 when ffmpeg is installed."""
+    return _transcode_h264(src, dest, timeout=timeout)
+
+
+def _transcode_h264(src: Path, dest: Path, timeout: float = 60) -> bool:
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         return False
@@ -232,7 +237,7 @@ def _transcode_h264(src: Path, dest: Path) -> bool:
                 str(dest),
             ],
             check=False,
-            timeout=60,
+            timeout=timeout,
             capture_output=True,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:

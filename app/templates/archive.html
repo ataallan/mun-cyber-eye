@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Archive · {{ product_name }}{% endblock %}
+{% block content %}
+<section class="hero">
+  <h1>Archive</h1>
+  <p class="fineprint">Continuous recording of enabled cameras. Incident clips stay on the alert.</p>
+</section>
+
+<section class="card">
+  <div class="detail-head">
+    <h2>Status</h2>
+    {% if archive_status.recording %}
+      <span class="badge health-ok">Recording</span>
+    {% elif archive_status.enabled %}
+      <span class="badge status-open">On</span>
+    {% else %}
+      <span class="badge status-dismissed">Off</span>
+    {% endif %}
+  </div>
+  <p class="fineprint">{{ archive_status.disk_note }} {{ archive_status.segment_note }} Kept {{ archive_status.retention_days }} day{% if archive_status.retention_days != 1 %}s{% endif %}.</p>
+  {% if archive_status.last_error %}
+  <p class="callout callout-warn">{{ archive_status.last_error }}</p>
+  {% endif %}
+  {% for item in archive_status.errors %}
+  <p class="fineprint">{{ item.message }}</p>
+  {% endfor %}
+  {% for note in archive_status.notices %}
+  <p class="fineprint">{{ note }}</p>
+  {% endfor %}
+  <form method="post" action="{{ url_for('main.archive_settings') }}" class="archive-controls">
+    <input type="hidden" name="next" value="archive">
+    <label>Keep
+      <select name="retention_days">
+        <option value="1" {% if archive_status.retention_days == 1 %}selected{% endif %}>1 day</option>
+        <option value="5" {% if archive_status.retention_days == 5 %}selected{% endif %}>5 days</option>
+      </select>
+    </label>
+    <label>Days
+      <input type="number" name="retention_days_custom" min="1" max="90" placeholder="1–90"{% if archive_status.retention_days not in [1, 5] %} value="{{ archive_status.retention_days }}"{% endif %}>
+    </label>
+    <button class="btn btn-ghost" type="submit">Save</button>
+  </form>
+  <div class="btn-row">
+    {% if archive_status.enabled %}
+    <form method="post" action="{{ url_for('main.archive_stop') }}">
+      <input type="hidden" name="next" value="archive">
+      <button class="btn btn-warn" type="submit">Stop archive</button>
+    </form>
+    {% else %}
+    <form method="post" action="{{ url_for('main.archive_start') }}">
+      <input type="hidden" name="next" value="archive">
+      <button class="btn btn-primary" type="submit">Start archive</button>
+    </form>
+    {% endif %}
+  </div>
+</section>
+
+<section class="card">
+  <div class="filters">
+    <a class="chip {% if not camera_id %}active{% endif %}" href="{{ url_for('main.archive', window=window) }}">All cameras</a>
+    {% for camera in cameras %}
+    <a class="chip {% if camera_id == camera.id %}active{% endif %}" href="{{ url_for('main.archive', camera_id=camera.id, window=window) }}">{{ camera.name }}</a>
+    {% endfor %}
+  </div>
+  <div class="filters archive-windows">
+    {% for key, label in windows %}
+    <a class="chip {% if window == key %}active{% endif %}" href="{{ url_for('main.archive', camera_id=camera_id, window=key) }}">{{ label }}</a>
+    {% endfor %}
+  </div>
+
+  {% if current_segment %}
+  <div class="archive-player">
+    <h2>{{ current_segment.camera_name }}</h2>
+    <p class="fineprint">{{ current_segment.started_label }}{% if current_segment.location_label %} · {{ current_segment.location_label }}{% endif %} · {{ current_segment.duration_label }}</p>
+    <video class="clip-player" controls preload="metadata" src="{{ url_for('main.archive_media', segment_id=current_segment.id) }}"></video>
+    {% if not current_segment.browser_playable %}
+    <p class="fineprint">Saved, but this browser may not play the file. ffmpeg was not available to convert it.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if archive_rows %}
+  <table class="table">
+    <thead>
+      <tr><th>Time</th><th>Camera</th><th>Length</th><th></th></tr>
+    </thead>
+    <tbody>
+    {% for row in archive_rows %}
+      <tr>
+        <td>{{ row.started_label }}</td>
+        <td>{{ row.camera_name }}{% if row.location_label %} <span class="muted">· {{ row.location_label }}</span>{% endif %}</td>
+        <td>{{ row.duration_label }} <span class="muted">{{ row.size_label }}</span></td>
+        <td><a href="{{ url_for('main.archive', camera_id=camera_id, window=window, play=row.id) }}">Play</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="fineprint">Times are local. Segments show up after each block finishes.</p>
+  {% else %}
+  <p class="empty">No archive segments in this range.</p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -76,6 +76,9 @@ Phase 3 training and metrics are documented in [PHASE3.md](PHASE3.md).
 - `data/auth.db` — console login accounts (admin / operator)  
 - `data/cameras.db` — authorized camera registry + last_seen / last_error  
 - `data/snapshots/` — JPEG frames attached to alerts  
+- `data/clips/` — short incident clips attached to alerts  
+- `data/archive/` — optional continuous archive segments (off by default; pruned by retention)  
+- `data/archive.db` — index of those segments  
 - `data/uploads/` — leftover train-extract source files may sit here (gitignored); not a customer video library  
 - `data/activity/` — labeled activity frames (`train` / `val` / `test`)  
 - `data/objects/` — labeled object/structure frames (sibling of activity)  
