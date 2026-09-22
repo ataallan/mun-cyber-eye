@@ -36,6 +36,7 @@ from ingest.cameras import (
     mask_uri,
     place_type_from_form,
 )
+from ingest.discover import add_discovered_webcams, discover_local_cameras
 
 from .auth import (
     CUSTOMER_ROLES,
@@ -1381,6 +1382,44 @@ def cameras():
         camera_accounts=_cameras().accounts_by_camera(),
         allow_webcam=bool(current_app.config.get("ALLOW_WEBCAM")),
         console_users=_console_users(),
+    )
+
+
+@bp.route("/cameras/detect", methods=["GET", "POST"])
+@operator_required
+def camera_detect():
+    if not bool(current_app.config.get("ALLOW_WEBCAM")):
+        flash("Webcam capture is off.", "warn")
+        return redirect(url_for("main.cameras"))
+    store = _cameras()
+    found = discover_local_cameras(
+        store.list_cameras(),
+        opener=current_app.config.get("WEBCAM_DISCOVERY_OPENER"),
+    )
+    if request.method == "POST":
+        action = (request.form.get("action") or "selected").strip()
+        only_uris = None if action == "all_new" else request.form.getlist("indices")
+        if only_uris is not None and not only_uris:
+            flash("Select a camera to add.", "warn")
+        else:
+            try:
+                created = add_discovered_webcams(store, found, only_uris=only_uris)
+            except (ValueError, TypeError) as exc:
+                flash(str(exc), "error")
+            else:
+                if len(created) == 1:
+                    flash(f"Camera “{created[0].name}” registered.", "ok")
+                    return redirect(url_for("main.cameras"))
+                if created:
+                    flash(f"Registered {len(created)} cameras.", "ok")
+                    return redirect(url_for("main.cameras"))
+                flash("No new cameras to add.", "warn")
+    new_count = sum(1 for item in found if not item.already_registered)
+    return render_template(
+        "camera_detect.html",
+        found=found,
+        new_count=new_count,
+        allow_webcam=True,
     )
 
 

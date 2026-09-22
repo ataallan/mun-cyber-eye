@@ -228,6 +228,13 @@ fieldset legend { color: var(--text); font-weight: 600; padding: 0 0.35rem; }
 .btn-ghost { background: transparent; border-color: var(--border); color: var(--text); }
 .btn-sm { padding: 0.3rem 0.65rem; font-size: 0.8rem; }
 .btn-row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.detect-actions { margin-top: 1rem; }
+.col-check { width: 2.5rem; }
+.detect-check {
+  width: 1.05rem;
+  height: 1.05rem;
+  accent-color: var(--accent);
+}
 
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.75rem; margin: 1rem 0 1.25rem; }
 .stat {
