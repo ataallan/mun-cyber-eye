@@ -54,7 +54,7 @@ body {
   color: inherit; text-decoration: none;
 }
 .brand-logo {
-  height: 42px; width: auto; max-width: 88px;
+  height: 21px; width: auto; max-width: 44px;
   display: block; object-fit: contain;
 }
 .brand-mark {
@@ -84,14 +84,14 @@ body {
 .auth-brand { margin-bottom: 0.35rem; }
 .auth-logo {
   display: block;
-  width: min(280px, 78%);
+  width: min(140px, 39%);
   height: auto;
   margin: 0.15rem auto 0.65rem;
-  filter: drop-shadow(0 0 18px rgba(59, 160, 255, 0.22));
+  filter: drop-shadow(0 0 9px rgba(59, 160, 255, 0.22));
 }
 @media (max-width: 640px) {
   .auth-logo {
-    width: min(200px, 64%);
+    width: min(100px, 32%);
     margin-bottom: 0.4rem;
   }
   .auth-card { margin: 1rem auto; padding: 1rem 1.1rem; }
