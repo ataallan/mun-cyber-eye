@@ -20,6 +20,14 @@ def _env_flag(name: str, default: str = "0") -> bool:
     return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _as_bool(value, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None or str(value).strip() == "":
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _session_hours(value) -> float:
     """Console session cap. Non-positive or junk values fall back to 8 hours."""
     try:
@@ -105,6 +113,18 @@ def create_app(test_config: dict | None = None) -> Flask:
         AUTH_DB_PATH=os.getenv("AUTH_DB_PATH", str(root / "data" / "auth.db")),
         CAMERA_DB_PATH=os.getenv("CAMERA_DB_PATH", str(root / "data" / "cameras.db")),
         SNAPSHOT_DIR=os.getenv("SNAPSHOT_DIR", str(root / "data" / "snapshots")),
+        CLIP_DIR=os.getenv("CLIP_DIR", str(root / "data" / "clips")),
+        CLIP_PRE_SEC=os.getenv("CLIP_PRE_SEC", "5"),
+        CLIP_POST_SEC=os.getenv("CLIP_POST_SEC", "5"),
+        CLIP_MAX_SEC=os.getenv("CLIP_MAX_SEC", "15"),
+        MAX_INCIDENT_CLIPS=os.getenv("MAX_INCIDENT_CLIPS", "400"),
+        MONITOR_AUTOSTART=os.getenv("MONITOR_AUTOSTART", "1"),
+        MONITOR_STATE_PATH=os.getenv(
+            "MONITOR_STATE_PATH", str(root / "data" / "monitor_state.json")
+        ),
+        MONITOR_ALERT_COOLDOWN_SEC=os.getenv("MONITOR_ALERT_COOLDOWN_SEC", "60"),
+        MONITOR_MAX_FRAMES_PER_PASS=os.getenv("MONITOR_MAX_FRAMES_PER_PASS", "24"),
+        MONITOR_CYCLE_PAUSE_SEC=os.getenv("MONITOR_CYCLE_PAUSE_SEC", "0.5"),
         UPLOAD_DIR=os.getenv("UPLOAD_DIR", str(root / "data" / "uploads")),
         ALLOW_WEBCAM=_env_flag("ALLOW_WEBCAM", "0"),
         RTSP_CONNECT_TIMEOUT_SEC=float(os.getenv("RTSP_CONNECT_TIMEOUT_SEC", "8")),
@@ -195,6 +215,27 @@ def create_app(test_config: dict | None = None) -> Flask:
         app.config.get("CAMERA_DB_PATH") or str(root / "data" / "cameras.db")
     )
     app.config["SNAPSHOT_DIR"] = _abs(app.config["SNAPSHOT_DIR"])
+    app.config["CLIP_DIR"] = _abs(
+        app.config.get("CLIP_DIR") or str(root / "data" / "clips")
+    )
+    if "MONITOR_STATE_PATH" not in test_overrides:
+        app.config["MONITOR_STATE_PATH"] = str(
+            Path(app.config["ALERT_DB_PATH"]).parent / "monitor_state.json"
+        )
+    else:
+        app.config["MONITOR_STATE_PATH"] = _abs(app.config["MONITOR_STATE_PATH"])
+    if app.config.get("TESTING") and "CLIP_DIR" not in test_overrides:
+        app.config["CLIP_DIR"] = str(Path(app.config["SNAPSHOT_DIR"]).parent / "clips")
+    if "MONITOR_AUTOSTART" not in test_overrides:
+        explicit = os.getenv("MONITOR_AUTOSTART")
+        if explicit is None or str(explicit).strip() == "":
+            app.config["MONITOR_AUTOSTART"] = not bool(app.config.get("TESTING"))
+        else:
+            app.config["MONITOR_AUTOSTART"] = _as_bool(explicit, True)
+    else:
+        app.config["MONITOR_AUTOSTART"] = _as_bool(
+            app.config.get("MONITOR_AUTOSTART"), False
+        )
     app.config["UPLOAD_DIR"] = _abs(
         app.config.get("UPLOAD_DIR") or str(Path(app.config["SNAPSHOT_DIR"]).parent / "uploads")
     )
@@ -228,6 +269,25 @@ def create_app(test_config: dict | None = None) -> Flask:
         )
     except (TypeError, ValueError):
         app.config["RTSP_CONNECT_TIMEOUT_SEC"] = 8.0
+    for key, default in (
+        ("CLIP_PRE_SEC", 5.0),
+        ("CLIP_POST_SEC", 5.0),
+        ("CLIP_MAX_SEC", 15.0),
+        ("MONITOR_ALERT_COOLDOWN_SEC", 60.0),
+        ("MONITOR_CYCLE_PAUSE_SEC", 0.5),
+    ):
+        try:
+            app.config[key] = float(app.config.get(key, default))
+        except (TypeError, ValueError):
+            app.config[key] = default
+    for key, default in (
+        ("MAX_INCIDENT_CLIPS", 400),
+        ("MONITOR_MAX_FRAMES_PER_PASS", 24),
+    ):
+        try:
+            app.config[key] = int(app.config.get(key, default))
+        except (TypeError, ValueError):
+            app.config[key] = default
     try:
         minutes = app.config.get("LOGIN_CODE_MINUTES", 10)
         if minutes is None or minutes == "":
@@ -253,6 +313,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     Path(app.config["AUTH_DB_PATH"]).parent.mkdir(parents=True, exist_ok=True)
     Path(app.config["CAMERA_DB_PATH"]).parent.mkdir(parents=True, exist_ok=True)
     Path(app.config["SNAPSHOT_DIR"]).mkdir(parents=True, exist_ok=True)
+    Path(app.config["CLIP_DIR"]).mkdir(parents=True, exist_ok=True)
     Path(app.config["UPLOAD_DIR"]).mkdir(parents=True, exist_ok=True)
     Path(app.config["ACTIVITY_DATA_ROOT"]).mkdir(parents=True, exist_ok=True)
     Path(app.config["OBJECTS_DATA_ROOT"]).mkdir(parents=True, exist_ok=True)
@@ -289,6 +350,12 @@ def create_app(test_config: dict | None = None) -> Flask:
         user_store=user_store,
     )
 
+    from monitor import MonitorService
+
+    monitor = MonitorService(app)
+    app.extensions["monitor"] = monitor
+    monitor.restore()
+
     from alerts.schema import category_display_name
 
     from . import routes
@@ -314,6 +381,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             "notify_webhook_configured": notify.webhook_configured,
             "allow_webcam": bool(app.config.get("ALLOW_WEBCAM")),
             "face_aggression_enabled": _env_flag("ENABLE_FACE_AGGRESSION", "0"),
+            "monitor_status": app.extensions["monitor"].status(),
             "can_train": can_train(session.get("role")),
             "can_approve_accounts": can_approve_accounts(session.get("role")),
         }

@@ -12,9 +12,19 @@ Elevated-risk / violent-conduct detection is **automation from authorized camera
 - RTSP cameras
 - Webcam only if `ALLOW_WEBCAM=1`
 
-The pipeline runs those feeds (one camera or all enabled, sequentially in this prototype). Humans still **review, acknowledge, dismiss, escalate, or reopen**. There is no autonomous enforcement and no facial criminal or identity labeling.
+**Continuous monitoring** is the customer path. While monitoring is on, the console process keeps sampling enabled cameras (RTSP and webcam on a loop; a recorded file or `MOCK` URI once per session, or again if that file changes). **Start monitoring** / **Stop monitoring** are on the alert console. `MONITOR_AUTOSTART=1` (default outside tests) starts that worker with the app. Stop is saved in `data/monitor_state.json`.
 
-Synthetic MOCK and the Phase 3 synthetic activity demo remain **lab / development only**. They are not the customer detection path.
+**Run** remains a one-shot pass for a lab check. It does not replace monitoring.
+
+Humans still **review, acknowledge, dismiss, escalate, or reopen**. There is no autonomous enforcement and no facial criminal or identity labeling.
+
+Synthetic MOCK and the Phase 3 synthetic activity demo remain **lab / development only**. They are not the customer detection path. Seeded demo cameras are still reviewed if you leave them enabled.
+
+## Incident clips
+
+When monitoring raises an alert, it saves a short clip from the sampled feed around that detection (default **5 seconds before and 5 seconds after**, about 10 seconds, never longer than 15). The clip is stored under `data/clips/` (`CLIP_DIR`) and plays on the alert review page. The same camera and category will not raise another alert until `MONITOR_ALERT_COOLDOWN_SEC` (default 60). Notify still runs for that alert (camera `security_email` / login email, recipients).
+
+`MAX_INCIDENT_CLIPS` (default 400) deletes the oldest clip **files** only. Alert rows stay. There is still no UI wipe for alerts or cameras.
 
 ## Video files are for training only
 
@@ -41,6 +51,7 @@ The console does **not** hard-delete these records:
 | Alert rows | Acknowledge / Dismiss / Escalate / Reopen + audit trail | Delete / wipe the row |
 | Cameras | Enable / Disable; attach or detach from My cameras / account linkage | Permanent camera delete |
 | Videos | One-shot train extract; leftover files may remain on disk | Video library UI or delete library |
+| Incident clips | Kept with the alert for review. Oldest files may be pruned at `MAX_INCIDENT_CLIPS` | Delete / wipe the alert or its clip from the UI |
 
 Alerts stay in SQLite with their audit log so a review history cannot be erased from the UI. Disabled cameras remain in the registry. Train extract leftovers under `data/uploads/` (or the extract destination) are not a customer media library.
 

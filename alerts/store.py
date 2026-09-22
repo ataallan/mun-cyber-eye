@@ -62,6 +62,7 @@ class Alert:
     recommended_human_action: str = ""
     correlation_id: str = ""
     delivery_status: str = "pending"
+    clip_path: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -203,6 +204,7 @@ class AlertStore:
             ("recommended_human_action", "TEXT"),
             ("correlation_id", "TEXT"),
             ("delivery_status", "TEXT NOT NULL DEFAULT 'pending'"),
+            ("clip_path", "TEXT"),
         ]
         for name, typ in additions:
             if name not in existing:
@@ -228,6 +230,7 @@ class AlertStore:
         short_rationale_text: Optional[str] = None,
         recommended_action: Optional[str] = None,
         correlation_id: Optional[str] = None,
+        clip_path: Optional[str] = None,
     ) -> Alert:
         alert_id = str(uuid.uuid4())
         alert = Alert(
@@ -253,6 +256,7 @@ class AlertStore:
             or recommended_human_action(category),
             correlation_id=correlation_id or alert_id,
             delivery_status="pending",
+            clip_path=clip_path,
         )
         with self._conn() as conn:
             conn.execute(
@@ -262,8 +266,8 @@ class AlertStore:
                     rationale, frame_index, timestamp_sec, snapshot_path, status,
                     detections_json, metadata_json, severity, location_label,
                     camera_id, frame_time, short_rationale, recommended_human_action,
-                    correlation_id, delivery_status
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    correlation_id, delivery_status, clip_path
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     alert.id,
@@ -287,6 +291,7 @@ class AlertStore:
                     alert.recommended_human_action,
                     alert.correlation_id,
                     alert.delivery_status,
+                    alert.clip_path,
                 ),
             )
             conn.execute(
@@ -639,4 +644,5 @@ class AlertStore:
             or recommended_human_action(category),
             correlation_id=self._col(row, "correlation_id") or alert_id,
             delivery_status=self._col(row, "delivery_status") or "pending",
+            clip_path=self._col(row, "clip_path"),
         )

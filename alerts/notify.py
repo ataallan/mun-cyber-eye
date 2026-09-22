@@ -182,6 +182,7 @@ def email_bodies(payload: dict[str, Any]) -> tuple[str, str]:
         f"Camera ID: {payload.get('camera_id') or '—'}\n"
         f"Source: {payload.get('source') or '—'}\n"
         f"Frame time: {payload.get('frame_time')} (#{payload.get('frame_index')})\n"
+        f"Incident clip: {'saved with this alert in the console' if payload.get('clip_path') else 'none'}\n"
         f"Human status: {payload.get('human_status')}\n"
         f"Delivery status: {payload.get('delivery_status')}\n\n"
         f"Rationale: {short}\n\n"
@@ -207,6 +208,7 @@ def email_bodies(payload: dict[str, Any]) -> tuple[str, str]:
     <tr><td style="color:#9aabc8;padding:4px 8px;">Camera ID</td><td>{payload.get("camera_id") or "—"}</td></tr>
     <tr><td style="color:#9aabc8;padding:4px 8px;">Source</td><td>{payload.get("source") or "—"}</td></tr>
     <tr><td style="color:#9aabc8;padding:4px 8px;">Frame time</td><td>{payload.get("frame_time")} (#{payload.get("frame_index")})</td></tr>
+    <tr><td style="color:#9aabc8;padding:4px 8px;">Incident clip</td><td>{"saved with this alert in the console" if payload.get("clip_path") else "none"}</td></tr>
     <tr><td style="color:#9aabc8;padding:4px 8px;">Created</td><td>{payload.get("created_at")}</td></tr>
     <tr><td style="color:#9aabc8;padding:4px 8px;">Alert ID</td><td style="font-family:monospace;">{payload.get("id")}</td></tr>
     <tr><td style="color:#9aabc8;padding:4px 8px;">Correlation</td><td style="font-family:monospace;">{payload.get("correlation_id")}</td></tr>

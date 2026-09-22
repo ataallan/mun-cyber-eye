@@ -24,6 +24,9 @@
     {% if session.get('user') %}
     <nav class="nav">
       <a href="{{ url_for('main.dashboard') }}">Alerts</a>
+      {% if monitor_status.running %}
+      <span class="badge health-ok nav-monitor">Monitoring</span>
+      {% endif %}
       <a href="{{ url_for('main.run_pipeline') }}">Run</a>
       {% if can_train %}
       <a href="{{ url_for('main.admin_train') }}">Train models</a>

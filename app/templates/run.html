@@ -1,8 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Run · {{ product_name }}{% endblock %}
 {% block content %}
+{% include "_monitor.html" %}
+
 <section class="card">
   <h1>Run</h1>
+  <p class="fineprint">One-shot check. Leave monitoring on to keep watching enabled cameras.</p>
 
   <form method="post" class="form" id="run-form">
     <fieldset>

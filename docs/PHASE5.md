@@ -68,7 +68,11 @@ On first boot the app seeds the authorized demo set (create-if-missing). Empty `
 | `rtsp` | `cv2.VideoCapture` with `RTSP_CONNECT_TIMEOUT_SEC` (thread join + OpenCV open/read timeouts). Failure → `last_error`, no fake detections. |
 | `webcam` | Refused unless `ALLOW_WEBCAM=1`. Default is off with a clear message. |
 
-**Multi-camera:** the prototype runs one camera by id, or all **enabled** cameras **in sequence**. True parallel streaming is optional later; sequential keeps OpenCV capture simple and failure isolation honest.
+**Multi-camera:** Run Pipeline still runs one camera by id, or all **enabled** cameras **in sequence**. True parallel streaming is optional later; sequential keeps OpenCV capture simple and failure isolation honest.
+
+**Continuous monitoring** (`monitor.py`) is the customer path. A background worker in the console process sweeps enabled cameras until Stop. Live RTSP and webcam are sampled again every sweep (`MONITOR_MAX_FRAMES_PER_PASS`, then a short pause). Recorded files and `MOCK` URIs are reviewed once per monitoring session unless the file’s size or modification time changes. A dead RTSP URL or missing file sets `last_error` and does not invent detections. `MONITOR_AUTOSTART=1` starts the worker with the process; the console Stop/Start choice is stored in `data/monitor_state.json`.
+
+A suspected incident saves a short clip (`ingest/clips.py`) from the frames already sampled: default 5s before and 5s after the detection (~10s, cap 15s) under `data/clips/`. The alert row stores `clip_path` and the review page plays it. The same camera and category is quiet for `MONITOR_ALERT_COOLDOWN_SEC` (default 60) so a continuous event does not flood alerts. Notify (owner `security_email` / login email and other recipients) still runs when that alert is created. `MAX_INCIDENT_CLIPS` may delete old clip files; it does not delete alert rows.
 
 Alerts created from a registry camera carry that camera’s `camera_id` and `location_label` (not only `DEFAULT_CAMERA_*` env).
 
@@ -77,8 +81,10 @@ Alerts created from a registry camera carry that camera’s `camera_id` and `loc
 | Path | Who | Purpose |
 |------|-----|---------|
 | `/cameras` | admin / operator | List, add, edit, enable / disable (no permanent delete) |
-| `/run` | signed-in reviewer | Registered cameras (product path), optional lab-only MOCK / activity demo. Video files are not a detection path; developers extract frames on Train models. Last run lists optional home/community objects when YOLO is available; otherwise `objects_backend=unavailable` (nothing invented). |
-| `/` | signed-in reviewer | Alert console + camera health |
+| `/run` | signed-in reviewer | One-shot check of registered cameras, plus optional lab-only MOCK / activity demo. Video files are not a detection path; developers extract frames on Train models. |
+| `/` | signed-in reviewer | Alert console, Start / Stop monitoring, camera health |
+| `/monitor/start`, `/monitor/stop` | signed-in reviewer | Turn continuous monitoring on or off |
+| `/clips/<file>` | signed-in reviewer | Play an incident clip linked from an alert |
 
 ## Safety
 
@@ -91,8 +97,8 @@ Alerts created from a registry camera carry that camera’s `camera_id` and `loc
 
 1. Sign in (Create account on a fresh install — no default password).
 2. Open **Cameras**. Confirm the seeded Demo Lab File camera (or **Add camera** → type `file`, URI `MOCK` or an authorized path).
-3. **Run Pipeline** → Registered authorized cameras → that camera (or “All enabled”). Lab-only MOCK is not the customer path. To label a clip, a Mun Cyber developer uses **Train models → Extract frames from video**. Customers use shipped checkpoints.
-4. Open an alert: `camera_id` and `location_label` match the registry row. Acknowledge / dismiss / escalate / reopen — the row is retained.
+3. **Monitoring** starts with the console when `MONITOR_AUTOSTART=1`. Use **Start monitoring** / **Stop monitoring** on the alert console. **Run** is a one-shot check, not the customer path. Lab-only MOCK is not the customer path. To label a clip, a Mun Cyber developer uses **Train models → Extract frames from video**. Customers use shipped checkpoints.
+4. Open an alert: `camera_id` and `location_label` match the registry row. If monitoring raised it, play the short incident clip on the review page. Acknowledge / dismiss / escalate / reopen — the row is retained.
 5. To try RTSP: set `RTSP_DEMO_URI` in `.env`, enable the stub camera. A bad or empty URI marks `last_error` and creates no alerts.
 
 ```bash

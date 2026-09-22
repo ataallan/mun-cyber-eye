@@ -7,11 +7,12 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 import uuid
-from collections import Counter
+from collections import Counter, deque
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 import cv2
 
@@ -19,6 +20,16 @@ from alerts.notify import NotificationService
 from alerts.schema import recommended_human_action, short_rationale
 from alerts.store import Alert, AlertStore
 from ingest.cameras import Camera, CameraStore
+from ingest.clips import (
+    DEFAULT_CLIP_MAX_SEC,
+    DEFAULT_CLIP_POST_SEC,
+    DEFAULT_CLIP_PRE_SEC,
+    DEFAULT_MAX_INCIDENT_CLIPS,
+    clip_duration_sec,
+    prune_incident_clips,
+    select_clip_frames,
+    write_incident_clip,
+)
 from ingest.errors import IngestError
 from ingest.sampler import FrameSampler, SampledFrame
 from ingest.source import iter_camera_frames
@@ -101,6 +112,12 @@ class CyberEyePipeline:
         camera_place_type: Optional[str] = None,
         object_mode: Optional[str] = None,
         notify_extra_recipients: Optional[List[str]] = None,
+        clip_dir: Optional[str | Path] = None,
+        clip_pre_sec: float = DEFAULT_CLIP_PRE_SEC,
+        clip_post_sec: float = DEFAULT_CLIP_POST_SEC,
+        clip_max_sec: float = DEFAULT_CLIP_MAX_SEC,
+        max_incident_clips: int = DEFAULT_MAX_INCIDENT_CLIPS,
+        alert_cooldown_sec: float = 0.0,
     ) -> None:
         self.store = store
         self.adapter = adapter or create_adapter()
@@ -117,6 +134,17 @@ class CyberEyePipeline:
         self.camera_place_type = camera_place_type or ""
         self.object_mode = (object_mode or os.getenv("OBJECTS_BACKEND", "auto")).strip().lower()
         self.notify_extra_recipients = list(notify_extra_recipients or [])
+        self.clip_dir = Path(clip_dir) if clip_dir else None
+        if self.clip_dir is not None:
+            self.clip_dir.mkdir(parents=True, exist_ok=True)
+        self.clip_pre_sec = max(0.0, float(clip_pre_sec))
+        self.clip_post_sec = max(0.0, float(clip_post_sec))
+        self.clip_max_sec = max(
+            self.clip_pre_sec + self.clip_post_sec, float(clip_max_sec)
+        )
+        self.max_incident_clips = int(max_incident_clips)
+        self.alert_cooldown_sec = max(0.0, float(alert_cooldown_sec))
+        self._cooldown_until: Dict[tuple[str, str], float] = {}
 
     def run_video(
         self,
@@ -162,6 +190,7 @@ class CyberEyePipeline:
         timeout_sec: Optional[float] = None,
         rtsp_opener=None,
         webcam_opener=None,
+        stop_check: Optional[Callable[[int, bool], bool]] = None,
     ) -> PipelineResult:
         """Run the pipeline on one registered authorized camera."""
         frames = iter_camera_frames(
@@ -179,6 +208,7 @@ class CyberEyePipeline:
             camera_id=camera.id,
             location_label=camera.location_label,
             camera_place_type=camera.place_type,
+            stop_check=stop_check,
         )
 
     def _process(
@@ -188,6 +218,7 @@ class CyberEyePipeline:
         camera_id: Optional[str] = None,
         location_label: Optional[str] = None,
         camera_place_type: Optional[str] = None,
+        stop_check: Optional[Callable[[int, bool], bool]] = None,
     ) -> PipelineResult:
         alerts: List[Alert] = []
         assessments: List[FrameAssessment] = []
@@ -198,7 +229,12 @@ class CyberEyePipeline:
         object_counts: Counter[str] = Counter()
         objects_backend = "unavailable"
         objects_note = ""
+        clip_buffer: deque[SampledFrame] = deque()
+        open_incident: Optional[dict] = None
+        keep_sec = self.clip_pre_sec + self.clip_post_sec
         for frame in frame_iter:
+            if stop_check is not None and stop_check(count, open_incident is not None):
+                break
             count += 1
             detections = self.adapter.detect(frame.image_bgr, frame_index=frame.index)
             inventory = collect_object_inventory(
@@ -270,143 +306,86 @@ class CyberEyePipeline:
                 )
             )
 
-            if not risk.should_alert:
-                continue
-
             stamp_camera = camera_id if camera_id is not None else self.camera_id
             stamp_location = (
                 location_label if location_label is not None else self.location_label
             )
-            snap_path = self._save_snapshot(
-                frame, risk.category.value, camera_id=stamp_camera or ""
+            category_name = (
+                risk.category.value
+                if hasattr(risk.category, "value")
+                else str(risk.category)
             )
-            det_payload = [
-                {
-                    "label": d.label,
-                    "confidence": d.confidence,
-                    "bbox_xyxy": list(d.bbox_xyxy),
-                }
-                for d in detections
-            ]
-            metadata = {
-                "vision_backend": self.adapter.name,
-                "contributing_labels": risk.contributing_labels,
-                "aggression": {
-                    "score": risk.aggression_score,
-                    "cues": list(risk.aggression_cues),
-                },
-                "face_aggression": {
-                    "status": risk.face_cue_status,
-                    "note": risk.face_note,
-                },
-            }
-            if risk.sport_context:
-                metadata["sport_context"] = risk.sport_context
-                metadata["sport_display"] = risk.sport_display
-                metadata["sport_confidence"] = risk.sport_confidence
-            if risk.place_type and risk.place_type != "unknown":
-                metadata["place_type"] = risk.place_type
-                metadata["place_display"] = risk.place_display
-                metadata["place_confidence"] = risk.place_confidence
-                metadata["place_source"] = risk.place_source
-            metadata["kit"] = {
-                "team_kit_similarity": risk.team_kit_similarity,
-                "jersey_like_colors": bool(risk.jersey_like_colors),
-                "note": risk.kit_note
-                or (
-                    "Clothing color clusters are assistive only — not identity "
-                    "or a guilt label."
-                ),
-            }
-            if stamp_camera:
-                metadata["camera_id"] = stamp_camera
-            if stamp_location:
-                metadata["location_label"] = stamp_location
-            ckpt = getattr(self.adapter, "checkpoint_path", None)
-            if ckpt is not None:
-                metadata["activity_checkpoint"] = str(ckpt)
-            scores = next(
-                (
-                    d.extras.get("scores")
-                    for d in detections
-                    if isinstance(d.extras, dict) and d.extras.get("scores")
-                ),
-                None,
-            )
-            if scores:
-                metadata["activity_scores"] = scores
-            metadata["objects_backend"] = inventory.backend
-            if frame_objects:
-                metadata["objects"] = frame_objects
-            elif inventory.backend == "unavailable":
-                metadata["objects"] = []
-                metadata["objects_note"] = inventory.note
-            if risk.fall_manner or risk.category == "potential_fall":
-                metadata["fall_manner"] = risk.fall_manner or "unknown_fall"
-                metadata["fall_confidence"] = risk.fall_confidence
-                metadata["fall_display"] = risk.fall_display
-            metadata["gunshot"] = {
-                "video_proxy": bool(risk.gunshot_proxy),
-                "confidence": risk.gunshot_confidence,
-                "audio_status": risk.gunshot_audio_status or "disabled",
-            }
-            if risk.aimed_at_person or risk.weapon_use_tier or risk.weapon_id or risk.weapon_class:
-                metadata["weapon"] = {
-                    "aimed_at_person": bool(risk.aimed_at_person),
-                    "use_intensity": risk.weapon_use_intensity,
-                    "use_intensity_label": risk.use_intensity_label or risk.weapon_use_tier,
-                    "use_tier": risk.weapon_use_tier,
-                    "weapon_class": risk.weapon_class,
-                    "harm_potential": risk.harm_potential,
-                    "weapon_id": risk.weapon_id,
-                    "cue": (
-                        "firearm_aimed_at_person"
-                        if risk.aimed_at_person
-                        else risk.use_intensity_label or risk.weapon_use_tier
-                    ),
-                }
-            if risk.thrown_at_person:
-                metadata["throw"] = {
-                    "thrown_at_person": True,
-                    "object_label": risk.throw_label,
-                    "use_tier": "thrown_projectile",
-                    "confidence": risk.throw_confidence,
-                    "cue": "object_thrown_at_person",
-                }
+            if self.clip_dir is not None:
+                clip_buffer.append(_copy_frame(frame))
+                cutoff = float(frame.timestamp_sec) - keep_sec
+                while clip_buffer and clip_buffer[0].timestamp_sec < cutoff:
+                    clip_buffer.popleft()
 
-            alert = self.store.create_alert(
+            if (
+                open_incident is not None
+                and float(frame.timestamp_sec) + 1e-6 >= float(open_incident["end_ts"])
+            ):
+                self._close_incident(
+                    open_incident,
+                    clip_buffer,
+                    alerts,
+                    source_label=source_label,
+                    camera_id=stamp_camera,
+                    location_label=stamp_location,
+                    correlation_id=run_correlation,
+                )
+                open_incident = None
+
+            if open_incident is not None:
+                if risk.should_alert and category_name == open_incident["category"]:
+                    self._extend_incident(open_incident, float(frame.timestamp_sec))
+                continue
+
+            if not risk.should_alert:
+                continue
+
+            if self._cooling_down(stamp_camera or "", category_name):
+                continue
+
+            if self.clip_dir is not None:
+                event_ts = float(frame.timestamp_sec)
+                open_incident = {
+                    "frame": clip_buffer[-1] if clip_buffer else _copy_frame(frame),
+                    "detections": detections,
+                    "risk": risk,
+                    "inventory": inventory,
+                    "frame_objects": frame_objects,
+                    "event_ts": event_ts,
+                    "end_ts": event_ts + self.clip_post_sec,
+                    "category": category_name,
+                }
+                self._extend_incident(open_incident, event_ts)
+                continue
+
+            alert = self._emit_alert(
+                frame,
+                detections,
+                risk,
+                inventory,
+                frame_objects,
                 source_label=frame.source_label or source_label,
-                category=risk.category.value,
-                risk_level=risk.risk_level.value,
-                confidence=risk.confidence,
-                rationale=risk.rationale,
-                frame_index=frame.index,
-                timestamp_sec=frame.timestamp_sec,
-                snapshot_path=str(snap_path) if snap_path else None,
-                detections=det_payload,
-                metadata=metadata,
-                location_label=location_label
-                if location_label is not None
-                else self.location_label,
-                camera_id=camera_id if camera_id is not None else self.camera_id,
-                short_rationale_text=short_rationale(risk.rationale),
-                recommended_action=recommended_human_action(risk.category.value),
+                camera_id=stamp_camera,
+                location_label=stamp_location,
                 correlation_id=run_correlation,
             )
-            if self.notifier:
-                alert = self.notifier.deliver(
-                    alert,
-                    actor="system",
-                    extra_recipients=self.notify_extra_recipients,
-                )
             alerts.append(alert)
-            logger.info(
-                "Alert %s [%s/%s] conf=%.2f frame=%s",
-                alert.id[:8],
-                risk.risk_level.value,
-                risk.category.value,
-                risk.confidence,
-                frame.index,
+
+        if open_incident is not None:
+            self._close_incident(
+                open_incident,
+                clip_buffer,
+                alerts,
+                source_label=source_label,
+                camera_id=camera_id if camera_id is not None else self.camera_id,
+                location_label=(
+                    location_label if location_label is not None else self.location_label
+                ),
+                correlation_id=run_correlation,
             )
 
         return PipelineResult(
@@ -426,6 +405,239 @@ class CyberEyePipeline:
             objects_note=objects_note,
         )
 
+    def _cooling_down(self, camera_id: str, category: str) -> bool:
+        if self.alert_cooldown_sec <= 0:
+            return False
+        until = self._cooldown_until.get((camera_id or "", category))
+        if until is None:
+            return False
+        return time.monotonic() < until
+
+    def _mark_cooldown(self, camera_id: str, category: str) -> None:
+        if self.alert_cooldown_sec <= 0:
+            return
+        self._cooldown_until[(camera_id or "", category)] = (
+            time.monotonic() + self.alert_cooldown_sec
+        )
+
+    def _extend_incident(self, incident: dict, timestamp_sec: float) -> None:
+        max_end = (
+            float(incident["event_ts"]) - self.clip_pre_sec + self.clip_max_sec
+        )
+        proposed = float(timestamp_sec) + self.clip_post_sec
+        incident["end_ts"] = min(
+            max_end, max(float(incident["end_ts"]), proposed)
+        )
+
+    def _close_incident(
+        self,
+        incident: dict,
+        buffer: deque,
+        alerts: List[Alert],
+        *,
+        source_label: str,
+        camera_id: Optional[str],
+        location_label: Optional[str],
+        correlation_id: str,
+    ) -> None:
+        selected = select_clip_frames(
+            buffer,
+            event_ts=float(incident["event_ts"]),
+            end_ts=float(incident["end_ts"]),
+            pre_sec=self.clip_pre_sec,
+        )
+        if not selected:
+            selected = [incident["frame"]]
+        clip_path = None
+        clip_meta = {
+            "pre_sec": self.clip_pre_sec,
+            "post_sec": self.clip_post_sec,
+            "max_sec": self.clip_max_sec,
+            "frames": len(selected),
+            "duration_sec": round(clip_duration_sec(selected), 3),
+        }
+        if self.clip_dir is not None:
+            try:
+                written = write_incident_clip(
+                    selected,
+                    self.clip_dir,
+                    camera_id=camera_id or "",
+                    category=incident["category"],
+                )
+                if written is not None:
+                    clip_path = str(written)
+                    prune_incident_clips(self.clip_dir, self.max_incident_clips)
+            except Exception as exc:
+                logger.warning("Incident clip save failed: %s", exc)
+        alert = self._emit_alert(
+            incident["frame"],
+            incident["detections"],
+            incident["risk"],
+            incident["inventory"],
+            incident["frame_objects"],
+            source_label=incident["frame"].source_label or source_label,
+            camera_id=camera_id,
+            location_label=location_label,
+            correlation_id=correlation_id,
+            clip_path=clip_path,
+            clip_meta=clip_meta,
+        )
+        self._mark_cooldown(camera_id or "", incident["category"])
+        alerts.append(alert)
+
+    def _emit_alert(
+        self,
+        frame: SampledFrame,
+        detections,
+        risk,
+        inventory,
+        frame_objects: list,
+        *,
+        source_label: str,
+        camera_id: Optional[str],
+        location_label: Optional[str],
+        correlation_id: str,
+        clip_path: Optional[str] = None,
+        clip_meta: Optional[dict] = None,
+    ) -> Alert:
+        stamp_camera = camera_id or ""
+        stamp_location = location_label or ""
+        snap_path = self._save_snapshot(
+            frame, risk.category.value, camera_id=stamp_camera
+        )
+        det_payload = [
+            {
+                "label": d.label,
+                "confidence": d.confidence,
+                "bbox_xyxy": list(d.bbox_xyxy),
+            }
+            for d in detections
+        ]
+        metadata = {
+            "vision_backend": self.adapter.name,
+            "contributing_labels": risk.contributing_labels,
+            "aggression": {
+                "score": risk.aggression_score,
+                "cues": list(risk.aggression_cues),
+            },
+            "face_aggression": {
+                "status": risk.face_cue_status,
+                "note": risk.face_note,
+            },
+        }
+        if risk.sport_context:
+            metadata["sport_context"] = risk.sport_context
+            metadata["sport_display"] = risk.sport_display
+            metadata["sport_confidence"] = risk.sport_confidence
+        if risk.place_type and risk.place_type != "unknown":
+            metadata["place_type"] = risk.place_type
+            metadata["place_display"] = risk.place_display
+            metadata["place_confidence"] = risk.place_confidence
+            metadata["place_source"] = risk.place_source
+        metadata["kit"] = {
+            "team_kit_similarity": risk.team_kit_similarity,
+            "jersey_like_colors": bool(risk.jersey_like_colors),
+            "note": risk.kit_note
+            or (
+                "Clothing color clusters are assistive only — not identity "
+                "or a guilt label."
+            ),
+        }
+        if stamp_camera:
+            metadata["camera_id"] = stamp_camera
+        if stamp_location:
+            metadata["location_label"] = stamp_location
+        ckpt = getattr(self.adapter, "checkpoint_path", None)
+        if ckpt is not None:
+            metadata["activity_checkpoint"] = str(ckpt)
+        scores = next(
+            (
+                d.extras.get("scores")
+                for d in detections
+                if isinstance(d.extras, dict) and d.extras.get("scores")
+            ),
+            None,
+        )
+        if scores:
+            metadata["activity_scores"] = scores
+        metadata["objects_backend"] = inventory.backend
+        if frame_objects:
+            metadata["objects"] = frame_objects
+        elif inventory.backend == "unavailable":
+            metadata["objects"] = []
+            metadata["objects_note"] = inventory.note
+        if risk.fall_manner or risk.category == "potential_fall":
+            metadata["fall_manner"] = risk.fall_manner or "unknown_fall"
+            metadata["fall_confidence"] = risk.fall_confidence
+            metadata["fall_display"] = risk.fall_display
+        metadata["gunshot"] = {
+            "video_proxy": bool(risk.gunshot_proxy),
+            "confidence": risk.gunshot_confidence,
+            "audio_status": risk.gunshot_audio_status or "disabled",
+        }
+        if risk.aimed_at_person or risk.weapon_use_tier or risk.weapon_id or risk.weapon_class:
+            metadata["weapon"] = {
+                "aimed_at_person": bool(risk.aimed_at_person),
+                "use_intensity": risk.weapon_use_intensity,
+                "use_intensity_label": risk.use_intensity_label or risk.weapon_use_tier,
+                "use_tier": risk.weapon_use_tier,
+                "weapon_class": risk.weapon_class,
+                "harm_potential": risk.harm_potential,
+                "weapon_id": risk.weapon_id,
+                "cue": (
+                    "firearm_aimed_at_person"
+                    if risk.aimed_at_person
+                    else risk.use_intensity_label or risk.weapon_use_tier
+                ),
+            }
+        if risk.thrown_at_person:
+            metadata["throw"] = {
+                "thrown_at_person": True,
+                "object_label": risk.throw_label,
+                "use_tier": "thrown_projectile",
+                "confidence": risk.throw_confidence,
+                "cue": "object_thrown_at_person",
+            }
+        if clip_path or clip_meta:
+            metadata["incident_clip"] = dict(clip_meta or {})
+            if clip_path:
+                metadata["incident_clip"]["path"] = clip_path
+
+        alert = self.store.create_alert(
+            source_label=source_label,
+            category=risk.category.value,
+            risk_level=risk.risk_level.value,
+            confidence=risk.confidence,
+            rationale=risk.rationale,
+            frame_index=frame.index,
+            timestamp_sec=frame.timestamp_sec,
+            snapshot_path=str(snap_path) if snap_path else None,
+            detections=det_payload,
+            metadata=metadata,
+            location_label=stamp_location,
+            camera_id=stamp_camera,
+            short_rationale_text=short_rationale(risk.rationale),
+            recommended_action=recommended_human_action(risk.category.value),
+            correlation_id=correlation_id,
+            clip_path=clip_path,
+        )
+        if self.notifier:
+            alert = self.notifier.deliver(
+                alert,
+                actor="system",
+                extra_recipients=self.notify_extra_recipients,
+            )
+        logger.info(
+            "Alert %s [%s/%s] conf=%.2f frame=%s clip=%s",
+            alert.id[:8],
+            risk.risk_level.value,
+            risk.category.value,
+            risk.confidence,
+            frame.index,
+            "yes" if clip_path else "no",
+        )
+        return alert
+
     def _save_snapshot(
         self,
         frame: SampledFrame,
@@ -444,6 +656,20 @@ class CyberEyePipeline:
         except Exception as exc:
             logger.warning("Snapshot save failed: %s", exc)
             return None
+
+
+def _copy_frame(frame: SampledFrame) -> SampledFrame:
+    image = frame.image_bgr
+    try:
+        image = image.copy()
+    except Exception:
+        pass
+    return SampledFrame(
+        index=frame.index,
+        timestamp_sec=frame.timestamp_sec,
+        image_bgr=image,
+        source_label=frame.source_label,
+    )
 
 
 def demo_synthetic_run(
@@ -587,6 +813,7 @@ def run_registered_cameras(
     timeout_sec: Optional[float] = None,
     rtsp_opener=None,
     webcam_opener=None,
+    stop_check: Optional[Callable[[int, bool], bool]] = None,
 ) -> List[PipelineResult]:
     """Run enabled cameras sequentially (prototype: not true parallel streaming).
 
@@ -604,6 +831,7 @@ def run_registered_cameras(
                 timeout_sec=timeout_sec,
                 rtsp_opener=rtsp_opener,
                 webcam_opener=webcam_opener,
+                stop_check=stop_check,
             )
             if result.frames_processed <= 0:
                 raise IngestError(

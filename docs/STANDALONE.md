@@ -8,7 +8,7 @@ The rest of this page is the alternate **source folder** (or `mun-cyber-eye-stan
 
 ## Product rules (shipped)
 
-- **Detection** runs from **registered authorized cameras** (RTSP, file-source cameras, webcam if enabled) when the pipeline runs. Humans review, acknowledge, dismiss, escalate, or reopen. No autonomous enforcement. No facial criminal or identity labeling.
+- **Detection** runs from **registered authorized cameras** (RTSP, file-source cameras, webcam if enabled) while monitoring is on. Humans review, acknowledge, dismiss, escalate, or reopen. No autonomous enforcement. No facial criminal or identity labeling.
 - **Video file uploads are for training only** (Mun Cyber developer → Train models → Extract frames from video). Run Pipeline is not a customer “upload an incident clip for live detection” path. Customer installs use shipped checkpoints; training is developer-side.
 - **No default credentials.** Create the first site admin on **Create account** with a password you choose. That first account is auto-approved and can approve later customers. On sign-in it confirms a one-time code sent to its login email (`CUSTOMER_2FA_REQUIRED=1`, product default). It cannot train models. Later Create account users wait for admin approval — they have neither console access nor a sign-in code until approved. Set `CUSTOMER_2FA_REQUIRED=0` only for local demos that skip the email-code step. Set `AUTH_SHOW_LOGIN_CODE=1` to print the code on the verify page when Resend is not configured (the UI will not claim a message was emailed).
 - **No delete wipe** for alert rows, cameras, or a video library. See [PRODUCT_OPS.md](PRODUCT_OPS.md).
@@ -79,7 +79,7 @@ python run.py
 
 1. **Accounts** — approve pending customer registrations (site admin or lab developer). Until approved, those users cannot sign in and are never sent a sign-in code. After approval they confirm an email code, then use cameras / alerts.
 2. **Cameras** — confirm or add authorized RTSP / file sources (webcam only if you set `ALLOW_WEBCAM=1`).
-3. **Run Pipeline** — registered cameras (product path). MOCK is lab-only.
+3. **Monitoring** — watches enabled cameras while the console is open (on by default). **Run** is a one-shot check. MOCK is lab-only. A suspected incident saves a short clip on the alert.
 4. **Alerts** — acknowledge / dismiss / escalate / reopen. Rows are retained.
 5. Customers do **not** retrain models. Use the shipped checkpoint. Training / extract / upload stay on Mun Cyber lab machines (`DEVELOPER_*` in `.env`).
 

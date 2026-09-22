@@ -13,6 +13,8 @@ data/alerts.db
 data/auth.db
 data/cameras.db
 data/snapshots/
+data/clips/
+data/monitor_state.json
 data/uploads/*
 !data/uploads/.gitkeep
 data/activity/train/
