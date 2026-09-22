@@ -42,7 +42,7 @@ Do not commit a real `.env`. Do not ship `.venv`.
 
 `MunCyberEyeSetup.exe` creates the Desktop shortcut **Mun Cyber Eye** with this icon. See [WINDOWS_INSTALLER.md](WINDOWS_INSTALLER.md).
 
-`app/static/img/mun-cyber-eye.ico` is a multi-size icon (16, 24, 32, 48, 64, 128, and 256). `scripts/build_icon.py` builds it from `app/static/img/mun-cyber-eye-logo.png`: a square crop of the eye, on the console background color. The customer zip already contains the `.ico`.
+`app/static/img/mun-cyber-eye.ico` is a multi-size icon (16, 24, 32, 48, 64, 128, and 256). `scripts/build_icon.py` builds it from `app/static/img/mun-cyber-eye-logo.png`: a square crop of the eye (the wordmark under the eye is left out), on the console background color. The customer zip already contains the `.ico`.
 
 When `.venv` is healthy, `install_and_run.ps1` creates the shortcuts with `WScript.Shell`:
 

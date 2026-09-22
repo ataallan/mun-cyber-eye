@@ -22,14 +22,70 @@ SIZES = (16, 24, 32, 48, 64, 128, 256)
 TILE = (11, 18, 32, 255)
 
 
+def _visible(pixel: tuple[int, int, int, int]) -> bool:
+    red, green, blue, alpha = pixel
+    return alpha > 24 and (red > 16 or green > 16 or blue > 16)
+
+
+def _mark_bands(src: Image.Image) -> list[tuple[int, int, int, int]]:
+    """Vertical bands of the mark as (left, top, right, bottom).
+
+    Gaps of a few pixels (the pupil, or antialiasing) stay inside one band.
+    A wordmark under the eye is a separate, shorter band.
+    """
+    image = src.convert("RGBA")
+    pixels = image.load()
+    width, height = image.size
+    spans: list[tuple[int, int] | None] = []
+    for y in range(height):
+        left = width
+        right = -1
+        for x in range(width):
+            if _visible(pixels[x, y]):
+                if x < left:
+                    left = x
+                right = x
+        spans.append((left, right) if right >= 0 else None)
+
+    bands: list[tuple[int, int, int, int]] = []
+    start: int | None = None
+    last = 0
+    min_x = width
+    max_x = 0
+    for y, span in enumerate(spans):
+        if span is None:
+            continue
+        if start is None or y - last > 10:
+            if start is not None:
+                bands.append((min_x, start, max_x + 1, last + 1))
+            start = y
+            min_x, max_x = span
+        else:
+            min_x = min(min_x, span[0])
+            max_x = max(max_x, span[1])
+        last = y
+    if start is not None:
+        bands.append((min_x, start, max_x + 1, last + 1))
+    return bands
+
+
 def _eye_crop(src: Image.Image) -> Image.Image:
-    """Square crop of the eye, centered in the wide logo."""
-    crop = src.convert("RGBA").crop(src.getbbox())
+    """Square crop of the eye, centered on the mark.
+
+    The installed logo may include the wordmark. The icon keeps the taller
+    eye band so 16px shortcuts stay a recognizable eye.
+    """
+    bands = _mark_bands(src)
+    if not bands:
+        crop = src.convert("RGBA").crop(src.getbbox() or (0, 0, *src.size))
+    else:
+        left, top, right, bottom = max(bands, key=lambda band: (band[3] - band[1], band[2] - band[0]))
+        crop = src.convert("RGBA").crop((left, top, right, bottom))
     width, height = crop.size
     side = min(width, height)
-    left = max(0, (width - side) // 2)
-    top = max(0, (height - side) // 2)
-    return crop.crop((left, top, left + side, top + side))
+    offset_x = max(0, (width - side) // 2)
+    offset_y = max(0, (height - side) // 2)
+    return crop.crop((offset_x, offset_y, offset_x + side, offset_y + side))
 
 
 def _render(eye: Image.Image, size: int) -> Image.Image:
