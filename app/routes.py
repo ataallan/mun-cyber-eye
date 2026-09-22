@@ -799,6 +799,17 @@ def alert_detail(alert_id: str):
     developer = can_train(session.get("role"))
     meta = _alert_metadata(alert) if developer else {}
     correction = meta.get("label_correction") if isinstance(meta.get("label_correction"), dict) else None
+    selected_category = alert.category if alert.category in ACTIVITY_CATEGORIES else ""
+    selected_sport = (meta.get("sport_context") or "") if developer else ""
+    selected_place = (meta.get("place_type") or "") if developer else ""
+    if developer and correction:
+        corrected_category = correction.get("category") or ""
+        if corrected_category in ACTIVITY_CATEGORIES:
+            selected_category = corrected_category
+        if correction.get("sport_context"):
+            selected_sport = correction.get("sport_context") or ""
+        if correction.get("place_type"):
+            selected_place = correction.get("place_type") or ""
     return render_template(
         "alert_detail.html",
         alert=alert,
@@ -811,9 +822,9 @@ def alert_detail(alert_id: str):
         categories=list(ACTIVITY_CATEGORIES) if developer else [],
         sports=all_sports() if developer else [],
         places=_cameras().list_place_choices() if developer else [],
-        selected_category=alert.category if alert.category in ACTIVITY_CATEGORIES else "",
-        selected_sport=(meta.get("sport_context") or "") if developer else "",
-        selected_place=(meta.get("place_type") or "") if developer else "",
+        selected_category=selected_category,
+        selected_sport=selected_sport,
+        selected_place=selected_place,
         label_correction=correction if developer else None,
     )
 
@@ -905,6 +916,9 @@ def alert_correct_label(alert_id: str):
     store.record_audit(alert.id, "correct_label", actor, note)
     store.record_system_audit("correct_label", actor, note)
     correction = {
+        "category": label["category"],
+        "sport_context": label["sport_context"],
+        "place_type": label["place_type"] if label["kind"] == "place" else "",
         "folder": result["folder"],
         "frames": result["frames"],
         "source": source["kind"],

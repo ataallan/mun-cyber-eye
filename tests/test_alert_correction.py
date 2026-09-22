@@ -126,6 +126,7 @@ def test_developer_sends_incident_clip_frames_without_activating(client, app, tm
     assert "Saved" in text
     assert "train/dance" in text
     assert "live checkpoint was not changed" in text
+    assert 'value="dance" selected' in text
     dest = tmp_path / "activity" / "train" / "dance"
     frames = list(dest.glob("*.jpg"))
     assert frames
