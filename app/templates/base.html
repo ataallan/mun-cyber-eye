@@ -28,6 +28,7 @@
       <span class="badge health-ok nav-monitor">Monitoring</span>
       {% endif %}
       <a href="{{ url_for('main.archive') }}">Archive</a>
+      <a href="{{ url_for('main.gallery') }}">Objects</a>
       <a href="{{ url_for('main.run_pipeline') }}">Run</a>
       {% if can_train %}
       <a href="{{ url_for('main.admin_train') }}">Train models</a>

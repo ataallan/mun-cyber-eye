@@ -99,6 +99,8 @@ class SceneContext:
     throw_harmful: bool = False
     throw_sport_projectile: bool = False
     throw_cues: List[str] = field(default_factory=list)
+    improvised_hit: bool = False
+    improvised_object_label: str = ""
 
     @property
     def sports_venue(self) -> bool:
@@ -341,6 +343,12 @@ def collect_scene_context(detections: Sequence[Detection]) -> SceneContext:
             extra_tc = thrown.get("cues") or []
             if isinstance(extra_tc, (list, tuple)):
                 ctx.throw_cues.extend(str(c) for c in extra_tc)
+
+        if extras.get("improvised_hit") or str(det.label).lower() == "unidentified_striking_object":
+            ctx.improvised_hit = True
+            raw_obj = extras.get("improvised_object_label") or ""
+            if raw_obj:
+                ctx.improvised_object_label = str(raw_obj)
 
     # de-dupe cues, keep order
     seen: set[str] = set()

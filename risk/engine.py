@@ -146,6 +146,9 @@ class RiskEngine:
             )
             return self._stamp(self._gunshot_alert(conf, ctx), ctx)
 
+        if ctx.improvised_hit:
+            return self._stamp(self._improvised_hit_alert(ctx), ctx)
+
         if ctx.thrown_at_person and not self._throw_softens(ctx):
             return self._stamp(self._thrown_alert(ctx), ctx)
 
@@ -770,19 +773,48 @@ class RiskEngine:
             should_alert=True,
         )
 
+    def _improvised_hit_alert(self, ctx: SceneContext) -> RiskResult:
+        what = ctx.improvised_object_label or ctx.weapon_id or "unidentified object"
+        labels = {
+            "unidentified_striking_object",
+            "unidentified_improvised",
+            what,
+        } | set(ctx.weapon_cues)
+        return RiskResult(
+            category=ActivityCategory.POTENTIAL_WEAPON_OBJECT,
+            risk_level=RiskLevel.HIGH,
+            confidence=round(max(0.62, float(ctx.weapon_use_intensity or 0), 0.7), 3),
+            rationale=(
+                "Possible improvised / unidentified object used to hit another person "
+                f"({what}) — verify. Not a named weapon. Not proof of assault or intent. "
+                "Humans must review. The system does not enforce."
+            ),
+            contributing_labels=sorted(lab for lab in labels if lab),
+            should_alert=True,
+        )
+
     def _thrown_alert(self, ctx: SceneContext) -> RiskResult:
         conf = max(0.45, float(ctx.throw_confidence) or 0.5)
         level = RiskLevel.HIGH if ctx.throw_harmful or conf >= 0.65 else RiskLevel.ELEVATED
         what = ctx.throw_label or "object"
+        unidentified = "unidentified_improvised" in set(ctx.throw_cues)
+        if unidentified:
+            rationale = (
+                "Possible improvised / unidentified object thrown at a person "
+                f"({what}) — verify. Not a named weapon. Not proof of assault. "
+                "Humans must review. The system does not enforce."
+            )
+        else:
+            rationale = (
+                f"Possible object thrown toward a person ({what}) — verify. "
+                "Not proof of assault. Distinct from an aimed firearm and from a "
+                "static brandish. Humans must review. No enforcement."
+            )
         return RiskResult(
             category=ActivityCategory.POTENTIAL_WEAPON_OBJECT,
             risk_level=level,
             confidence=round(conf, 3),
-            rationale=(
-                f"Possible object thrown toward a person ({what}) — verify. "
-                "Not proof of assault. Distinct from an aimed firearm and from a "
-                "static brandish. Humans must review. No enforcement."
-            ),
+            rationale=rationale,
             contributing_labels=sorted(
                 {"object_thrown_at_person", what} | set(ctx.throw_cues)
             ),

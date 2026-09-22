@@ -1977,6 +1977,254 @@ def admin_train_objects():
     )
 
 
+def _gallery_context(extra: dict | None = None) -> dict:
+    from vision.gallery import list_gallery_cards
+
+    cards = list_gallery_cards(
+        current_app.config.get("OBJECTS_DATA_ROOT") or "data/objects",
+        current_app.config.get("DANGEROUS_DATA_ROOT") or "data/dangerous",
+    )
+    group = (request.args.get("group") or "all").strip().lower()
+    if group not in {"all", "home", "community", "dangerous"}:
+        group = "all"
+    visible = cards if group == "all" else [card for card in cards if card["group"] == group]
+    for card in cards:
+        card["thumb_urls"] = [
+            url_for(
+                "main.gallery_thumb",
+                kind=card["kind"],
+                object_id=card["id"],
+                split=thumb["split"],
+                filename=thumb["filename"],
+            )
+            for thumb in card.get("thumbs") or []
+        ]
+    ctx = {
+        "cards": visible,
+        "all_cards": cards,
+        "group": group,
+        "cameras": _cameras().list_cameras(),
+        "checkpoint_name": Path(current_app.config.get("ACTIVITY_CHECKPOINT") or "").name,
+    }
+    if extra:
+        ctx.update(extra)
+    return ctx
+
+
+@bp.route("/gallery", methods=["GET"])
+@login_required
+def gallery():
+    return render_template("gallery.html", **_gallery_context())
+
+
+@bp.route("/gallery/examples", methods=["POST"])
+@developer_required
+def gallery_examples():
+    from vision.gallery import parse_gallery_item
+
+    try:
+        kind, object_id = parse_gallery_item(request.form.get("item") or "")
+        split = (request.form.get("split") or "train").strip().lower()
+        saved = 0
+        images = request.files.getlist("images")
+        if any(getattr(upload, "filename", None) for upload in images):
+            saved += training_ops.save_gallery_files(
+                current_app.config,
+                images,
+                kind=kind,
+                object_id=object_id,
+                split=split,
+            )
+        video = request.files.get("video")
+        extracted = 0
+        if video is not None and getattr(video, "filename", None):
+            result = training_ops.extract_video_frames(
+                current_app.config,
+                video,
+                kind=kind,
+                split=split,
+                object_id=object_id,
+                sample_fps=float(request.form.get("sample_fps") or 2),
+                max_frames=int(request.form.get("max_frames") or 24),
+            )
+            extracted = int(result.get("frames") or 0)
+        if saved == 0 and extracted == 0:
+            raise ValueError("Add images or an authorized video.")
+    except (ValueError, TypeError) as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("main.gallery"))
+    actor = session.get("user", "unknown")
+    _store().record_system_audit(
+        "gallery_examples",
+        actor,
+        f"{kind}:{object_id} images={saved} frames={extracted}",
+    )
+    parts = []
+    if saved:
+        parts.append(f"{saved} image(s)")
+    if extracted:
+        parts.append(f"{extracted} frame(s)")
+    flash(f"Saved {' and '.join(parts)} for {object_id}.", "ok")
+    return redirect(url_for("main.gallery"))
+
+
+@bp.route("/gallery/train", methods=["POST"])
+@developer_required
+def gallery_train():
+    """Fit the optional object classifier. Does not activate live detection."""
+    if request.form.get("confirm_live_unchanged") != "1":
+        flash(
+            "Confirm that object training does not change live detection.",
+            "error",
+        )
+        return redirect(url_for("main.gallery"))
+    before = str(current_app.config.get("ACTIVITY_CHECKPOINT") or "")
+    actor = session.get("user", "unknown")
+    try:
+        dest, _metrics, bundle = training_ops.run_object_training(
+            current_app.config,
+            model_type=(request.form.get("model_type") or "forest").strip().lower(),
+            output_name=request.form.get("output_name") or "objects_custom.joblib",
+            seed=int(request.form.get("seed") or 7),
+        )
+    except (ValueError, TypeError) as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("main.gallery"))
+    except Exception as exc:
+        flash(f"Object training failed: {exc}", "error")
+        return redirect(url_for("main.gallery"))
+    classes = bundle.get("categories") or []
+    _store().record_system_audit(
+        "train_object_model",
+        actor,
+        f"gallery checkpoint={dest} classes={len(classes)} live_unchanged",
+    )
+    flash(
+        f"Saved {dest.name} ({len(classes)} class(es)). "
+        "Live detection is unchanged. "
+        f"Monitoring still uses {Path(before).name or 'the active activity checkpoint'}.",
+        "ok",
+    )
+    return redirect(url_for("main.gallery"))
+
+
+@bp.route("/gallery/scan", methods=["POST"])
+@login_required
+def gallery_scan():
+    from ingest.errors import IngestError
+    from ingest.sampler import FrameSampler
+    from ingest.source import iter_camera_frames
+    from vision.gallery import scan_frames
+
+    images = []
+    source = ""
+    note = ""
+    try:
+        upload = request.files.get("clip")
+        camera_id = (request.form.get("camera_id") or "").strip()
+        if upload is not None and getattr(upload, "filename", None):
+            raw_name = Path(upload.filename).name
+            suffix = Path(raw_name).suffix.lower()
+            if suffix not in {".mp4", ".avi", ".mov", ".mkv"}:
+                raise ValueError("Use an mp4, avi, mov, or mkv clip.")
+            payload = upload.read()
+            if not payload:
+                raise ValueError("Clip is empty.")
+            if len(payload) > 64 * 1024 * 1024:
+                raise ValueError("Clip is too large.")
+            safe = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in raw_name)
+            upload_dir = Path(current_app.config.get("UPLOAD_DIR") or "data/uploads")
+            upload_dir.mkdir(parents=True, exist_ok=True)
+            video_path = upload_dir / f"gallery-scan-{safe}"
+            video_path.write_bytes(payload)
+            source = safe
+            try:
+                sampler = FrameSampler(
+                    video_path,
+                    sample_fps=2.0,
+                    max_frames=8,
+                    source_label=f"gallery scan — {safe}",
+                )
+                images = [frame.image_bgr for frame in sampler.frames()]
+            finally:
+                video_path.unlink(missing_ok=True)
+            if not images:
+                raise ValueError("No frames could be read from that clip.")
+        elif camera_id:
+            camera = _cameras().get(camera_id)
+            if camera is None:
+                raise ValueError("Camera not found.")
+            source = camera.name
+            frames = iter_camera_frames(
+                camera,
+                max_frames=6,
+                project_root=current_app.config.get("PROJECT_ROOT"),
+                allow_webcam=bool(current_app.config.get("ALLOW_WEBCAM")),
+                timeout_sec=float(current_app.config.get("RTSP_CONNECT_TIMEOUT_SEC") or 8),
+            )
+            images = [frame.image_bgr for frame in frames]
+            if not images:
+                note = "The camera produced no frames."
+        else:
+            raise ValueError("Choose a camera or a short clip.")
+    except (ValueError, TypeError, IngestError, FileNotFoundError, RuntimeError) as exc:
+        flash(str(exc) or "Scan failed.", "error")
+        return render_template(
+            "gallery.html",
+            **_gallery_context(
+                {
+                    "scan": {
+                        "backend": "unavailable",
+                        "matches": [],
+                        "note": str(exc) or "Scan failed.",
+                        "frames": 0,
+                        "source": "",
+                    }
+                }
+            ),
+        )
+    if not images:
+        result = {
+            "backend": "unavailable",
+            "matches": [],
+            "note": note or "No frames to scan.",
+            "frames": 0,
+        }
+    else:
+        result = scan_frames(images)
+    result["source"] = source
+    return render_template("gallery.html", **_gallery_context({"scan": result}))
+
+
+@bp.route("/gallery/thumb/<kind>/<object_id>/<split>/<filename>")
+@login_required
+def gallery_thumb(kind: str, object_id: str, split: str, filename: str):
+    from vision.dataset import IMAGE_SUFFIXES
+    from vision.gallery import parse_gallery_item
+
+    try:
+        kind, object_id = parse_gallery_item(f"{kind}:{object_id}")
+    except ValueError:
+        abort(404)
+    if split not in {"train", "val", "test"}:
+        abort(404)
+    safe_name = Path(filename).name
+    if safe_name != filename or not safe_name or safe_name.startswith("."):
+        abort(404)
+    if Path(safe_name).suffix.lower() not in IMAGE_SUFFIXES:
+        abort(404)
+    root = Path(
+        current_app.config["OBJECTS_DATA_ROOT"]
+        if kind == "object"
+        else current_app.config["DANGEROUS_DATA_ROOT"]
+    )
+    directory = (root / split / object_id).resolve()
+    target = (directory / safe_name).resolve()
+    if target.parent != directory or not target.is_file():
+        abort(404)
+    return send_from_directory(directory, safe_name)
+
+
 @bp.route("/snapshots/<path:filename>")
 @login_required
 def snapshot_file(filename: str):

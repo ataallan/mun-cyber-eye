@@ -39,6 +39,7 @@ Rationale always says this is an **indicator only** — not proof of assault or 
 - **Sport:** baseball bat on a baseball / softball / cricket field with **low** use-intensity → `game_or_play` / intense play.
 - Bat + **high** use-intensity toward a person **outside** sport → weapon / confrontation alert.
 - Improvised classes require use cues (raised, toward, strike, thrown). A sitting bottle or idle chair does not alert.
+- An object that is **not** in the home catalog and **not** a named dangerous class can still raise `unidentified_striking_object` when it moves into contact with another person, or an unidentified thrown-object cue when it is thrown at a person. A dead stream or a still frame does not invent that cue. Label those frames as `unidentified_improvised` from the Objects gallery.
 - Alert metadata includes `weapon_class`, `harm_potential`, `use_intensity`, `use_intensity_label`.
 
 ## Console

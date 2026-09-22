@@ -40,6 +40,12 @@ from vision.scene_context import (
     place_display_name,
 )
 from vision.sports_catalog import infer_sport_context, resolve_sport, sport_display_name
+from vision.improvised_hit import (
+    ImprovisedHitAssessment,
+    analyze_improvised_hit,
+    apply_improvised_hit,
+    detections_from_improvised_hit,
+)
 from vision.throw_assist import ThrowAssessment, analyze_throw, detections_from_throw, tracks_from_detections
 from vision.weapon_assist import WeaponAssessment, analyze_weapon_use, detections_from_weapon
 
@@ -65,6 +71,7 @@ class SceneAssist:
     gunshot: GunshotAssessment = field(default_factory=GunshotAssessment)
     weapon: WeaponAssessment = field(default_factory=WeaponAssessment)
     throw: ThrowAssessment = field(default_factory=ThrowAssessment)
+    improvised_hit: ImprovisedHitAssessment = field(default_factory=ImprovisedHitAssessment)
 
     def to_extras(self) -> dict:
         extras: dict = {
@@ -93,6 +100,10 @@ class SceneAssist:
             "throw": self.throw.to_dict(),
             "thrown_at_person": bool(self.throw.thrown_at_person),
             "throw_confidence": round(float(self.throw.confidence), 3),
+            "improvised_hit": bool(self.improvised_hit.reported),
+            "improvised_object_label": (
+                self.improvised_hit.object_label if self.improvised_hit.reported else ""
+            ),
         }
         if self.sport_context:
             extras["sport_context"] = self.sport_context
@@ -282,6 +293,11 @@ def enrich_detections(
         prev_tracks=state.prev_object_tracks or None,
     )
     thrown = analyze_throw(dets, prev_tracks=state.prev_object_tracks or None)
+    improvised = analyze_improvised_hit(
+        dets,
+        prev_tracks=state.prev_object_tracks or None,
+    )
+    weapon = apply_improvised_hit(weapon, improvised)
 
     assist = SceneAssist(
         sport_context=sport_id,
@@ -295,6 +311,7 @@ def enrich_detections(
         gunshot=gunshot,
         weapon=weapon,
         throw=thrown,
+        improvised_hit=improvised,
     )
     extras = assist.to_extras()
 
@@ -349,6 +366,11 @@ def enrich_detections(
             merged.append(extra)
             existing_labels.add(extra.label.lower())
     for extra in detections_from_throw(thrown, bbox=bbox):
+        if extra.label.lower() not in existing_labels:
+            extra.extras.update(extras)
+            merged.append(extra)
+            existing_labels.add(extra.label.lower())
+    for extra in detections_from_improvised_hit(improvised, bbox=bbox):
         if extra.label.lower() not in existing_labels:
             extra.extras.update(extras)
             merged.append(extra)

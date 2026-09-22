@@ -78,6 +78,8 @@ SKIP_LABELS = frozenset(
         "weapon_pointed_at_person",
         "fall",
         "collapse",
+        "unidentified_striking_object",
+        "improvised_hit",
     }
 ) | FIREARM_SKIP
 
@@ -150,6 +152,26 @@ def _dot(a: tuple[float, float], b: tuple[float, float]) -> float:
 def _area(bbox: tuple[float, ...]) -> float:
     w, h = _wh(bbox)
     return w * h
+
+
+def label_is_unidentified_object(label: str) -> bool:
+    """True when a detector label is not a named catalog or dangerous class.
+
+    Sport balls and assist labels are excluded. The unidentified improvised
+    class itself stays in this set so a hit with that id can still be reviewed.
+    """
+    raw = (label or "").strip().lower()
+    if not raw or raw in SPORT_PROJECTILES or raw in SKIP_LABELS or raw in FIREARM_SKIP:
+        return False
+    from vision.dangerous_objects import map_detector_label as map_dangerous
+    from vision.objects_catalog import map_detector_label as map_object
+
+    dangerous = map_dangerous(raw)
+    if dangerous is not None and dangerous.id != "unidentified_improvised":
+        return False
+    if map_object(raw) is not None:
+        return False
+    return True
 
 
 def tracks_from_detections(detections: Sequence[Detection]) -> list[ObjectTrack]:
@@ -244,8 +266,17 @@ def analyze_throw(
             continue
 
         sport = obj.label in SPORT_PROJECTILES or prev.label in SPORT_PROJECTILES
-        harmful = obj.label in HARMFUL_IMPROVISED or prev.label in HARMFUL_IMPROVISED
+        unidentified = label_is_unidentified_object(obj.label) or label_is_unidentified_object(
+            prev.label
+        )
+        harmful = (
+            obj.label in HARMFUL_IMPROVISED
+            or prev.label in HARMFUL_IMPROVISED
+            or unidentified
+        )
         cues = ["fast_translation", "closing_on_person"]
+        if unidentified:
+            cues.append("unidentified_improvised")
         conf = 0.42 + min(0.22, motion / (scale * 8.0))
         if closing:
             conf += 0.08

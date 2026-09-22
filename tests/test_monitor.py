@@ -96,10 +96,85 @@ def _frames(n: int, step: float = 0.5):
     return frames
 
 
+class _OrdinaryModel:
+    def predict(self, rows):
+        return ["ordinary"]
+
+
+def _dump_activity_checkpoint(path: Path) -> None:
+    import joblib
+
+    from vision.dataset import ACTIVITY_CATEGORIES
+    from vision.features import FEATURE_DIM, FEATURE_VERSION
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    joblib.dump(
+        {
+            "model": _OrdinaryModel(),
+            "scaler": None,
+            "categories": list(ACTIVITY_CATEGORIES),
+            "feature_version": FEATURE_VERSION,
+            "feature_dim": FEATURE_DIM,
+            "model_type": "forest",
+        },
+        path,
+    )
+
+
 def test_testing_app_does_not_autostart(app):
     status = app.extensions["monitor"].status()
     assert status["running"] is False
     assert status["desired"] == "off"
+
+
+def test_monitor_uses_active_checkpoint_on_the_feed(app, tmp_path):
+    """Continuous monitoring reloads the active checkpoint and runs object inventory."""
+    from vision.checkpoint_config import write_active_checkpoint
+
+    _disable_all(app)
+    cameras = app.extensions["camera_store"]
+    cameras.create(
+        camera_id="feed-lab",
+        name="Feed Lab",
+        location_label="Hall",
+        source_type="file",
+        uri="MOCK",
+        enabled=True,
+    )
+    ckpt_a = tmp_path / "checkpoints" / "activity_a.joblib"
+    ckpt_b = tmp_path / "checkpoints" / "activity_b.joblib"
+    _dump_activity_checkpoint(ckpt_a)
+    _dump_activity_checkpoint(ckpt_b)
+    active = tmp_path / "active_checkpoint.json"
+    app.config["ACTIVE_CHECKPOINT_FILE"] = str(active)
+    app.config["ACTIVITY_CHECKPOINT"] = str(ckpt_a)
+    app.config["VISION_BACKEND"] = "activity"
+    app.config["OBJECTS_BACKEND"] = ""
+    app.config["MAX_FRAMES_PER_RUN"] = 2
+    monitor = app.extensions["monitor"]
+    monitor._pipeline = None
+    monitor._built_signature = None
+
+    summary = monitor.run_once()
+    assert summary["frames"] >= 1
+    assert summary["failures"] == 0
+    adapter = monitor._pipeline.adapter
+    assert adapter.name == "activity"
+    assert Path(adapter.checkpoint_path).resolve() == ckpt_a.resolve()
+    assert monitor._pipeline.object_mode == "auto"
+
+    write_active_checkpoint(ckpt_b, dest=active, actor="developer")
+    again = monitor.run_once()
+    assert again["failures"] == 0
+    assert Path(monitor._pipeline.adapter.checkpoint_path).resolve() == ckpt_b.resolve()
+    assert app.config["ACTIVITY_CHECKPOINT"] == str(ckpt_b.resolve()) or Path(
+        app.config["ACTIVITY_CHECKPOINT"]
+    ).resolve() == ckpt_b.resolve()
+    status = monitor.status()
+    assert status["activity_checkpoint_name"] == "activity_b.joblib"
+    assert status["objects_backend"] in {"yolo", "unavailable", "adapter"}
+    assert status["objects_backend"] != "off"
+    assert status["objects_mode"] == "auto"
 
 
 def test_monitor_start_stop_from_console(app, client):
