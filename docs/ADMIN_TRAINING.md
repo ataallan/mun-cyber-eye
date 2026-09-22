@@ -18,7 +18,7 @@ Customer **site admin** and **operator** accounts run detection and review on **
 
 Create account **never** grants `developer`. Customer `.env.example` leaves `DEVELOPER_*` empty. Mun Cyber staff set those variables on lab machines only — never `operator` / `changeme`.
 
-The **Train models** nav link and `/admin/train` (GET and mutating POST) are shown / allowed only when `session.role == developer`.
+The **Train models** nav link and `/admin/train` (GET and mutating POST) are shown / allowed only when `session.role == developer`. The same gate covers **Correct label** on an alert (`POST /alerts/<id>/correct-label`). Site admins and operators do not see that section and cannot call the route.
 
 ## Console
 
@@ -34,6 +34,16 @@ The **Train models** nav link and `/admin/train` (GET and mutating POST) are sho
 10. **Extract frames from video** — **training only**, not live detection. Developer picks kind (activity / game_or_play+sport / scene place / **object class** / **dangerous / weapon-like class**), uploads an authorized mp4 / avi / mov / mkv, and sets sample FPS / max frames. `FrameSampler` writes JPEGs into `data/activity/train/...`, `data/objects/train/<object_id>/`, or `data/dangerous/train/<id>/`. Activity class `potential_weapon_object` remains a six-class trainer folder. **Videos are sampled to frames; the sklearn activity trainer still learns from images.** After extract, use **Train from labeled data** for activity classes. Optional **Train object model** fits a small CPU classifier when enough object images exist; runtime inventory still prefers YOLO and will not invent a refrigerator when the detector is missing. See [OBJECTS_AND_STRUCTURES.md](OBJECTS_AND_STRUCTURES.md) and [DANGEROUS_OBJECTS.md](DANGEROUS_OBJECTS.md).
 
 Training is in-request (seconds on CPU). If a future model exceeds ~60s, switch that job to a background thread and a status file; do not silently hang the worker.
+
+## Correct a label from alert review
+
+On an alert detail page, a developer can set the true activity class. Optional sport context and place use the same folders as **Extract frames from video** (`game_or_play__<sport>`, `scene__<place>`, or `<class>__scene__<place>`). Pick one of sport or place, not both.
+
+**Send to training** samples the incident clip with `FrameSampler` into `data/activity/train/<folder>/`. That click does not train and does not write `data/active_checkpoint.json`. The page confirms the folder and links to **Train models**.
+
+**Train and activate** is a second button. It samples the same clip, runs the existing activity trainer (`activity_custom.joblib`), and writes the active checkpoint only when **Train and replace the live checkpoint** is checked. Without that confirmation the live model is left alone and no frames are added.
+
+If the alert has no incident clip file, the page uses an archive segment for the same camera whose time window covers the alert. If neither file exists, the page says **No clip to learn from.** Acknowledge, dismiss, escalate, and reopen stay human review only — a correction does not remove the alert.
 
 ## Active checkpoint pointer
 

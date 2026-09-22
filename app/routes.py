@@ -50,6 +50,7 @@ from .auth import (
     account_notify_email,
     approver_required,
     begin_login_code_challenge,
+    can_train,
     clear_login_code_challenge,
     console_session_guard,
     peek_demo_login_code,
@@ -761,6 +762,28 @@ def archive_media(segment_id: str):
     return send_from_directory(path.parent, path.name)
 
 
+def _alert_metadata(alert) -> dict:
+    try:
+        meta = json.loads(alert.metadata_json or "{}")
+    except json.JSONDecodeError:
+        return {}
+    return meta if isinstance(meta, dict) else {}
+
+
+def _learning_source_for_alert(alert) -> dict | None:
+    """Developer-only description of the clip this alert can teach from."""
+    try:
+        found = training_ops.learning_video_for_alert(
+            current_app.config,
+            alert,
+            archive_root=current_app.config.get("ARCHIVE_DIR"),
+            segments=_archive().store.list_segments(camera_id=alert.camera_id or ""),
+        )
+    except ValueError:
+        return None
+    return {"kind": found["kind"], "name": found["name"]}
+
+
 @bp.route("/alerts/<alert_id>")
 @login_required
 def alert_detail(alert_id: str):
@@ -773,6 +796,9 @@ def alert_detail(alert_id: str):
     delivery = store.delivery_trail(alert_id)
     payload = structured_payload(alert)
     can_resend = session.get("role") in MANAGE_ROLES
+    developer = can_train(session.get("role"))
+    meta = _alert_metadata(alert) if developer else {}
+    correction = meta.get("label_correction") if isinstance(meta.get("label_correction"), dict) else None
     return render_template(
         "alert_detail.html",
         alert=alert,
@@ -781,6 +807,14 @@ def alert_detail(alert_id: str):
         payload=payload,
         payload_json=json.dumps(payload, indent=2, default=str),
         can_resend=can_resend,
+        learn_source=_learning_source_for_alert(alert) if developer else None,
+        categories=list(ACTIVITY_CATEGORIES) if developer else [],
+        sports=all_sports() if developer else [],
+        places=_cameras().list_place_choices() if developer else [],
+        selected_category=alert.category if alert.category in ACTIVITY_CATEGORIES else "",
+        selected_sport=(meta.get("sport_context") or "") if developer else "",
+        selected_place=(meta.get("place_type") or "") if developer else "",
+        label_correction=correction if developer else None,
     )
 
 
@@ -806,6 +840,138 @@ def alert_action(alert_id: str):
     except (ValueError, KeyError) as exc:
         flash(str(exc), "error")
     return redirect(url_for("main.alert_detail", alert_id=alert_id))
+
+
+@bp.route("/alerts/<alert_id>/correct-label", methods=["POST"])
+@developer_required
+def alert_correct_label(alert_id: str):
+    """Sample the alert clip into the training tree. Activate only on confirm."""
+    store = _store()
+    alert = store.get(alert_id)
+    if not alert:
+        flash("Alert not found.", "error")
+        return redirect(url_for("main.dashboard"))
+    actor = session.get("user", "unknown")
+    back = redirect(url_for("main.alert_detail", alert_id=alert_id))
+    intent = (request.form.get("intent") or "").strip().lower()
+    if intent not in {"send", "train_activate"}:
+        flash("Choose send to training or train and activate.", "error")
+        return back
+    if intent == "train_activate" and request.form.get("confirm_train_activate") != "1":
+        flash(
+            "Confirm train and activate before the live checkpoint is replaced.",
+            "error",
+        )
+        return back
+
+    place = place_type_from_form(request.form)
+    try:
+        source = training_ops.learning_video_for_alert(
+            current_app.config,
+            alert,
+            archive_root=current_app.config.get("ARCHIVE_DIR"),
+            segments=_archive().store.list_segments(camera_id=alert.camera_id or ""),
+        )
+        label = training_ops.correction_label_args(
+            request.form.get("category") or "",
+            request.form.get("sport_context") or "",
+            place,
+        )
+        result = training_ops.extract_clip_frames(
+            current_app.config,
+            source["path"],
+            kind=label["kind"],
+            split="train",
+            category=label["category"],
+            sport_context=label["sport_context"],
+            place_type=label["place_type"],
+            sample_fps=float(current_app.config.get("SAMPLE_FPS") or 2),
+            max_frames=40,
+            stem=f"alert_{alert.id[:8]}",
+            source_label=f"{source['kind'].replace('_', ' ')} — {source['name']}",
+        )
+    except (ValueError, TypeError) as exc:
+        flash(str(exc), "error")
+        return back
+
+    slug = validate_place_type(label["place_type"]) if label["place_type"] else ""
+    if slug:
+        _cameras().remember_custom_place(slug, label["place_type"])
+
+    note = (
+        f"alert={alert.id} from={alert.category} label={result['folder']} "
+        f"frames={result['frames']} source={source['kind']} file={source['name']}"
+    )
+    store.record_audit(alert.id, "correct_label", actor, note)
+    store.record_system_audit("correct_label", actor, note)
+    correction = {
+        "folder": result["folder"],
+        "frames": result["frames"],
+        "source": source["kind"],
+        "actor": actor,
+        "activated": False,
+    }
+    store.merge_alert_metadata(alert.id, {"label_correction": correction})
+
+    saved = (
+        f"Saved {result['frames']} frame(s) under train/{result['folder']}. "
+        "The live checkpoint was not changed."
+    )
+    if intent == "send":
+        flash(saved, "ok")
+        return back
+
+    try:
+        dest, _metrics, bundle = training_ops.run_training(
+            current_app.config,
+            model_type="forest",
+            output_name="activity_custom.joblib",
+            generate_demo=False,
+            overwrite_demo_images=False,
+            confirm_overwrite_demo=False,
+        )
+    except (ValueError, TypeError) as exc:
+        flash(f"{saved} Training did not run: {exc}", "error")
+        return back
+    except Exception as exc:
+        flash(f"{saved} Training did not run: {exc}", "error")
+        return back
+
+    store.record_system_audit(
+        "train_model",
+        actor,
+        f"checkpoint={dest} model={bundle.model_type} from_alert={alert.id}",
+    )
+    try:
+        activated = training_ops.apply_active_checkpoint(
+            current_app.config, dest, actor
+        )
+    except (ValueError, OSError) as exc:
+        flash(
+            f"Training saved {dest.name}, but the live checkpoint was not changed: {exc}",
+            "error",
+        )
+        return back
+
+    store.record_system_audit(
+        "activate_checkpoint",
+        actor,
+        f"path={activated} from_alert={alert.id}",
+    )
+    store.record_audit(
+        alert.id,
+        "train_activate",
+        actor,
+        f"checkpoint={activated.name} label={result['folder']}",
+    )
+    correction["activated"] = True
+    store.merge_alert_metadata(alert.id, {"label_correction": correction})
+    flash(
+        f"Trained {activated.name} and activated it. "
+        f"{result['frames']} frame(s) are under train/{result['folder']}.",
+        "ok",
+    )
+    return back
 
 
 @bp.route("/alerts/<alert_id>/notify", methods=["POST"])
