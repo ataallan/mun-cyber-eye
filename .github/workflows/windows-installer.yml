@@ -1,0 +1,68 @@
+name: Windows installer
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "installer/**"
+      - "scripts/**"
+      - "app/**"
+      - "alerts/**"
+      - "ingest/**"
+      - "risk/**"
+      - "vision/**"
+      - "data/**"
+      - "requirements.txt"
+      - "run.py"
+      - "pipeline.py"
+      - ".env.example"
+      - "Start Mun Cyber Eye.bat"
+      - "start_eye.ps1"
+      - ".github/workflows/windows-installer.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "installer/**"
+      - "scripts/**"
+      - "app/**"
+      - "alerts/**"
+      - "ingest/**"
+      - "risk/**"
+      - "vision/**"
+      - "data/**"
+      - "requirements.txt"
+      - "run.py"
+      - "pipeline.py"
+      - ".env.example"
+      - "Start Mun Cyber Eye.bat"
+      - "start_eye.ps1"
+      - ".github/workflows/windows-installer.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  setup-exe:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check installer project
+        run: python scripts/build_windows_installer.py --check
+
+      - name: Build MunCyberEyeSetup.exe
+        shell: pwsh
+        run: .\scripts\build_windows_installer.ps1
+
+      - name: Upload Setup
+        uses: actions/upload-artifact@v4
+        with:
+          name: MunCyberEyeSetup
+          path: dist/MunCyberEyeSetup.exe
+          if-no-files-found: error

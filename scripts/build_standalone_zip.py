@@ -24,6 +24,8 @@ SKIP_DIR_NAMES = {
     "ultralytics",
     "runs",
     ".cursor",
+    "build",
+    "dist",
 }
 SKIP_FILE_NAMES = {".env", ".coverage", "install.log", "mun-cyber-eye-standalone.zip"}
 SKIP_SUFFIXES = {".pyc", ".pyo", ".lnk"}
@@ -35,6 +37,8 @@ REQUIRED_ZIP_PATHS = (
     "Start Mun Cyber Eye.bat",
     "start_eye.ps1",
     "scripts/standalone_support.py",
+    "scripts/ensure_customer_env.py",
+    "scripts/repair_bundled_runtime.ps1",
     "scripts/build_icon.py",
     "app/static/img/mun-cyber-eye.ico",
     "app/static/img/mun-cyber-eye-logo.png",
@@ -83,6 +87,7 @@ def main() -> None:
     print(f"Wrote {OUT} ({count} files)")
     print("Included the icon, Start Mun Cyber Eye launcher, and install scripts")
     print("Excluded .venv, __pycache__, .git, real .env, install.log, and .lnk shortcuts")
+    print("Customer Setup.exe is built on Windows with scripts/build_windows_installer.ps1")
 
 
 if __name__ == "__main__":

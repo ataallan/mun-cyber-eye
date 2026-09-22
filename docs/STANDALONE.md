@@ -1,6 +1,8 @@
 # Standalone Windows download — Mun Cyber Eye
 
-Mun Cyber Eye ships as a **Chrome-style local console**: unzip, install Python packages into `.venv`, start `run.py`, and open a browser to the login / create-account page. Detection is local to authorized cameras on this machine. There is no bundled password and no bundled Resend secret.
+Customers download **MunCyberEyeSetup.exe**. Setup installs the app under `%LocalAppData%\MunCyberEye`, creates one Desktop shortcut named **Mun Cyber Eye**, and can add a Start Menu shortcut and an uninstaller. The first launch opens **http://127.0.0.1:5055**. Later launches use that Desktop icon. Build steps and the GitHub Actions job are in [WINDOWS_INSTALLER.md](WINDOWS_INSTALLER.md).
+
+The rest of this page is the alternate **source folder** (or `mun-cyber-eye-standalone.zip`) for a PC that already has Python 3.10 or newer on PATH. Unzip, install Python packages into `.venv`, start `run.py`, and open a browser to the login / create-account page. Detection is local to authorized cameras on this machine. There is no bundled password and no bundled Resend secret.
 
 **AI detects and alerts. Humans verify and decide.**
 
@@ -36,6 +38,8 @@ If `.env` is missing, the launcher copies `.env.example`. That file has **empty*
 Do not commit a real `.env`. Do not ship `.venv`.
 
 ### Icon and shortcuts
+
+`MunCyberEyeSetup.exe` creates the Desktop shortcut **Mun Cyber Eye** with this icon. See [WINDOWS_INSTALLER.md](WINDOWS_INSTALLER.md).
 
 `app/static/img/mun-cyber-eye.ico` is a multi-size icon (16, 24, 32, 48, 64, 128, and 256). `scripts/build_icon.py` builds it from `app/static/img/mun-cyber-eye-logo.png`: a square crop of the eye, on the console background color. The customer zip already contains the `.ico`.
 
@@ -81,7 +85,9 @@ python run.py
 
 ## Building `mun-cyber-eye-standalone.zip`
 
-From a development checkout (not required for customers):
+The customer download is `MunCyberEyeSetup.exe`, built with `scripts\build_windows_installer.ps1`. See [WINDOWS_INSTALLER.md](WINDOWS_INSTALLER.md).
+
+The zip below is the source-folder package. From a development checkout:
 
 ```powershell
 python scripts/build_standalone_zip.py

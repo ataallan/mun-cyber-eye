@@ -1,0 +1,11 @@
+Mun Cyber Eye installs for the current Windows user.
+
+Python is included. A separate Python install is not required.
+Program files go under your local application data folder.
+
+Setup creates one Desktop shortcut named Mun Cyber Eye, plus a Start Menu entry and an uninstaller.
+
+The first launch opens the console in your browser at http://127.0.0.1:5055.
+Create the first admin account there. There is no default password.
+
+Later, start the app from the Desktop icon.

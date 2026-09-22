@@ -11,7 +11,7 @@ Phase 5 **prototype**: register authorized cameras → ingest file / RTSP / (gat
 
 Authorized cameras only. No autonomous enforcement. No facial criminal or identity labeling.
 
-**Windows standalone:** unzip and run `install_and_run.bat` (or `install_and_run.ps1`). See [docs/STANDALONE.md](docs/STANDALONE.md).
+**Windows app:** download `MunCyberEyeSetup.exe`. It installs under `%LocalAppData%\MunCyberEye` and adds one Desktop shortcut, **Mun Cyber Eye**. See [docs/WINDOWS_INSTALLER.md](docs/WINDOWS_INSTALLER.md). A source folder with `install_and_run.bat` remains available when Python is already on the PC ([docs/STANDALONE.md](docs/STANDALONE.md)).
 
 ## Quick start
 
