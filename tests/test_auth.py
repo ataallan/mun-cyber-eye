@@ -85,12 +85,40 @@ def test_login_page_has_logo_and_create_account(client):
     assert rv.status_code == 200
     body = rv.get_data(as_text=True)
     assert "mun-cyber-eye-logo.png" in body
+    assert "mun-cyber-eye-mark.png" in body
+    assert "auth-product" not in body
     assert "Don't have an account?" in body
     assert "Create account" in body
     assert "Forgot password?" in body
     assert "Create the first admin account" in body
     assert "changeme" not in body
     assert "default password" in body.lower()
+
+
+def test_auth_cards_use_wordmark_logo_without_a_second_product_line(client, app):
+    for path in ("/login", "/register", "/forgot-password"):
+        body = client.get(path).get_data(as_text=True)
+        assert "mun-cyber-eye-logo.png" in body
+        assert "auth-product" not in body
+        assert "Mun Cyber Eye" in body
+    from flask import render_template
+
+    with app.test_request_context():
+        coded = render_template(
+            "login_code.html",
+            login_email="ada@example.com",
+            minutes=10,
+            login_code_digits=6,
+        )
+        reset = render_template(
+            "reset_password.html",
+            username="ada",
+            token="token",
+        )
+    for body in (coded, reset):
+        assert "mun-cyber-eye-logo.png" in body
+        assert "auth-product" not in body
+        assert "mun-cyber-eye-mark.png" in body
 
 
 def test_fresh_install_has_no_default_operator_changeme(app, client):
