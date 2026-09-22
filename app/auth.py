@@ -33,10 +33,7 @@ APPROVER_ROLES = frozenset({"admin", DEVELOPER_ROLE})
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_.-]{3,32}$")
 MIN_PASSWORD_LEN = 8
 _USERS_ROLE_CHECK = "role IN ('admin', 'operator', 'developer')"
-PENDING_LOGIN_MESSAGE = (
-    "Your account is awaiting admin approval. You cannot sign in to the "
-    "console, cameras, or alerts until a site admin or developer approves it."
-)
+PENDING_LOGIN_MESSAGE = "Account pending approval."
 INACTIVE_LOGIN_MESSAGE = (
     "This account is inactive. Contact a site admin if you need access restored."
 )
@@ -56,8 +53,7 @@ LOGIN_CODE_RESEND_SECONDS_DEFAULT = 45
 LOGIN_CODE_MAX_ATTEMPTS = 5
 # Sign-in codes go to users.email (Create account / env seed), not security_email.
 LOGIN_CODE_EMAIL_NOTE = (
-    "Sign-in codes are sent to the login email on the account — the address "
-    "used at registration — not the optional security email used for alerts."
+    "Sign-in codes are sent to the login email on this account."
 )
 
 
@@ -1020,10 +1016,7 @@ def approver_required(view):
         if blocked is not None:
             return blocked
         if not can_approve_accounts(session.get("role")):
-            flash(
-                "Only a site admin or Mun Cyber developer can approve accounts.",
-                "error",
-            )
+            flash("Only an administrator can approve accounts.", "error")
             return redirect(url_for("main.dashboard"))
         return view(*args, **kwargs)
 
@@ -1039,13 +1032,7 @@ def developer_required(view):
         if blocked is not None:
             return blocked
         if not can_train(session.get("role")):
-            flash(
-                "Only Mun Cyber developer accounts can train or activate models. "
-                "Site admin and operator accounts run detection and review; "
-                "they cannot retrain checkpoints. Public Create account never "
-                "grants the developer role.",
-                "error",
-            )
+            flash("Only developer accounts can train models.", "error")
             return redirect(url_for("main.dashboard"))
         return view(*args, **kwargs)
 

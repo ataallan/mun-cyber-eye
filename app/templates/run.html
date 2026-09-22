@@ -1,42 +1,38 @@
 {% extends "base.html" %}
-{% block title %}Run pipeline · {{ product_name }}{% endblock %}
+{% block title %}Run · {{ product_name }}{% endblock %}
 {% block content %}
 <section class="card">
-  <h1>Run detection pipeline</h1>
-  <p class="muted">Detection runs from <strong>registered authorized cameras</strong> when this pipeline runs (one camera or all enabled, sequentially). Register RTSP, file-source cameras, or a webcam if <code>ALLOW_WEBCAM=1</code>. Offline or unconfigured cameras are reported honestly — no fake detections. There is no customer “upload an incident clip for live detection” path.</p>
-  <p class="fineprint">{% if can_train %}Video files belong on <a href="{{ url_for('main.admin_train') }}">Train models</a> (extract frames into a labeled dataset).{% else %}Customers run detection from registered cameras using shipped checkpoints. Video file uploads are for Mun Cyber developer training only — they are not a live detection path.{% endif %} Synthetic MOCK / Phase 3 activity demo remain for lab and development only — they are not the customer detection path. The activity model does not “know most sports” or “understand all arenas.” Named <code>sport_context</code> and <code>place_type</code> are catalog + folder / camera / color-geometry assists. Home/community objects are a YOLO inventory assist when ultralytics is installed — otherwise Last run reports <code>objects_backend=unavailable</code> and does not invent a refrigerator. Kit similarity is a clothing-color cluster, not identity or guilt. Body-aggression cues are OpenCV motion proxies, not a determination of assault. Face-expression assist is <strong>{% if face_aggression_enabled %}on (lab){% else %}off{% endif %}</strong> and never identifies a person or attaches a criminal label.</p>
+  <h1>Run</h1>
 
   <form method="post" class="form" id="run-form">
     <fieldset>
-      <legend>Mode</legend>
+      <legend>Source</legend>
       <label class="radio">
         <input type="radio" name="mode" value="camera" checked>
-        Registered authorized cameras (product detection path)
+        Registered cameras
       </label>
       <label class="radio">
         <input type="radio" name="mode" value="synthetic">
-        Lab / development only — Synthetic MOCK (not the customer detection path)
+        Synthetic sample
       </label>
       <label class="radio">
         <input type="radio" name="mode" value="activity">
-        Lab / development only — Phase 3 activity model on synthetic scenes
-        {% if activity_checkpoint_ready %}— checkpoint ready{% else %}— falls back to MOCK if no checkpoint{% endif %}
+        Activity sample
+        {% if activity_checkpoint_ready %}· model ready{% else %}· model unavailable{% endif %}
       </label>
     </fieldset>
     <label>Camera
       <select name="camera_id">
-        <option value="all">All enabled cameras (sequential)</option>
+        <option value="all">All enabled cameras</option>
         {% for c in cameras %}
         <option value="{{ c.id }}">{{ c.name }} · {{ c.source_type }}{% if not c.enabled %} (disabled){% endif %}{% if c.location_label %} — {{ c.location_label }}{% endif %}</option>
         {% endfor %}
       </select>
     </label>
     {% if session.get('role') in ['admin', 'operator', 'developer'] %}
-    <p class="fineprint"><a href="{{ url_for('main.cameras') }}">Manage camera registry</a>
-      · {{ enabled_cameras|length }} enabled
-      · true parallel streaming is not in this prototype</p>
+    <p class="fineprint"><a href="{{ url_for('main.cameras') }}">Cameras</a>
+      · {{ enabled_cameras|length }} enabled</p>
     {% endif %}
-    <p class="fineprint">{% if can_train %}To label site video, use Train models → Extract frames from video. Leftover extract files may remain on disk; there is no video library or delete UI.{% else %}Video uploads are training-only and developer-only. Customer accounts do not extract or retrain. Leftover extract files may remain on disk; there is no video library or delete UI.{% endif %}</p>
     <button class="btn btn-primary" type="submit">Run</button>
   </form>
 
@@ -44,122 +40,107 @@
   <div class="result-box{% if result.quiet %} result-quiet{% endif %}">
     <h2>Last run</h2>
     <ul>
-      <li>Mode: <code>{{ result.mode or '—' }}</code></li>
+      <li>Mode: {{ result.mode or '—' }}</li>
       <li>Frames processed: {{ result.frames }}</li>
       <li>Alerts created: {{ result.alerts }}</li>
-      <li>Vision backend: <code>{{ result.backend or '—' }}</code></li>
-      <li>Source: {{ result.source or '—' }}{% if result.filename %} (<code>{{ result.filename }}</code>){% endif %}</li>
+      <li>Vision: {{ result.backend or '—' }}</li>
+      <li>Source: {{ result.source or '—' }}{% if result.filename %} ({{ result.filename }}){% endif %}</li>
       {% if result.categories %}
-      <li>Predicted categories:
+      <li>Categories:
         {% for label, n in result.categories %}
-          <code>{{ label }}</code> × {{ n }}{% if not loop.last %}, {% endif %}
+          {{ label }} × {{ n }}{% if not loop.last %}, {% endif %}
         {% endfor %}
       </li>
       {% endif %}
       {% if result.sport_contexts %}
-      <li>Sport context:
+      <li>Sport:
         {% for row in result.sport_contexts %}
-          {{ row.label }} <span class="mono muted">({{ row.id }})</span> × {{ row.frames }}{% if not loop.last %}, {% endif %}
+          {{ row.label }} × {{ row.frames }}{% if not loop.last %}, {% endif %}
         {% endfor %}
       </li>
       {% else %}
-      <li>Sport context: <span class="muted">none detected</span></li>
+      <li>Sport: <span class="muted">none</span></li>
       {% endif %}
       {% if result.place_types %}
-      <li>Place type:
+      <li>Place:
         {% for row in result.place_types %}
-          {{ row.label }} <span class="mono muted">({{ row.id }})</span> × {{ row.frames }}{% if not loop.last %}, {% endif %}
+          {{ row.label }} × {{ row.frames }}{% if not loop.last %}, {% endif %}
         {% endfor %}
       </li>
       {% else %}
-      <li>Place type: <span class="muted">unknown / unset</span></li>
+      <li>Place: <span class="muted">unknown</span></li>
       {% endif %}
-      <li>Objects / structures:
+      <li>Objects:
         {% if result.objects %}
           {% for row in result.objects %}
-            {{ row.label }} <span class="mono muted">({{ row.id }})</span> × {{ row.count }}{% if not loop.last %}, {% endif %}
+            {{ row.label }} × {{ row.count }}{% if not loop.last %}, {% endif %}
           {% endfor %}
-          <span class="mono muted"> · backend {{ result.objects_backend or 'unavailable' }}</span>
         {% else %}
-          <span class="muted">none
-            {% if result.objects_backend == 'unavailable' %}
-              ({{ result.objects_backend }}{% if result.objects_note %} — {{ result.objects_note }}{% endif %})
-            {% else %}
-              ({{ result.objects_backend or 'unavailable' }})
-            {% endif %}
-          </span>
+          <span class="muted">none</span>
         {% endif %}
       </li>
-      <li>Kit cues: max team-kit similarity {{ '%.2f'|format(result.kit.max_similarity or 0) }}
+      <li>Kit: {{ '%.2f'|format(result.kit.max_similarity or 0) }}
         · jersey-like frames {{ result.kit.jersey_like_frames or 0 }}
-        <span class="muted">(clothing color clusters only — not identity)</span>
       </li>
-      <li>Body-aggression: max score {{ '%.2f'|format(result.aggression.max_score or 0) }}
+      <li>Aggression: {{ '%.2f'|format(result.aggression.max_score or 0) }}
         {% if result.aggression.cues %}
-          · cues
+          ·
           {% for cue in result.aggression.cues %}
-            <code>{{ cue }}</code>{% if not loop.last %}, {% endif %}
+            {{ cue }}{% if not loop.last %}, {% endif %}
           {% endfor %}
         {% else %}
           · no cues
         {% endif %}
       </li>
-      <li>Face cue status: <code>{{ result.face_cue_status or 'disabled' }}</code>
-        {% if not result.face_enabled %}(ENABLE_FACE_AGGRESSION=0){% endif %}
-      </li>
+      <li>Face: {{ result.face_cue_status or 'disabled' }}</li>
       <li>Fall manner:
         {% if result.fall_manners %}
           {% for row in result.fall_manners %}
-            <code>{{ row.id }}</code> × {{ row.count }}{% if not loop.last %}, {% endif %}
+            {{ row.id }} × {{ row.count }}{% if not loop.last %}, {% endif %}
           {% endfor %}
-          <span class="muted"> (subtype of potential_fall — not a medical diagnosis)</span>
         {% else %}
-          <span class="muted">none this run</span>
+          <span class="muted">none</span>
         {% endif %}
       </li>
-      <li>Gunshot video proxy: {{ result.gunshot_proxy_frames or 0 }} frame(s)
-        · audio <code>{{ result.gunshot_audio_status or 'disabled' }}</code>
-        <span class="muted">(visual proxy only — not ballistic proof; audio off does not invent a bang)</span>
+      <li>Gunshot video proxy: {{ result.gunshot_proxy_frames or 0 }}
+        · audio {{ result.gunshot_audio_status or 'disabled' }}
       </li>
-      <li>Aimed firearm-like object toward person
-        (<code>firearm_aimed_at_person</code>): {{ result.aimed_at_person_frames or 0 }} frame(s)
-        <span class="muted">— never sport-softened</span>
+      <li>Aimed at a person
+        (<code>firearm_aimed_at_person</code>): {{ result.aimed_at_person_frames or 0 }}
       </li>
-      <li>Thrown object toward person
+      <li>Thrown object
         (<code>object_thrown_at_person</code> / <code>thrown_projectile</code>):
-        {{ result.thrown_at_person_frames or 0 }} frame(s)
-        <span class="muted">— sport balls on a court may stay game or play; brick/bottle on a street do not</span>
+        {{ result.thrown_at_person_frames or 0 }}
       </li>
       <li>Dangerous objects:
         {% if result.dangerous_objects %}
           {% for row in result.dangerous_objects %}
-            {{ row.label }} <span class="mono muted">({{ row.id }})</span> × {{ row.count }}{% if not loop.last %}, {% endif %}
+            {{ row.label }} × {{ row.count }}{% if not loop.last %}, {% endif %}
           {% endfor %}
         {% else %}
-          <span class="muted">none this run</span>
+          <span class="muted">none</span>
         {% endif %}
         · max use intensity {{ '%.2f'|format(result.weapon_use.max_intensity or 0) }}
         {% if result.weapon_use.labels %}
           (
           {% for row in result.weapon_use.labels %}
-            <code>{{ row.id }}</code> × {{ row.count }}{% if not loop.last %}, {% endif %}
+            {{ row.id }} × {{ row.count }}{% if not loop.last %}, {% endif %}
           {% endfor %}
           )
         {% endif %}
-        <span class="muted">— indicator only, not proof of assault or intent; toys/tools/phones false-fire</span>
+        <span class="muted">· indicator only</span>
       </li>
     </ul>
     {% if result.category_rows %}
-    <h3>Category summary</h3>
-    <p class="muted">Predictions for this run, including game or play and dance that do not create threat alerts by default. Intense sport stays <code>game_or_play</code> unless <code>ALERT_ON_INTENSE_SPORT=1</code>.</p>
+    <h3>Categories</h3>
     <table class="table">
       <thead>
-        <tr><th>Category</th><th>Frames</th><th>Threat alerts</th></tr>
+        <tr><th>Category</th><th>Frames</th><th>Alerts</th></tr>
       </thead>
       <tbody>
       {% for row in result.category_rows %}
         <tr>
-          <td>{{ row.label }} <span class="mono muted">({{ row.category }})</span></td>
+          <td>{{ row.label }}</td>
           <td>{{ row.frames }}</td>
           <td>{% if row.alerts %}{{ row.alerts }}{% else %}none{% endif %}</td>
         </tr>
@@ -169,7 +150,6 @@
     {% endif %}
     {% if result.assist_rows %}
     <h3>Scene assists</h3>
-    <p class="muted">Per-frame activity class, place type, optional sport context, kit-color cues, body-aggression proxies, face-cue status, and safety assists (fall manner, gunshot proxy, aimed firearm, thrown object). Assistive only — humans verify. Setting is not identity.</p>
     <table class="table">
       <thead>
         <tr>
@@ -181,25 +161,25 @@
           <th>Aggression</th>
           <th>Face</th>
           <th>Safety cues</th>
-          <th>Threat alert</th>
+          <th>Alert</th>
         </tr>
       </thead>
       <tbody>
       {% for row in result.assist_rows %}
         <tr>
           <td class="mono">{{ row.frame }}</td>
-          <td>{{ row.label }} <span class="mono muted">({{ row.category }})</span></td>
-          <td>{% if row.place %}{{ row.place_label or row.place }} <span class="mono muted">({{ row.place }}{% if row.place_source %} · {{ row.place_source }}{% endif %})</span>{% else %}<span class="muted">unknown</span>{% endif %}</td>
-          <td>{% if row.sport %}{{ row.sport_label or row.sport }} <span class="mono muted">({{ row.sport }})</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+          <td>{{ row.label }}</td>
+          <td>{% if row.place %}{{ row.place_label or row.place }}{% else %}<span class="muted">unknown</span>{% endif %}</td>
+          <td>{% if row.sport %}{{ row.sport_label or row.sport }}{% else %}<span class="muted">—</span>{% endif %}</td>
           <td>{{ '%.2f'|format(row.kit or 0) }}{% if row.jersey %} <span class="fineprint">jersey-like</span>{% endif %}</td>
-          <td>{{ '%.2f'|format(row.aggression or 0) }}{% if row.cues %} <span class="fineprint">{% for cue in row.cues %}<code>{{ cue }}</code> {% endfor %}</span>{% endif %}</td>
-          <td class="mono">{{ row.face }}</td>
+          <td>{{ '%.2f'|format(row.aggression or 0) }}{% if row.cues %} <span class="fineprint">{% for cue in row.cues %}{{ cue }} {% endfor %}</span>{% endif %}</td>
+          <td>{{ row.face }}</td>
           <td class="fineprint">
-            {% if row.fall_manner %}<code>{{ row.fall_manner }}</code> {% endif %}
-            {% if row.gunshot %}<code>possible_gunshot_video_proxy</code> {% endif %}
-            {% if row.aimed %}<code>firearm_aimed_at_person</code> {% endif %}
-            {% if row.thrown %}<code>object_thrown_at_person</code>{% if row.throw_label %} ({{ row.throw_label }}){% endif %} {% endif %}
-            {% if row.weapon_id %}<code>{{ row.weapon_id }}</code>{% if row.use_intensity_label %} {{ row.use_intensity_label }} {{ '%.2f'|format(row.use_intensity or 0) }}{% endif %} {% endif %}
+            {% if row.fall_manner %}{{ row.fall_manner }} {% endif %}
+            {% if row.gunshot %}gunshot {% endif %}
+            {% if row.aimed %}aimed {% endif %}
+            {% if row.thrown %}thrown{% if row.throw_label %} ({{ row.throw_label }}){% endif %} {% endif %}
+            {% if row.weapon_id %}{{ row.weapon_id }}{% if row.use_intensity_label %} {{ row.use_intensity_label }} {{ '%.2f'|format(row.use_intensity or 0) }}{% endif %} {% endif %}
             {% if not row.fall_manner and not row.gunshot and not row.aimed and not row.thrown and not row.weapon_id %}<span class="muted">—</span>{% endif %}
           </td>
           <td>{% if row.alert %}yes{% else %}none{% endif %}</td>
@@ -210,9 +190,8 @@
     {% endif %}
     {% if result.quiet %}
     <div class="quiet-run">
-      <p>Frames were analyzed; no elevated-risk frames under current heuristics / model (ordinary). That is expected for many real cameras until models are trained on your site.</p>
-      <p class="fineprint">{{ result.frames }} frame(s) were sampled from {% if result.filename %}<code>{{ result.filename }}</code>{% else %}{{ result.source }}{% endif %}. Zero alerts means the model stayed on <code>ordinary</code> — not that the source was ignored.</p>
-      <a class="btn btn-primary" href="{{ url_for('main.dashboard') }}">Open dashboard</a>
+      <p>No elevated-risk frames in this run.</p>
+      <a class="btn btn-primary" href="{{ url_for('main.dashboard') }}">Open alerts</a>
     </div>
     {% endif %}
     {% if result.cameras %}

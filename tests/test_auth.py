@@ -78,7 +78,6 @@ def test_login_fields_start_empty_and_discourage_autofill(client):
         assert "readonly" in tag
         assert "value=" not in tag
     assert 'type="password"' in html
-    assert "start empty" in html.lower()
 
 
 def test_login_page_has_logo_and_create_account(client):
@@ -147,7 +146,7 @@ def test_first_register_is_admin_second_is_operator(app, client):
     assert reviewer is not None
     assert reviewer.role == "operator"
     assert reviewer.approved is False
-    assert "pending admin approval" in second.get_data(as_text=True).lower()
+    assert "account pending approval" in second.get_data(as_text=True).lower()
 
 
 def test_register_ignores_posted_developer_role(app, client):

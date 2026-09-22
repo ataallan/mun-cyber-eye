@@ -479,11 +479,11 @@ def demo_synthetic_run(
                 index=i,
                 timestamp_sec=i / 2.0,
                 image_bgr=img,
-                source_label="Authorized Camera — Synthetic Demo",
+                source_label="Synthetic sample",
             )
         )
     return pipeline.run_frames(
-        synthetic, source_label="Authorized Camera — Synthetic Demo"
+        synthetic, source_label="Synthetic sample"
     )
 
 
@@ -530,7 +530,7 @@ def demo_activity_run(
                     index=idx,
                     timestamp_sec=idx / 2.0,
                     image_bgr=img,
-                    source_label="Authorized Camera — Activity Demo",
+                    source_label="Activity sample",
                 )
             )
             idx += 1
@@ -541,7 +541,7 @@ def demo_activity_run(
                 index=idx,
                 timestamp_sec=idx / 2.0,
                 image_bgr=img,
-                source_label="Authorized Camera — Activity Demo",
+                source_label="Activity sample",
             )
         )
         idx += 1
@@ -567,12 +567,12 @@ def demo_activity_run(
                 index=idx,
                 timestamp_sec=idx / 2.0,
                 image_bgr=img,
-                source_label="Authorized Camera — Activity Demo",
+                source_label="Activity sample",
             )
         )
         idx += 1
     return pipeline.run_frames(
-        synthetic, source_label="Authorized Camera — Activity Demo"
+        synthetic, source_label="Activity sample"
     )
 
 
@@ -628,7 +628,7 @@ def run_registered_cameras(
                     location_label=camera.location_label,
                     error=message,
                     objects_backend="unavailable",
-                    objects_note="Camera produced no frames; no objects invented.",
+                    objects_note="No frames from this camera.",
                 )
             )
     return results

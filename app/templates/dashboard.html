@@ -3,12 +3,6 @@
 {% block content %}
 <section class="hero">
   <h1>Alert console</h1>
-  <p class="muted">Structured alerts from registered authorized cameras. Review, acknowledge, dismiss, escalate, or reopen — never wipe the row. The system does not act on its own.
-    Vision backend: <code>{{ vision_backend }}</code>
-    {% if activity_checkpoint_ready %}· Phase 3 activity checkpoint ready{% endif %}
-    · Email {{ "configured" if notify_resend_configured else "offline / no Resend key" }}
-    · Webhook {{ "configured" if notify_webhook_configured else "off" }}
-  </p>
 </section>
 
 <section class="stats">
@@ -28,13 +22,12 @@
     <a class="chip {% if filter_status == 'escalated' %}active{% endif %}" href="{{ url_for('main.dashboard', status='escalated') }}">Escalated</a>
     <a class="chip {% if filter_status == 'dismissed' %}active{% endif %}" href="{{ url_for('main.dashboard', status='dismissed') }}">Dismissed</a>
   </div>
-  <a class="btn btn-primary" href="{{ url_for('main.run_pipeline') }}">Run pipeline</a>
+  <a class="btn btn-primary" href="{{ url_for('main.run_pipeline') }}">Run</a>
 </div>
 
 {% if cameras is defined and cameras %}
 <section class="card camera-health">
   <h2>Camera health</h2>
-  <p class="muted">Last seen and last error from the authorized registry. Detection runs from these cameras when the pipeline runs. Offline or missing credentials stay visible — they do not produce alerts. Cameras are enabled or disabled (and may be detached from an account); there is no permanent delete.</p>
   <table class="table">
     <thead>
       <tr><th>Camera</th><th>Location</th><th>Type</th><th>Last seen</th><th>Last error</th></tr>
@@ -59,8 +52,8 @@
 
 {% if not alerts %}
 <div class="card empty">
-  <p>No alerts yet. Register authorized cameras, then run the pipeline on those cameras. Humans review every alert. Lab-only MOCK is available on Run Pipeline for development.</p>
-  <a class="btn btn-primary" href="{{ url_for('main.run_pipeline') }}">Run cameras</a>
+  <p>No alerts.</p>
+  <a class="btn btn-primary" href="{{ url_for('main.run_pipeline') }}">Run</a>
 </div>
 {% else %}
 <table class="table">

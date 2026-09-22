@@ -80,7 +80,7 @@ def operator_required(view):
         if blocked is not None:
             return blocked
         if session.get("role") not in MANAGE_ROLES:
-            flash("Only admin, operator, or developer roles can manage alert delivery.", "error")
+            flash("You cannot manage alert delivery.", "error")
             return redirect(url_for("main.dashboard"))
         return view(*args, **kwargs)
 
@@ -250,17 +250,9 @@ def _issue_login_code(user, *, resend: bool = False) -> str:
         if ok:
             emailed = True
             if resend:
-                flash(
-                    "A new sign-in code was sent to the login email on this account. "
-                    "It expires soon and can be used once.",
-                    "ok",
-                )
+                flash("A new sign-in code was sent to the login email on this account.", "ok")
             else:
-                flash(
-                    "A sign-in code was sent to the login email on this account. "
-                    "It expires soon and can be used once.",
-                    "ok",
-                )
+                flash("A sign-in code was sent to the login email on this account.", "ok")
         else:
             current_app.logger.error("Sign-in code email failed: %s", detail)
             flash(
@@ -270,32 +262,21 @@ def _issue_login_code(user, *, resend: bool = False) -> str:
             )
     else:
         flash(
-            "Email delivery is not configured (RESEND_API_KEY). "
-            "A sign-in code was not emailed.",
+            "Email delivery is not configured. A sign-in code was not emailed.",
             "error",
         )
 
     if _show_demo_login_code():
         stash_demo_login_code(code)
         if not emailed:
-            flash(
-                "Local demo: a one-time sign-in code is shown below and written "
-                "to the console log.",
-                "ok",
-            )
-    elif not emailed:
-        flash(
-            "If this is a local demo, check the application console log for a "
-            "one-time sign-in code.",
-            "ok",
-        )
+            flash("A one-time sign-in code is shown below.", "ok")
     return "ok"
 
 
 def _complete_console_login(user, *, email_2fa_verified: bool = False):
     nxt = session.get(PENDING_2FA_NEXT_KEY) or ""
     start_session(user, email_2fa_verified=email_2fa_verified)
-    flash("Signed in. Alerts require human verification.", "ok")
+    flash("Signed in.", "ok")
     if nxt.startswith("/") and not nxt.startswith("//"):
         return redirect(nxt)
     return redirect(safe_next_url())
@@ -344,7 +325,7 @@ def login():
                     )
                 return redirect(url_for("main.login_code"))
             start_session(user)
-            flash("Signed in. Alerts require human verification.", "ok")
+            flash("Signed in.", "ok")
             return redirect(safe_next_url())
         if status == "pending":
             flash(PENDING_LOGIN_MESSAGE, "error")
@@ -402,19 +383,11 @@ def register():
             )
         if user.role == "admin":
             flash(
-                "First account created as site admin and auto-approved so you can "
-                "approve later registrations. Sign in with the password you chose. "
-                "No default password is shipped. Site admin runs cameras and review — "
-                "not model training.",
+                "Account created as site admin. Sign in to approve later accounts.",
                 "ok",
             )
         else:
-            flash(
-                "Account created. It is pending admin approval — you cannot sign in "
-                "to cameras, alerts, or Run Pipeline until a site admin or developer "
-                "approves it.",
-                "ok",
-            )
+            flash("Account created. Account pending approval.", "ok")
         return redirect(url_for("main.login"))
     return render_template("register.html", needs_setup=_users().count() == 0)
 
@@ -468,22 +441,13 @@ def forgot_password():
             )
         else:
             flash(
-                "Email delivery is not configured (RESEND_API_KEY). "
-                "A reset email was not sent.",
+                "Email delivery is not configured. A reset email was not sent.",
                 "error",
             )
             show_demo = current_app.config.get("AUTH_SHOW_RESET_URL") or current_app.testing
             if show_demo and reset_url:
                 demo_reset_url = reset_url
-                flash(
-                    "Local demo: a one-time reset URL is shown below and written to the console log.",
-                    "ok",
-                )
-            elif reset_url:
-                flash(
-                    "If this is a local demo, check the application console log for a one-time reset URL.",
-                    "ok",
-                )
+                flash("A one-time reset link is shown below.", "ok")
     return render_template("forgot_password.html", demo_reset_url=demo_reset_url)
 
 
@@ -666,11 +630,7 @@ def alert_resend(alert_id: str):
         flash_cat = "warn"
     else:
         flash_cat = "error"
-    flash(
-        f"Delivery attempt recorded as {updated.delivery_status}. "
-        "Success is only shown when a channel actually accepted the message.",
-        flash_cat,
-    )
+    flash(f"Delivery recorded as {updated.delivery_status}.", flash_cat)
     return redirect(url_for("main.alert_detail", alert_id=alert_id))
 
 
@@ -716,11 +676,7 @@ def recipient_active(recipient_id: int):
     return redirect(url_for("main.recipients"))
 
 
-QUIET_RUN_MESSAGE = (
-    "Frames were analyzed; no elevated-risk frames under current heuristics / "
-    "model (ordinary). That is expected for many real cameras until models "
-    "are trained on your site."
-)
+QUIET_RUN_MESSAGE = "No elevated-risk frames in this run."
 
 
 def _attached_upload():
@@ -972,21 +928,17 @@ def _pipeline_result_summary(results, *, mode: str = "", filename: str = "") -> 
 
 
 def _flash_run_outcome(summary: dict) -> None:
-    backend = summary.get("backend") or "unknown"
     frames = summary.get("frames") or 0
     alerts = summary.get("alerts") or 0
     if summary.get("failures"):
         flash(
-            f"Processed {frames} frames; "
-            f"{alerts} alert(s) queued for human review. "
-            f"{summary['failures']} camera(s) reported an honest error "
-            "(offline or missing credentials) — no fake detections.",
+            f"Processed {frames} frames; {alerts} alert(s). "
+            f"{summary['failures']} camera(s) could not be reached.",
             "warn",
         )
     else:
         flash(
-            f"Processed {frames} frames via {backend}; "
-            f"{alerts} alert(s) queued for human review.",
+            f"Processed {frames} frames; {alerts} alert(s).",
             "ok",
         )
     if summary.get("quiet"):
@@ -1229,7 +1181,7 @@ def account_approve(user_id: str):
         f"user={updated.username} role={updated.role}",
     )
     flash(
-        f"Approved {updated.username}. They can now sign in to cameras, alerts, and Run Pipeline.",
+        f"Approved {updated.username}. They can sign in.",
         "ok",
     )
     return redirect(url_for("main.accounts"))
@@ -1318,9 +1270,7 @@ def run_pipeline():
 
         if _attached_upload() is not None:
             flash(
-                "Video file uploads are for training only "
-                "(Train models → Extract frames from video). "
-                "This run ignored the attached file. Detection uses registered cameras.",
+                "Attached video was ignored. Detection uses registered cameras.",
                 "warn",
             )
 
@@ -1328,11 +1278,7 @@ def run_pipeline():
 
         try:
             if mode == "upload":
-                flash(
-                    "Authorized video file upload is not a customer detection path. "
-                    "Use Train models to extract labeled frames, or run registered cameras.",
-                    "error",
-                )
+                flash("Video upload is not available. Run a registered camera.", "error")
                 return redirect(url_for("main.run_pipeline"))
             if mode == "synthetic":
                 result = demo_synthetic_run(
@@ -1366,10 +1312,7 @@ def run_pipeline():
                 )
                 result_summary = _pipeline_result_summary(results, mode="camera")
             else:
-                flash(
-                    "Select registered cameras (product path) or a lab-only MOCK demo.",
-                    "error",
-                )
+                flash("Choose a camera or a sample run.", "error")
                 return redirect(url_for("main.run_pipeline"))
 
             _flash_run_outcome(result_summary)
@@ -1463,11 +1406,7 @@ def admin_train_run():
     if acc is not None:
         note += f" accuracy={acc}"
     _store().record_system_audit("train_model", actor, note)
-    flash(
-        f"Training finished in-request. Wrote {dest.name}. "
-        "Metrics are stored in the checkpoint. Humans still verify every alert.",
-        "ok",
-    )
+    flash(f"Training finished. Saved {dest.name}.", "ok")
     return render_template(
         "train.html",
         **_train_page_context(
@@ -1492,12 +1431,7 @@ def admin_train_activate():
     _store().record_system_audit(
         "activate_checkpoint", actor, f"path={dest}"
     )
-    flash(
-        f"Active checkpoint is now {dest}. "
-        "Registered-camera runs use this file. "
-        "Pointer: data/active_checkpoint.json (not a secret).",
-        "ok",
-    )
+    flash(f"Active checkpoint is now {dest.name}.", "ok")
     return redirect(url_for("main.admin_train"))
 
 
@@ -1578,10 +1512,7 @@ def admin_train_upload():
         actor,
         f"{kind} count={saved} split={split} category={folder or category or 'from-zip'} place={place_type or '-'}",
     )
-    flash(
-        f"Saved {saved} labeled frame(s). Training improves assistive detection only.",
-        "ok",
-    )
+    flash(f"Saved {saved} labeled frame(s).", "ok")
     return redirect(url_for("main.admin_train"))
 
 
@@ -1623,9 +1554,7 @@ def admin_train_extract_video():
         ),
     )
     flash(
-        f"Sampled {result['frames']} frame(s) from {result['source']} into "
-        f"{result['folder']} ({result['split']}). Videos are sampled to frames; "
-        "the sklearn activity trainer still learns from images. Humans verify.",
+        f"Saved {result['frames']} frame(s) from {result['source']}.",
         "ok",
     )
     return redirect(url_for("main.admin_train"))
@@ -1655,9 +1584,7 @@ def admin_train_objects():
         f"checkpoint={dest} classes={len(classes)}",
     )
     flash(
-        f"Object classifier wrote {dest.name} ({len(classes)} class(es)). "
-        "Runtime inventory still prefers YOLO and will not invent objects "
-        "when the detector is missing. Humans verify.",
+        f"Object classifier wrote {dest.name} ({len(classes)} class(es)).",
         "ok",
     )
     return render_template(

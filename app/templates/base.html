@@ -9,7 +9,6 @@
 <body>
   <div class="safety-banner" role="status">
     <strong>Safety:</strong> {{ safety_banner }}
-    <span class="safety-sub">Authorized cameras only · No autonomous enforcement · Face cues (when enabled) are unreliable and assistive only — never identity or criminal labels</span>
   </div>
 
   <header class="topbar">
@@ -23,7 +22,7 @@
     {% if session.get('user') %}
     <nav class="nav">
       <a href="{{ url_for('main.dashboard') }}">Alerts</a>
-      <a href="{{ url_for('main.run_pipeline') }}">Run Pipeline</a>
+      <a href="{{ url_for('main.run_pipeline') }}">Run</a>
       {% if can_train %}
       <a href="{{ url_for('main.admin_train') }}">Train models</a>
       {% endif %}
@@ -55,7 +54,7 @@
   </main>
 
   <footer class="footer">
-    <p>{{ company_name }} · Phase 5 Prototype · Human-in-the-loop review required</p>
+    <p>{{ company_name }}</p>
   </footer>
   {% block scripts %}{% endblock %}
 </body>

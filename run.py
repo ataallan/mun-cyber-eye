@@ -33,10 +33,7 @@ def main() -> None:
     url = f"http://{host}:{port}"
     print(
         f"Mun Cyber Eye · {url}\n"
-        "AI detects and alerts. Humans verify and decide.\n"
-        "Detection runs from registered authorized cameras.\n"
-        "Video uploads are for training only.\n"
-        "No default password is shipped — create the first admin account."
+        "AI detects and alerts. Humans verify and decide."
     )
     if _env_flag("MUN_OPEN_BROWSER", "0"):
         def _open() -> None:

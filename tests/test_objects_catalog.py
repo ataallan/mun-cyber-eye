@@ -235,7 +235,7 @@ def test_admin_extract_video_writes_activity_and_object_frames(client, tmp_path)
     )
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert "Sampled" in body
+    assert "Saved" in body
     assert "frame" in body.lower()
     dest = tmp_path / "activity" / "train" / "ordinary"
     frames = list(dest.glob("*.jpg"))
@@ -306,7 +306,7 @@ def test_operator_cannot_extract_video(client):
         data={"kind": "activity", "category": "ordinary"},
         follow_redirects=True,
     )
-    assert "Only Mun Cyber developer accounts" in denied.get_data(as_text=True)
+    assert "Only developer accounts can train models." in denied.get_data(as_text=True)
 
 
 def test_train_object_model_when_enough_images(client, tmp_path):

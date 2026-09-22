@@ -33,52 +33,48 @@
           {% for obj in payload.metadata.objects %}
             {{ obj.display or obj.id }} <span class="mono muted">({{ '%.2f'|format(obj.confidence or 0) }})</span>{% if not loop.last %}, {% endif %}
           {% endfor %}
-          <span class="fineprint">assistive inventory — humans verify</span>
         </dd>
         {% elif payload.metadata and payload.metadata.objects_backend == 'unavailable' %}
-        <dt>Nearby objects</dt><dd><span class="muted">unavailable</span> <span class="fineprint">{{ payload.metadata.objects_note or 'no detector; nothing invented' }}</span></dd>
+        <dt>Nearby objects</dt><dd><span class="muted">unavailable</span></dd>
         {% endif %}
         {% if payload.metadata and payload.metadata.fall_manner %}
-        <dt>Fall manner</dt><dd>{{ payload.metadata.fall_display or payload.metadata.fall_manner }} <span class="mono muted">({{ payload.metadata.fall_manner }})</span> <span class="fineprint">not a medical diagnosis of syncope, assault, or a trip — person-down still needs review</span></dd>
+        <dt>Fall manner</dt><dd>{{ payload.metadata.fall_display or payload.metadata.fall_manner }}</dd>
         {% endif %}
         {% if payload.metadata and payload.metadata.gunshot %}
         <dt>Gunshot proxy</dt><dd>
-          {% if payload.metadata.gunshot.video_proxy %}visual proxy <code>possible_gunshot_video_proxy</code>{% else %}no visual proxy this frame{% endif %}
-          · audio <code>{{ payload.metadata.gunshot.audio_status or 'disabled' }}</code>
-          <span class="fineprint">not a confirmed gunshot; audio off does not invent a bang</span>
+          {% if payload.metadata.gunshot.video_proxy %}Visual cue{% else %}No visual cue{% endif %}
+          · audio {{ payload.metadata.gunshot.audio_status or 'disabled' }}
         </dd>
         {% endif %}
         {% if payload.metadata and payload.metadata.weapon %}
         <dt>Dangerous object</dt><dd>
-          {% if payload.metadata.weapon.weapon_id %}<code>{{ payload.metadata.weapon.weapon_id }}</code>{% endif %}
+          {% if payload.metadata.weapon.weapon_id %}{{ payload.metadata.weapon.weapon_id }}{% endif %}
           {% if payload.metadata.weapon.weapon_class %} · {{ payload.metadata.weapon.weapon_class }}{% endif %}
           {% if payload.metadata.weapon.harm_potential %} · harm {{ payload.metadata.weapon.harm_potential }}{% endif %}
-          <span class="fineprint">curated assist — toys, tools, and phones false-fire</span>
         </dd>
         <dt>Weapon use</dt><dd>
           {% if payload.metadata.weapon.aimed_at_person %}<code>firearm_aimed_at_person</code> · {% endif %}
           intensity {{ '%.2f'|format(payload.metadata.weapon.use_intensity or 0) }}
-          {% if payload.metadata.weapon.use_intensity_label %} (<code>{{ payload.metadata.weapon.use_intensity_label }}</code>){% endif %}
-          {% if payload.metadata.weapon.use_tier and payload.metadata.weapon.use_tier != payload.metadata.weapon.use_intensity_label %} · {{ payload.metadata.weapon.use_tier }}{% endif %}
-          <span class="fineprint">indicator only — not proof of assault or intent; sport does not suppress an aimed-at-person cue</span>
+          {% if payload.metadata.weapon.use_intensity_label %} ({{ payload.metadata.weapon.use_intensity_label }}){% endif %}
+          <span class="fineprint">indicator only</span>
         </dd>
         {% endif %}
         {% if payload.metadata and payload.metadata.throw and payload.metadata.throw.thrown_at_person %}
         <dt>Thrown object</dt><dd>
-          <code>object_thrown_at_person</code>
+          Thrown toward a person
+          · <code>object_thrown_at_person</code>
           · <code>thrown_projectile</code>
           {% if payload.metadata.throw.object_label %} · {{ payload.metadata.throw.object_label }}{% endif %}
-          <span class="fineprint">Possible object thrown toward a person — verify. Not proof of assault. Distinct from an aimed firearm and from a static brandish.</span>
         </dd>
         {% endif %}
         {% if payload.metadata and payload.metadata.kit %}
-        <dt>Kit cues</dt><dd>similarity {{ '%.2f'|format(payload.metadata.kit.team_kit_similarity or 0) }}{% if payload.metadata.kit.jersey_like_colors %} · jersey-like{% endif %} <span class="fineprint">clothing color only — not identity or guilt</span></dd>
+        <dt>Kit cues</dt><dd>similarity {{ '%.2f'|format(payload.metadata.kit.team_kit_similarity or 0) }}{% if payload.metadata.kit.jersey_like_colors %} · jersey-like{% endif %}</dd>
         {% endif %}
         {% if payload.metadata and payload.metadata.aggression %}
         <dt>Aggression</dt><dd>{{ '%.2f'|format(payload.metadata.aggression.score or 0) }}{% if payload.metadata.aggression.cues %} · {% for cue in payload.metadata.aggression.cues %}<code>{{ cue }}</code> {% endfor %}{% endif %}</dd>
         {% endif %}
         {% if payload.metadata and payload.metadata.face_aggression %}
-        <dt>Face cue</dt><dd><code>{{ payload.metadata.face_aggression.status or 'disabled' }}</code> <span class="fineprint">assistive only — never identity or a criminal label</span></dd>
+        <dt>Face cue</dt><dd>{{ payload.metadata.face_aggression.status or 'disabled' }}</dd>
         {% endif %}
         <dt>Confidence</dt><dd>{{ '%.1f'|format(alert.confidence * 100) }}%</dd>
         <dt>Location</dt><dd>{{ alert.location_label or '—' }}</dd>
@@ -104,7 +100,6 @@
       <p>{{ alert.rationale }}</p>
       <h2>Recommended human action</h2>
       <p>{{ alert.recommended_human_action }}</p>
-      <p class="fineprint">This is an AI-assisted alert, not a legal determination. A trained human must verify before any consequential response. Recommended actions are advisory only — the system does not lock down, detain, or dispatch force.</p>
     </div>
     <div class="snapshot-panel">
       {% if alert.snapshot_path %}
@@ -118,9 +113,8 @@
 
   <section class="actions">
     <h2>Human decision</h2>
-    <p class="fineprint">Acknowledge, dismiss, escalate, or reopen. Every action is audited. Alerts are retained — there is no delete that wipes the row.</p>
     <form method="post" action="{{ url_for('main.alert_action', alert_id=alert.id) }}" class="form inline-form">
-      <label>Note (optional)
+      <label>Note
         <input type="text" name="note" placeholder="Verification notes…">
       </label>
       <div class="btn-row">
@@ -133,8 +127,7 @@
   </section>
 
   <section class="actions">
-    <h2>Outbound delivery</h2>
-    <p class="muted">Console review is primary. Email (Resend) and webhook are optional channels. Recipients are every account linked to the camera (security or login email), the signed-in account on interactive run/resend, Recipients directory, and optional <code>ALERT_EMAIL_RECIPIENTS</code>. Missing keys are marked queued or undelivered — never reported as sent.</p>
+    <h2>Delivery</h2>
     {% if can_resend %}
     <form method="post" action="{{ url_for('main.alert_resend', alert_id=alert.id) }}" class="form inline-form">
       <div class="btn-row">
@@ -164,11 +157,6 @@
       {% endif %}
       </tbody>
     </table>
-  </section>
-
-  <section>
-    <h2>Structured payload</h2>
-    <pre class="payload">{{ payload_json }}</pre>
   </section>
 
   <section>

@@ -185,7 +185,6 @@ def test_alert_detail_hitl_actions_have_no_delete(app, client):
     assert 'value="escalate"' in body
     assert 'value="reopen"' in body
     assert 'value="delete"' not in body
-    assert "no delete that wipes the row" in body.lower()
 
     resp = client.post(
         f"/alerts/{alert.id}/action",
@@ -203,7 +202,6 @@ def test_cameras_page_has_enable_disable_not_delete(client):
     _login(client)
     body = client.get("/cameras").get_data(as_text=True)
     assert "Enable" in body or "Disable" in body
-    assert "permanent camera delete" in body.lower() or "no permanent" in body.lower()
     assert ">Delete<" not in body
     missing = client.post("/cameras/demo-file-01/delete", follow_redirects=False)
     assert missing.status_code in {404, 405}

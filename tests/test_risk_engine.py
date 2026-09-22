@@ -74,7 +74,8 @@ def test_phase3_activity_label_fight():
     assert result.category == ActivityCategory.POTENTIAL_FIGHT
     assert result.should_alert is True
     assert result.risk_level in {RiskLevel.ELEVATED, RiskLevel.HIGH}
-    assert "phase 3" in result.rationale.lower()
+    assert "activity model" in result.rationale.lower()
+    assert "confrontation" in result.rationale.lower()
 
 
 def test_phase3_activity_label_ordinary_no_alert():
