@@ -130,6 +130,7 @@ def structured_payload(alert: Any) -> dict[str, Any]:
         or format_frame_time(data.get("timestamp_sec") or 0),
         "timestamp_sec": data.get("timestamp_sec"),
         "snapshot_path": data.get("snapshot_path"),
+        "clip_path": data.get("clip_path"),
         "rationale": data.get("rationale"),
         "short_rationale": data.get("short_rationale")
         or short_rationale(data.get("rationale") or ""),

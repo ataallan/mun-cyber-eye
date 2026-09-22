@@ -562,6 +562,26 @@ def dashboard():
     )
 
 
+@bp.route("/monitor/start", methods=["POST"])
+@login_required
+def monitor_start():
+    actor = session.get("user", "operator")
+    current_app.extensions["monitor"].start(actor=actor)
+    _store().record_system_audit("monitor_start", actor, "continuous monitoring on")
+    flash("Monitoring started.", "ok")
+    return redirect(url_for("main.dashboard"))
+
+
+@bp.route("/monitor/stop", methods=["POST"])
+@login_required
+def monitor_stop():
+    actor = session.get("user", "operator")
+    current_app.extensions["monitor"].stop(actor=actor)
+    _store().record_system_audit("monitor_stop", actor, "continuous monitoring off")
+    flash("Monitoring stopped.", "ok")
+    return redirect(url_for("main.dashboard"))
+
+
 @bp.route("/alerts/<alert_id>")
 @login_required
 def alert_detail(alert_id: str):
@@ -1605,6 +1625,13 @@ def snapshot_file(filename: str):
     return send_from_directory(directory, filename)
 
 
+@bp.route("/clips/<path:filename>")
+@login_required
+def clip_file(filename: str):
+    directory = Path(current_app.config["CLIP_DIR"])
+    return send_from_directory(directory, filename)
+
+
 @bp.route("/health")
 def health():
     ckpt = Path(current_app.config.get("ACTIVITY_CHECKPOINT", ""))
@@ -1634,4 +1661,5 @@ def health():
             "total": _cameras().count(),
             "enabled": len(_cameras().list_cameras(enabled_only=True)),
         },
+        "monitoring": current_app.extensions["monitor"].status(),
     }

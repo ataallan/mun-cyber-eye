@@ -84,6 +84,7 @@
         <dt>Created</dt><dd class="mono">{{ alert.created_at }}</dd>
         <dt>Correlation</dt><dd class="mono">{{ alert.correlation_id }}</dd>
         <dt>Snapshot</dt><dd class="mono">{{ alert.snapshot_path or '—' }}</dd>
+        <dt>Clip</dt><dd>{% if alert.clip_path %}Attached{% else %}None{% endif %}</dd>
         <dt>Delivery</dt><dd><span class="badge delivery-{{ alert.delivery_status }}">{{ alert.delivery_status }}</span></dd>
         {% if payload.metadata and payload.metadata.notified_emails %}
         <dt>Notified emails</dt>
@@ -102,6 +103,12 @@
       <p>{{ alert.recommended_human_action }}</p>
     </div>
     <div class="snapshot-panel">
+      {% if alert.clip_path %}
+        {% set clip_name = alert.clip_path.replace('\\', '/').split('/')[-1] %}
+        <video class="clip-player" controls preload="metadata" src="{{ url_for('main.clip_file', filename=clip_name) }}">
+          Incident clip
+        </video>
+      {% endif %}
       {% if alert.snapshot_path %}
         {% set fname = alert.snapshot_path.split('/')[-1] %}
         <img src="{{ url_for('main.snapshot_file', filename=fname) }}" alt="Alert snapshot from authorized source">

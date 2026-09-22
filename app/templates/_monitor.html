@@ -1,0 +1,23 @@
+<section class="card monitor-panel">
+  <div class="detail-head">
+    <h2>Monitoring</h2>
+    {% if monitor_status.running %}
+      <span class="badge health-ok">On</span>
+    {% else %}
+      <span class="badge status-dismissed">Off</span>
+    {% endif %}
+  </div>
+  <p class="fineprint">Watches enabled cameras and saves a short clip with each suspected incident.</p>
+  {% if monitor_status.running %}
+  <form method="post" action="{{ url_for('main.monitor_stop') }}">
+    <button class="btn btn-warn" type="submit">Stop monitoring</button>
+  </form>
+  {% else %}
+  <form method="post" action="{{ url_for('main.monitor_start') }}">
+    <button class="btn btn-primary" type="submit">Start monitoring</button>
+  </form>
+  {% endif %}
+  {% if monitor_status.cycles %}
+  <p class="fineprint">Sweeps: {{ monitor_status.cycles }} · Alerts this session: {{ monitor_status.alerts_created }}</p>
+  {% endif %}
+</section>

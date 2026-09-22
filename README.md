@@ -30,8 +30,8 @@ There is **no default password**. On a fresh install, use **Create account** —
 
 1. Create account / sign in  
 2. **Cameras** → confirm the seeded Demo Lab File camera, or add an authorized file / RTSP source  
-3. **Run Pipeline** → registered cameras (product detection path). Lab-only MOCK / Phase 3 synthetic demo are labeled as development, not customer detection. **Video uploads are for training only** (developer → Train models → Extract frames from video). Customer accounts use shipped checkpoints.  
-4. Open an alert → `camera_id` + `location_label` from the registry, then acknowledge / dismiss / escalate / reopen (alerts are retained — no delete wipe)  
+3. **Monitoring** watches enabled cameras while the console is running (`MONITOR_AUTOSTART=1` by default). **Start monitoring** / **Stop monitoring** are on the alert console. **Run** is a one-shot check. Lab-only MOCK / Phase 3 synthetic demo are development, not customer detection. **Video uploads are for training only** (developer → Train models → Extract frames from video). Customer accounts use shipped checkpoints.  
+4. Open an alert → `camera_id` + `location_label` from the registry, play the short incident clip when monitoring saved one, then acknowledge / dismiss / escalate / reopen (alerts are retained — no delete wipe)  
 5. Optional: **Recipients** + `RESEND_API_KEY` to email authorized operators. Camera owners are notified via `security_email` or login email.  
 
 Webcam capture stays off unless `ALLOW_WEBCAM=1`. A missing RTSP secret or dead stream marks `last_error` on the camera and does not invent detections. Details: [docs/PHASE5.md](docs/PHASE5.md), [docs/PRODUCT_OPS.md](docs/PRODUCT_OPS.md).

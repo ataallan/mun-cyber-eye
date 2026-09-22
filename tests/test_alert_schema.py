@@ -159,3 +159,4 @@ def test_legacy_db_gains_new_columns(tmp_path):
     assert loaded.delivery_status == "pending"
     assert loaded.frame_time == "00:00:01.00"
     assert loaded.correlation_id == "legacy-1"
+    assert loaded.clip_path is None
