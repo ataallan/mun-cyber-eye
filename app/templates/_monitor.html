@@ -8,6 +8,8 @@
     {% endif %}
   </div>
   <p class="fineprint">Watches enabled cameras and saves a short clip with each suspected incident.</p>
+  <p class="fineprint">Activity checkpoint: <span class="mono">{{ monitor_status.activity_checkpoint_name or "none" }}</span>
+    · Objects: {{ monitor_status.objects_backend or "unavailable" }}</p>
   {% if monitor_status.running %}
   <form method="post" action="{{ url_for('main.monitor_stop') }}">
     <button class="btn btn-warn" type="submit">Stop monitoring</button>

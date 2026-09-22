@@ -685,6 +685,44 @@ def extract_clip_frames(
     }
 
 
+def save_gallery_files(
+    config: dict,
+    files: Iterable,
+    *,
+    kind: str,
+    object_id: str,
+    split: str = "train",
+) -> int:
+    """Save uploaded examples under data/objects or data/dangerous."""
+    dest_dir, _folder = resolve_label_dest(
+        config,
+        kind=kind,
+        split=split,
+        object_id=object_id,
+    )
+    root = dest_dir.parent.parent
+    saved = 0
+    for upload in files:
+        if upload is None or not getattr(upload, "filename", None):
+            continue
+        name = Path(upload.filename).name
+        suffix = Path(name).suffix.lower()
+        if suffix not in IMAGE_SUFFIXES:
+            raise ValueError(f"Unsupported image type: {name}")
+        safe = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in name)
+        if not safe or safe.startswith("."):
+            raise ValueError(f"Invalid filename: {name}")
+        dest = _assert_under(dest_dir / safe, root)
+        upload.save(dest)
+        if dest.stat().st_size > MAX_UPLOAD_BYTES:
+            dest.unlink(missing_ok=True)
+            raise ValueError(f"{name} exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit.")
+        saved += 1
+    if saved == 0:
+        raise ValueError("No image files were uploaded.")
+    return saved
+
+
 def extract_video_frames(
     config: dict,
     upload,

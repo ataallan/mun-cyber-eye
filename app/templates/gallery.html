@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Objects · {{ product_name }}{% endblock %}
+{% block content %}
+<section class="hero">
+  <h1>Objects</h1>
+  <p class="muted">Home, community, and dangerous classes. A match is a cue for review.</p>
+</section>
+
+<section class="card">
+  <h2>Scan</h2>
+  <form method="post" action="{{ url_for('main.gallery_scan') }}" enctype="multipart/form-data" class="form">
+    <label>Camera
+      <select name="camera_id">
+        <option value="">Choose a camera</option>
+        {% for camera in cameras %}
+        <option value="{{ camera.id }}">{{ camera.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Short clip
+      <input type="file" name="clip" accept="video/mp4,video/x-msvideo,video/quicktime,video/x-matroska,.mp4,.avi,.mov,.mkv">
+    </label>
+    <button class="btn btn-primary" type="submit">Scan</button>
+  </form>
+  {% if scan %}
+  <div class="result-box">
+    <p>Source: {{ scan.source or "—" }} · Frames: {{ scan.frames or 0 }} · Objects: <strong>{{ scan.backend }}</strong></p>
+    {% if scan.note %}<p class="fineprint">{{ scan.note }}</p>{% endif %}
+    {% if scan.matches %}
+    <table class="table">
+      <thead>
+        <tr><th>Match</th><th>Count</th><th>Confidence</th></tr>
+      </thead>
+      <tbody>
+      {% for row in scan.matches %}
+        <tr>
+          <td class="scan-match">{{ row.name }}</td>
+          <td>{{ row.count }}</td>
+          <td>{{ row.confidence }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% elif scan.backend != 'unavailable' %}
+    <p class="fineprint">No gallery matches.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+</section>
+
+<section class="card">
+  <div class="toolbar">
+    <div class="filters">
+      <a class="chip {% if group == 'all' %}active{% endif %}" href="{{ url_for('main.gallery') }}">All</a>
+      <a class="chip {% if group == 'home' %}active{% endif %}" href="{{ url_for('main.gallery', group='home') }}">Home</a>
+      <a class="chip {% if group == 'community' %}active{% endif %}" href="{{ url_for('main.gallery', group='community') }}">Community</a>
+      <a class="chip {% if group == 'dangerous' %}active{% endif %}" href="{{ url_for('main.gallery', group='dangerous') }}">Dangerous</a>
+    </div>
+  </div>
+  <div class="gallery-grid">
+    {% for card in cards %}
+    <article class="card gallery-card">
+      <div class="gallery-thumbs">
+        {% if card.thumb_urls %}
+          {% for src in card.thumb_urls %}
+          <img src="{{ src }}" alt="">
+          {% endfor %}
+        {% else %}
+          <span class="fineprint">No sample</span>
+        {% endif %}
+      </div>
+      <h3>{{ card.name }}</h3>
+      <p class="fineprint">{{ card.group_label }}</p>
+      <div class="gallery-meta">
+        <span class="badge status-open">Train {{ card.train_count }}</span>
+        {% if card.yolo_known %}
+        <span class="badge health-ok">YOLO</span>
+        {% else %}
+        <span class="badge status-pending">Needs labels</span>
+        {% endif %}
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+{% if can_train %}
+<section class="card gallery-actions">
+  <h2>Add examples</h2>
+  <p class="fineprint">Developer only. Images and frames from an authorized clip go into the selected class, including unidentified striking object.</p>
+  <form method="post" action="{{ url_for('main.gallery_examples') }}" enctype="multipart/form-data" class="form">
+    <label>Class
+      <select name="item" required>
+        <option value="">Choose</option>
+        {% for card in all_cards %}
+        <option value="{{ card.token }}">{{ card.group_label }} — {{ card.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Split
+      <select name="split">
+        <option value="train">train</option>
+        <option value="val">val</option>
+        <option value="test">test</option>
+      </select>
+    </label>
+    <label>Images
+      <input type="file" name="images" accept="image/jpeg,image/png,image/bmp,.jpg,.jpeg,.png,.bmp" multiple>
+    </label>
+    <label>Authorized video
+      <input type="file" name="video" accept="video/mp4,video/x-msvideo,video/quicktime,video/x-matroska,.mp4,.avi,.mov,.mkv">
+    </label>
+    <button class="btn btn-primary" type="submit">Add examples</button>
+  </form>
+
+  <h2>Train object model</h2>
+  <p class="fineprint">Optional. Writes a checkpoint file for catalog classes. It does not replace the activity checkpoint <span class="mono">{{ checkpoint_name or "none" }}</span> and does not change monitoring.</p>
+  <form method="post" action="{{ url_for('main.gallery_train') }}" class="form">
+    <label>File name
+      <input type="text" name="output_name" value="objects_custom.joblib">
+    </label>
+    <label class="check">
+      <input type="checkbox" name="confirm_live_unchanged" value="1">
+      I understand this does not change live detection.
+    </label>
+    <button class="btn btn-ghost" type="submit">Train object model</button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

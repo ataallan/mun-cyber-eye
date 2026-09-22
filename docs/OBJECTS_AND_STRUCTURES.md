@@ -33,6 +33,10 @@ YOLO (COCO 80) maps only where labels overlap, including: chair, couch, bed, din
 
 Ids with **no** COCO mapping (door, window, washing_machine, playground_equipment, mailbox, …) need operator-labeled frames. They will not appear on Last run until a detector that knows them is present.
 
+## Objects gallery
+
+Signed-in operators can open **Objects** to browse catalog and dangerous classes (sample thumbs, train counts, YOLO overlap vs needs labels) and scan a camera or short clip. A missing detector is reported as `unavailable`. Adding examples and training the optional object model are developer-only. That training writes a file and does not replace the live activity checkpoint.
+
 ## Dataset layout
 
 ```

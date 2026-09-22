@@ -52,6 +52,7 @@ class MonitorService:
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._pipeline: Optional[CyberEyePipeline] = None
+        self._built_signature: Optional[tuple] = None
         self._seen_files: dict[str, tuple] = {}
         self._desired = "off"
         self._status: dict[str, Any] = {
@@ -87,6 +88,7 @@ class MonitorService:
                 self._stop.clear()
                 self._seen_files.clear()
                 self._pipeline = None
+                self._built_signature = None
                 self._status["started_at"] = _utc_now()
                 self._status["alerts_created"] = 0
                 self._status["cycles"] = 0
@@ -159,6 +161,7 @@ class MonitorService:
         frames = 0
         failures = 0
         last_error = ""
+        observed_backend = ""
         pipeline = self._ensure_pipeline()
         for camera in enabled:
             if self._stop.is_set():
@@ -180,6 +183,8 @@ class MonitorService:
             for result in results:
                 frames += result.frames_processed
                 alerts_created += len(result.alerts_created)
+                if result.frames_processed and getattr(result, "objects_backend", ""):
+                    observed_backend = str(result.objects_backend)
                 if result.error:
                     failures += 1
                     last_error = result.error
@@ -192,6 +197,8 @@ class MonitorService:
                 int(self._status.get("alerts_created") or 0) + alerts_created
             )
             self._status["last_error"] = last_error
+            if observed_backend:
+                self._status["objects_backend"] = observed_backend
         log = logger.info if (frames or alerts_created or failures) else logger.debug
         log(
             "Monitor sweep cameras=%s frames=%s alerts=%s failures=%s",
@@ -258,9 +265,45 @@ class MonitorService:
         except (TypeError, ValueError):
             return 0.5
 
+    def _active_checkpoint_path(self) -> str:
+        """Active pointer on disk, else the configured checkpoint. Same rule as Run."""
+        from vision.checkpoint_config import resolve_checkpoint_path
+
+        cfg = self.app.config
+        return str(
+            resolve_checkpoint_path(
+                root=cfg.get("PROJECT_ROOT") or ".",
+                active_file=cfg.get("ACTIVE_CHECKPOINT_FILE"),
+                env_fallback=str(cfg.get("ACTIVITY_CHECKPOINT") or ""),
+            )
+        )
+
+    def _object_mode(self) -> str:
+        raw = self.app.config.get("OBJECTS_BACKEND")
+        if raw is None or str(raw).strip() == "":
+            raw = os.getenv("OBJECTS_BACKEND", "auto")
+        mode = str(raw).strip().lower() or "auto"
+        return mode
+
+    def _runtime_signature(self) -> tuple:
+        path = self._active_checkpoint_path()
+        mtime = 0
+        candidate = Path(path)
+        if candidate.is_file():
+            try:
+                mtime = candidate.stat().st_mtime_ns
+            except OSError:
+                mtime = 0
+        backend = str(self.app.config.get("VISION_BACKEND") or "auto")
+        return (path, mtime, self._object_mode(), backend)
+
     def _ensure_pipeline(self) -> CyberEyePipeline:
-        if self._pipeline is None:
+        signature = self._runtime_signature()
+        if self._pipeline is None or self._built_signature != signature:
+            # Keep one-shot Run and monitoring on the same checkpoint.
+            self.app.config["ACTIVITY_CHECKPOINT"] = signature[0]
             self._pipeline = self._build_pipeline()
+            self._built_signature = signature
         return self._pipeline
 
     def _build_pipeline(self) -> CyberEyePipeline:
@@ -297,7 +340,7 @@ class MonitorService:
             snapshot_dir=cfg.get("SNAPSHOT_DIR") or "data/snapshots",
             notifier=self.app.extensions.get("notifier"),
             activity_data_root=cfg.get("ACTIVITY_DATA_ROOT"),
-            object_mode=cfg.get("OBJECTS_BACKEND"),
+            object_mode=self._object_mode(),
             clip_dir=cfg.get("CLIP_DIR"),
             clip_pre_sec=pre,
             clip_post_sec=post,
@@ -332,6 +375,23 @@ class MonitorService:
         alive = self._thread is not None and self._thread.is_alive()
         data["running"] = alive
         data["desired"] = self._desired
+        checkpoint = ""
+        object_mode = "auto"
+        try:
+            checkpoint = self._active_checkpoint_path()
+            object_mode = self._object_mode()
+        except Exception:
+            checkpoint = str(self.app.config.get("ACTIVITY_CHECKPOINT") or "")
+        data["activity_checkpoint"] = checkpoint
+        data["activity_checkpoint_name"] = Path(checkpoint).name if checkpoint else ""
+        data["objects_mode"] = object_mode
+        observed = str(self._status.get("objects_backend") or "")
+        if observed:
+            data["objects_backend"] = observed
+        elif object_mode in {"off", "none", "disabled"}:
+            data["objects_backend"] = "off"
+        else:
+            data["objects_backend"] = "unavailable"
         self._status["running"] = alive
         self._status["desired"] = self._desired
         return data

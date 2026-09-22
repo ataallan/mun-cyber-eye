@@ -173,7 +173,28 @@ DANGEROUS_OBJECTS: tuple[DangerousEntry, ...] = (
         context_dependent=True,
         notes="Color/bright-region proxy only — not an accelerant or arson determination.",
     ),
+    DangerousEntry(
+        "unidentified_improvised",
+        "Unidentified striking object",
+        CLASS_IMPROVISED,
+        HARM_HIGH,
+        (
+            "improvised_weapon",
+            "unknown_weapon",
+            "unidentified_object",
+            "unidentified_striking_object",
+        ),
+        context_dependent=True,
+        notes=(
+            "Unknown or not-in-catalog object used to hit or thrown at a person. "
+            "Not a named weapon. Needs labeled frames. Presence alone is not a cue."
+        ),
+    ),
 )
+
+
+# COCO / YOLO labels that overlap this catalog. Everything else needs frames.
+YOLO_KNOWN_IDS = frozenset({"knife", "scissors", "baseball_bat", "bottle"})
 
 
 def _norm(name: str) -> str:
@@ -268,6 +289,7 @@ def detector_signal_labels() -> frozenset[str]:
             "suspicious_object",
             "firearm_aimed_at_person",
             "weapon_pointed_at_person",
+            "unidentified_striking_object",
         }
     )
     return frozenset(labels)
