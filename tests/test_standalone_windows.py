@@ -219,10 +219,23 @@ def test_windows_scripts_use_crlf():
         "install_and_run.ps1",
         "Start Mun Cyber Eye.bat",
         "start_eye.ps1",
+        "scripts/repair_bundled_runtime.ps1",
+        "scripts/build_windows_installer.ps1",
     ):
         data = (ROOT / name).read_bytes()
         assert b"\r\n" in data, name
         assert b"\n" not in data.replace(b"\r\n", b""), name
+
+
+def test_should_skip_installer_build_output(tmp_path: Path):
+    built = tmp_path / "build" / "windows-installer" / "payload" / "python.exe"
+    built.parent.mkdir(parents=True)
+    built.write_bytes(b"exe")
+    setup = tmp_path / "dist" / "MunCyberEyeSetup.exe"
+    setup.parent.mkdir()
+    setup.write_bytes(b"exe")
+    assert build_standalone_zip.should_skip(built, tmp_path)
+    assert build_standalone_zip.should_skip(setup, tmp_path)
 
 
 def test_should_skip_logs_shortcuts_and_secrets(tmp_path: Path):

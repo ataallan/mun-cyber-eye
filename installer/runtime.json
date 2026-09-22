@@ -1,0 +1,11 @@
+{
+  "python_version": "3.12.10",
+  "python_embed_url": "https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip",
+  "get_pip_url": "https://bootstrap.pypa.io/get-pip.py",
+  "inno_version": "6.7.3",
+  "inno_url": "https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe",
+  "output_exe": "MunCyberEyeSetup.exe",
+  "install_subdir": "MunCyberEye",
+  "shortcut_name": "Mun Cyber Eye",
+  "icon_rel": "app/static/img/mun-cyber-eye.ico"
+}
