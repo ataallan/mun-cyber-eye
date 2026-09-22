@@ -34,6 +34,8 @@ data/active_checkpoint.json
 .pytest_cache/
 .coverage
 htmlcov/
+install.log
+*.lnk
 .DS_Store
 ultralytics/
 runs/
