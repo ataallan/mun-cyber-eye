@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Detected cameras · {{ product_name }}{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('main.cameras') }}">&larr; Back to cameras</a></p>
+<section class="card">
+  <h1>Detected cameras</h1>
+  {% if not found %}
+  <p class="muted">No local webcams found.</p>
+  <div class="btn-row">
+    <a class="btn btn-ghost" href="{{ url_for('main.camera_detect') }}">Detect again</a>
+    <a class="btn btn-primary" href="{{ url_for('main.camera_new') }}">Add camera</a>
+  </div>
+  {% else %}
+  <p class="muted">{{ found|length }} found · {{ new_count }} new</p>
+  <form method="post">
+    <table class="table">
+      <thead>
+        <tr>
+          <th class="col-check"></th>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Index</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for d in found %}
+        <tr>
+          <td>
+            {% if not d.already_registered %}
+            <input class="detect-check" type="checkbox" name="indices" value="{{ d.uri }}" checked aria-label="Add {{ d.name }}">
+            {% endif %}
+          </td>
+          <td>{{ d.name }}</td>
+          <td class="mono">{{ d.source_type }}</td>
+          <td class="mono">{{ d.uri }}</td>
+          <td>
+            {% if d.already_registered %}
+            <span class="badge status-acknowledged">registered</span>
+            {% else %}
+            <span class="badge health-unknown">new</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% if not new_count %}
+    <p class="muted">All found webcams are already registered.</p>
+    {% endif %}
+    <div class="btn-row detect-actions">
+      {% if new_count %}
+      <button class="btn btn-primary" type="submit" name="action" value="selected">Add selected</button>
+      <button class="btn btn-ghost" type="submit" name="action" value="all_new">Add all new</button>
+      {% endif %}
+      <a class="btn btn-ghost" href="{{ url_for('main.camera_detect') }}">Detect again</a>
+    </div>
+  </form>
+  {% endif %}
+</section>
+{% endblock %}

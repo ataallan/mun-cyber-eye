@@ -7,7 +7,12 @@
 
   <div class="toolbar">
     <p class="muted" style="margin:0">{{ cameras|length }} registered · {{ cameras|selectattr('enabled')|list|length }} enabled</p>
-    <a class="btn btn-primary" href="{{ url_for('main.camera_new') }}">Add camera</a>
+    <div class="btn-row">
+      {% if allow_webcam %}
+      <a class="btn btn-ghost" href="{{ url_for('main.camera_detect') }}">Detect cameras</a>
+      {% endif %}
+      <a class="btn btn-primary" href="{{ url_for('main.camera_new') }}">Add camera</a>
+    </div>
   </div>
 
   {% if cameras %}
