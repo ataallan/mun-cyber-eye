@@ -468,11 +468,15 @@ def test_legacy_cookie_without_start_time_expires(tmp_path):
     app = _fresh_app(tmp_path, SESSION_HOURS=8)
     client = app.test_client()
     _register(client, "founder", "founder@example.com")
+    fresh = _utc_stamp()
+    epoch = app.config["APP_SESSION_EPOCH"]
     with client.session_transaction() as sess:
         sess["user"] = "founder"
         sess["role"] = "admin"
         sess["email_2fa_ok"] = True
-        sess["email_2fa_at"] = _utc_stamp()
+        sess["email_2fa_at"] = fresh
+        sess["session_epoch"] = epoch
+        sess["session_last_activity_at"] = fresh
     blocked = client.get("/", follow_redirects=True)
     body = blocked.get_data(as_text=True)
     assert "Alert console" not in body
@@ -482,7 +486,9 @@ def test_legacy_cookie_without_start_time_expires(tmp_path):
         sess["user"] = "founder"
         sess["role"] = "admin"
         sess["email_2fa_ok"] = True
-        sess["email_2fa_at"] = _utc_stamp()
+        sess["email_2fa_at"] = fresh
+        sess["session_epoch"] = epoch
+        sess["session_last_activity_at"] = fresh
         sess["session_started_at"] = _utc_stamp(
             datetime.now(timezone.utc) - timedelta(hours=9)
         )

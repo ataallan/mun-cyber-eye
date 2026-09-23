@@ -7,11 +7,17 @@ Usage (from repo root):
 
 from __future__ import annotations
 
+import sys
 import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "mun-cyber-eye-standalone.zip"
+_SCRIPTS = Path(__file__).resolve().parent
+if str(_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS))
+
+import build_windows_installer  # noqa: E402
 
 SKIP_DIR_NAMES = {
     ".git",
@@ -75,12 +81,20 @@ def build_zip(root: Path, dest: Path) -> int:
     if missing:
         raise SystemExit("Standalone zip is missing required files: " + ", ".join(missing))
     dest = dest.resolve()
-    files = [path for path in iter_package_files(root) if path.resolve() != dest]
+    files = [
+        path
+        for path in iter_package_files(root)
+        if path.resolve() != dest and path.relative_to(root).as_posix() != "BUILD_EPOCH"
+    ]
     dest.parent.mkdir(parents=True, exist_ok=True)
+    version_file = root / "installer" / "VERSION"
+    version = version_file.read_text(encoding="utf-8").strip() if version_file.is_file() else "0.0.0"
+    epoch = build_windows_installer.build_epoch_text(version)
     with zipfile.ZipFile(dest, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for path in files:
             zf.write(path, path.relative_to(root).as_posix())
-    return len(files)
+        zf.writestr("BUILD_EPOCH", epoch + "\n")
+    return len(files) + 1
 
 
 def main() -> None:

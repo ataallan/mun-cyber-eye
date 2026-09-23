@@ -11,7 +11,13 @@ import pytest
 
 from alerts.notify import DEFAULT_USER_AGENT, send_resend_email
 from app.factory import create_app
-from app.auth import UserStore, public_register_role
+from app.auth import (
+    SESSION_EXPIRED_MESSAGE,
+    SESSION_REAUTH_MESSAGE,
+    UserStore,
+    public_register_role,
+    resolve_app_session_epoch,
+)
 
 
 @pytest.fixture
@@ -570,4 +576,288 @@ def test_legacy_auth_db_accepts_developer_role(tmp_path):
     reloaded = store.get_by_username("labdev")
     assert reloaded is not None
     assert reloaded.role == "developer"
+
+
+def _utc_stamp(moment: datetime | None = None) -> str:
+    when = moment or datetime.now(timezone.utc)
+    return when.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _sign_in(client, username="alice", password="secret123"):
+    return client.post(
+        "/login",
+        data={"username": username, "password": password},
+        follow_redirects=True,
+    )
+
+
+def test_session_epoch_override_baked_file_and_version(tmp_path):
+    assert resolve_app_session_epoch(tmp_path, override="lab-9") == "lab-9"
+    assert resolve_app_session_epoch(tmp_path, override="   ") == "dev"
+    (tmp_path / "BUILD_EPOCH").write_text("1.0.0+20260923T000000Z\n", encoding="utf-8")
+    assert resolve_app_session_epoch(tmp_path, override="") == "1.0.0+20260923T000000Z"
+    (tmp_path / "BUILD_EPOCH").unlink()
+    installer = tmp_path / "installer"
+    installer.mkdir()
+    (installer / "VERSION").write_text("1.2.3\n", encoding="utf-8")
+    assert resolve_app_session_epoch(tmp_path, override="") == "1.2.3"
+
+
+def test_source_epoch_includes_version_and_git_describe(tmp_path):
+    installer = tmp_path / "installer"
+    installer.mkdir()
+    (installer / "VERSION").write_text("9.9.9\n", encoding="utf-8")
+    subprocess_ok = True
+    import subprocess
+
+    def _git(*args: str) -> None:
+        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
+
+    try:
+        _git("init")
+        _git("config", "user.email", "epoch@example.com")
+        _git("config", "user.name", "Epoch Test")
+        (tmp_path / "README").write_text("epoch\n", encoding="utf-8")
+        _git("add", "README")
+        _git("commit", "-m", "init")
+    except (OSError, subprocess.CalledProcessError):
+        subprocess_ok = False
+    if not subprocess_ok:
+        pytest.skip("git is not available for epoch describe")
+    epoch = resolve_app_session_epoch(tmp_path, override="")
+    assert epoch.startswith("9.9.9+")
+    assert epoch != "9.9.9"
+
+
+def test_idle_minutes_and_epoch_config(tmp_path):
+    common = {
+        "TESTING": True,
+        "SECRET_KEY": "test-secret",
+        "ADMIN_USERNAME": "",
+        "ADMIN_PASSWORD": "",
+        "ALERT_DB_PATH": str(tmp_path / "alerts.db"),
+        "AUTH_DB_PATH": str(tmp_path / "auth.db"),
+        "SNAPSHOT_DIR": str(tmp_path / "snapshots"),
+        "SEED_DEMO_CAMERAS": False,
+        "ALERT_NOTIFY_ON_CREATE": False,
+    }
+    junk = create_app({**common, "SESSION_IDLE_MINUTES": "nope", "APP_SESSION_EPOCH": "capstone-lab"})
+    assert junk.config["SESSION_IDLE_MINUTES"] == 15
+    assert junk.config["APP_SESSION_EPOCH"] == "capstone-lab"
+    zero = create_app(
+        {
+            **common,
+            "AUTH_DB_PATH": str(tmp_path / "auth-zero.db"),
+            "ALERT_DB_PATH": str(tmp_path / "alerts-zero.db"),
+            "SESSION_IDLE_MINUTES": "0",
+        }
+    )
+    assert zero.config["SESSION_IDLE_MINUTES"] == 15
+
+
+def test_activity_inside_idle_window_refreshes_on_api_not_static(app, client):
+    _register(client)
+    signed = _sign_in(client)
+    assert "Alert console" in signed.get_data(as_text=True)
+    quiet = _utc_stamp(datetime.now(timezone.utc) - timedelta(minutes=10))
+    with client.session_transaction() as sess:
+        assert sess.get("session_epoch") == app.config["APP_SESSION_EPOCH"]
+        assert sess.get("session_last_activity_at")
+        assert sess.permanent is False
+        sess["session_last_activity_at"] = quiet
+    static = client.get("/static/css/console.css")
+    assert static.status_code == 200
+    health = client.get("/health")
+    assert health.status_code == 200
+    with client.session_transaction() as sess:
+        assert sess["session_last_activity_at"] == quiet
+        assert sess["user"] == "alice"
+    api = client.get("/alerts/missing-alert.json")
+    assert api.status_code == 404
+    with client.session_transaction() as sess:
+        assert sess["user"] == "alice"
+        refreshed = sess["session_last_activity_at"]
+        assert refreshed != quiet
+    page = client.get("/")
+    assert page.status_code == 200
+    assert "Alert console" in page.get_data(as_text=True)
+    assert SESSION_REAUTH_MESSAGE not in page.get_data(as_text=True)
+
+
+def test_idle_over_limit_requires_sign_in(app, client):
+    _register(client)
+    _sign_in(client)
+    frozen = datetime(2026, 9, 23, 12, 0, tzinfo=timezone.utc)
+    with client.session_transaction() as sess:
+        sess["session_started_at"] = _utc_stamp(frozen - timedelta(minutes=30))
+        sess["session_last_activity_at"] = _utc_stamp(frozen - timedelta(minutes=15, seconds=1))
+        sess["session_epoch"] = app.config["APP_SESSION_EPOCH"]
+    with patch("app.auth._utc_now", return_value=frozen):
+        blocked = client.get("/", follow_redirects=True)
+    body = blocked.get_data(as_text=True)
+    assert SESSION_REAUTH_MESSAGE in body
+    assert "Operator sign-in" in body
+    assert "Alert console" not in body
+    with client.session_transaction() as sess:
+        assert "user" not in sess
+        assert "email_2fa_ok" not in sess
+        assert "session_epoch" not in sess
+        assert "session_last_activity_at" not in sess
+
+
+def test_idle_at_exact_limit_stays_signed_in(app, client):
+    _register(client)
+    _sign_in(client)
+    frozen = datetime(2026, 9, 23, 12, 0, tzinfo=timezone.utc)
+    with client.session_transaction() as sess:
+        sess["session_started_at"] = _utc_stamp(frozen - timedelta(minutes=15))
+        sess["session_last_activity_at"] = _utc_stamp(frozen - timedelta(minutes=15))
+        sess["session_epoch"] = app.config["APP_SESSION_EPOCH"]
+    with patch("app.auth._utc_now", return_value=frozen):
+        page = client.get("/")
+    assert page.status_code == 200
+    assert "Alert console" in page.get_data(as_text=True)
+    with client.session_transaction() as sess:
+        assert sess.get("user") == "alice"
+
+
+def test_absolute_lifetime_still_caps_an_active_session(app, client):
+    _register(client)
+    _sign_in(client)
+    frozen = datetime(2026, 9, 23, 12, 0, tzinfo=timezone.utc)
+    with client.session_transaction() as sess:
+        sess["session_started_at"] = _utc_stamp(frozen - timedelta(hours=8, seconds=1))
+        sess["session_last_activity_at"] = _utc_stamp(frozen)
+        sess["session_epoch"] = app.config["APP_SESSION_EPOCH"]
+    with patch("app.auth._utc_now", return_value=frozen):
+        blocked = client.get("/", follow_redirects=True)
+    body = blocked.get_data(as_text=True)
+    assert SESSION_EXPIRED_MESSAGE in body
+    assert SESSION_REAUTH_MESSAGE not in body
+    assert "Alert console" not in body
+
+
+def test_idle_message_wins_when_both_clocks_are_past(app, client):
+    _register(client)
+    _sign_in(client)
+    frozen = datetime(2026, 9, 23, 12, 0, tzinfo=timezone.utc)
+    with client.session_transaction() as sess:
+        sess["session_started_at"] = _utc_stamp(frozen - timedelta(hours=9))
+        sess["session_last_activity_at"] = _utc_stamp(frozen - timedelta(minutes=16))
+        sess["session_epoch"] = app.config["APP_SESSION_EPOCH"]
+    with patch("app.auth._utc_now", return_value=frozen):
+        blocked = client.get("/", follow_redirects=True)
+    body = blocked.get_data(as_text=True)
+    assert SESSION_REAUTH_MESSAGE in body
+    assert SESSION_EXPIRED_MESSAGE not in body
+
+
+def test_epoch_mismatch_and_missing_epoch_require_sign_in(app, client):
+    _register(client)
+    _sign_in(client)
+    fresh = _utc_stamp()
+    with client.session_transaction() as sess:
+        sess["session_started_at"] = fresh
+        sess["session_last_activity_at"] = fresh
+        sess["session_epoch"] = "older-build"
+    mismatch = client.get("/", follow_redirects=True)
+    body = mismatch.get_data(as_text=True)
+    assert SESSION_REAUTH_MESSAGE in body
+    assert "Alert console" not in body
+    assert "Operator sign-in" in body
+    with client.session_transaction() as sess:
+        assert "user" not in sess
+
+    _sign_in(client)
+    with client.session_transaction() as sess:
+        sess["session_started_at"] = fresh
+        sess["session_last_activity_at"] = fresh
+        sess.pop("session_epoch", None)
+    missing = client.get("/", follow_redirects=True)
+    assert SESSION_REAUTH_MESSAGE in missing.get_data(as_text=True)
+    assert "Alert console" not in missing.get_data(as_text=True)
+    with client.session_transaction() as sess:
+        assert "user" not in sess
+
+
+def test_idle_and_upgrade_clear_email_2fa_and_code_is_required_again(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test-secret",
+            "ADMIN_USERNAME": "",
+            "ADMIN_PASSWORD": "",
+            "ADMIN_EMAIL": "",
+            "ADMIN_SYNC_PASSWORD": False,
+            "DEVELOPER_USERNAME": "",
+            "DEVELOPER_PASSWORD": "",
+            "ALERT_DB_PATH": str(tmp_path / "alerts.db"),
+            "AUTH_DB_PATH": str(tmp_path / "auth.db"),
+            "SNAPSHOT_DIR": str(tmp_path / "snapshots"),
+            "RESEND_API_KEY": "",
+            "AUTH_SHOW_LOGIN_CODE": True,
+            "ALERT_NOTIFY_ON_CREATE": False,
+            "SEED_DEMO_CAMERAS": False,
+            "CUSTOMER_2FA_REQUIRED": True,
+            "APP_SESSION_EPOCH": "build-a",
+            "SESSION_IDLE_MINUTES": 15,
+        }
+    )
+    client = app.test_client()
+    _register(client, username="founder", email="founder@example.com")
+    challenge = _sign_in(client, username="founder")
+    challenge_body = challenge.get_data(as_text=True)
+    assert "Alert console" not in challenge_body
+    match = re.search(r'class="mono auth-code-demo">(\d{6})</p>', challenge_body)
+    assert match, challenge_body
+    opened = client.post(
+        "/login-code",
+        data={"code": match.group(1)},
+        follow_redirects=True,
+    )
+    assert "Alert console" in opened.get_data(as_text=True)
+    with client.session_transaction() as sess:
+        assert sess.get("email_2fa_ok") is True
+        assert sess.get("session_epoch") == "build-a"
+        sess["session_last_activity_at"] = _utc_stamp(
+            datetime.now(timezone.utc) - timedelta(minutes=20)
+        )
+    idle = client.get("/", follow_redirects=True)
+    assert SESSION_REAUTH_MESSAGE in idle.get_data(as_text=True)
+    assert "Alert console" not in idle.get_data(as_text=True)
+    with client.session_transaction() as sess:
+        assert "user" not in sess
+        assert "email_2fa_ok" not in sess
+        assert "email_2fa_at" not in sess
+
+    again = _sign_in(client, username="founder")
+    again_body = again.get_data(as_text=True)
+    assert "Alert console" not in again_body
+    assert "Enter sign-in code" in again_body
+    again_code = re.search(r'class="mono auth-code-demo">(\d{6})</p>', again_body)
+    assert again_code, again_body
+    restored = client.post(
+        "/login-code",
+        data={"code": again_code.group(1)},
+        follow_redirects=True,
+    )
+    assert "Alert console" in restored.get_data(as_text=True)
+    with client.session_transaction() as sess:
+        assert sess.get("email_2fa_ok") is True
+        assert sess.get("session_epoch") == "build-a"
+
+    app.config["APP_SESSION_EPOCH"] = "build-b"
+    upgraded = client.get("/", follow_redirects=True)
+    upgraded_body = upgraded.get_data(as_text=True)
+    assert SESSION_REAUTH_MESSAGE in upgraded_body
+    assert "Alert console" not in upgraded_body
+    assert "Operator sign-in" in upgraded_body
+    with client.session_transaction() as sess:
+        assert "user" not in sess
+        assert "email_2fa_ok" not in sess
+
+    after_upgrade = _sign_in(client, username="founder")
+    after_body = after_upgrade.get_data(as_text=True)
+    assert "Enter sign-in code" in after_body
+    assert "Alert console" not in after_body
 

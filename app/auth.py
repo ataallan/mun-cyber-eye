@@ -11,9 +11,11 @@ Customer ``admin`` / ``operator`` run detection and review. Only ``developer``
 
 from __future__ import annotations
 
+import os
 import re
 import secrets
 import sqlite3
+import subprocess
 import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -42,11 +44,15 @@ PENDING_2FA_NEXT_KEY = "pending_2fa_next"
 EMAIL_2FA_OK_KEY = "email_2fa_ok"
 EMAIL_2FA_AT_KEY = "email_2fa_at"
 SESSION_STARTED_KEY = "session_started_at"
+SESSION_LAST_ACTIVITY_KEY = "session_last_activity_at"
+SESSION_EPOCH_KEY = "session_epoch"
 SESSION_HOURS_DEFAULT = 8
+SESSION_IDLE_MINUTES_DEFAULT = 15
 NEEDS_EMAIL_2FA_MESSAGE = (
     "Sign in again. An email sign-in code is required before the console opens."
 )
 SESSION_EXPIRED_MESSAGE = "Your sign-in session expired. Sign in again."
+SESSION_REAUTH_MESSAGE = "Sign in again to continue."
 LOGIN_CODE_DIGITS = 6
 LOGIN_CODE_MINUTES_DEFAULT = 10
 LOGIN_CODE_RESEND_SECONDS_DEFAULT = 45
@@ -67,6 +73,67 @@ def _utc_stamp(dt: Optional[datetime] = None) -> str:
 
 def _parse_utc(stamp: str) -> datetime:
     return datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+
+
+def _read_text_line(path: Path) -> str:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    for line in text.splitlines():
+        cleaned = line.strip()
+        if cleaned:
+            return cleaned
+    return ""
+
+
+def _git_describe(root: Path) -> str:
+    """Commit identity for source checkouts. Empty when git metadata is absent."""
+    if not (root / ".git").exists():
+        return ""
+    try:
+        proc = subprocess.run(
+            ["git", "describe", "--tags", "--always", "--abbrev=12"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    if proc.returncode != 0:
+        return ""
+    line = (proc.stdout or "").strip().splitlines()
+    return line[0].strip() if line else ""
+
+
+def resolve_app_session_epoch(root: str | Path, override: str | None = None) -> str:
+    """Epoch stamped on new sign-ins and checked on later requests.
+
+    A non-empty ``APP_SESSION_EPOCH`` override wins. Otherwise the value is
+    the ``BUILD_EPOCH`` file written into Setup.exe and standalone zip builds.
+    A source checkout with no baked file uses ``installer/VERSION`` plus
+    ``git describe`` so a new commit invalidates older cookies.
+    """
+    if override is None:
+        override = os.getenv("APP_SESSION_EPOCH", "")
+    chosen = str(override or "").strip()
+    if chosen:
+        return chosen
+    root_path = Path(root)
+    baked = _read_text_line(root_path / "BUILD_EPOCH")
+    if baked:
+        return baked
+    version = _read_text_line(root_path / "installer" / "VERSION")
+    described = _git_describe(root_path)
+    if version and described:
+        return f"{version}+{described}"
+    if described:
+        return described
+    if version:
+        return version
+    return "dev"
 
 
 def normalize_username(value: str) -> str:
@@ -892,6 +959,54 @@ def _session_lifetime_exceeded() -> bool:
     return _utc_now() - started > timedelta(hours=_configured_session_hours())
 
 
+def _configured_idle_minutes() -> float:
+    from flask import current_app
+
+    raw = current_app.config.get("SESSION_IDLE_MINUTES", SESSION_IDLE_MINUTES_DEFAULT)
+    try:
+        minutes = float(raw)
+    except (TypeError, ValueError):
+        minutes = float(SESSION_IDLE_MINUTES_DEFAULT)
+    if minutes <= 0:
+        return float(SESSION_IDLE_MINUTES_DEFAULT)
+    return minutes
+
+
+def _session_idle_exceeded() -> bool:
+    """True when the last authenticated request is older than the idle window."""
+    stamp = session.get(SESSION_LAST_ACTIVITY_KEY)
+    if not stamp:
+        return True
+    try:
+        seen = _parse_utc(str(stamp))
+    except ValueError:
+        return True
+    return _utc_now() - seen > timedelta(minutes=_configured_idle_minutes())
+
+
+def _current_session_epoch() -> str:
+    from flask import current_app
+
+    return str(current_app.config.get("APP_SESSION_EPOCH") or "").strip()
+
+
+def _session_epoch_mismatch() -> bool:
+    """True when this cookie was issued for a different build than the one running."""
+    current = _current_session_epoch()
+    stamped = str(session.get(SESSION_EPOCH_KEY) or "").strip()
+    if not current or not stamped:
+        return True
+    return stamped != current
+
+
+def _request_is_static_asset() -> bool:
+    """CSS, scripts, and images must not count as console activity."""
+    endpoint = request.endpoint or ""
+    if endpoint == "static" or endpoint.endswith(".static"):
+        return True
+    return (request.path or "").startswith("/static/")
+
+
 def _reject_console_session(reason: str):
     """Drop a cookie that must not open the console, then send the user to login."""
     pending = reason == "pending"
@@ -902,6 +1017,8 @@ def _reject_console_session(reason: str):
         flash(NEEDS_EMAIL_2FA_MESSAGE, "error")
     elif reason == "expired":
         flash(SESSION_EXPIRED_MESSAGE, "error")
+    elif reason in {"idle", "epoch"}:
+        flash(SESSION_REAUTH_MESSAGE, "error")
     else:
         flash(INACTIVE_LOGIN_MESSAGE, "error")
     return redirect(url_for("main.login"))
@@ -913,6 +1030,8 @@ def begin_login_code_challenge(user: User, next_url: str = "") -> None:
     session.pop(EMAIL_2FA_OK_KEY, None)
     session.pop(EMAIL_2FA_AT_KEY, None)
     session.pop(SESSION_STARTED_KEY, None)
+    session.pop(SESSION_LAST_ACTIVITY_KEY, None)
+    session.pop(SESSION_EPOCH_KEY, None)
     session[PENDING_2FA_SESSION_KEY] = user.username
     if next_url:
         session[PENDING_2FA_NEXT_KEY] = next_url
@@ -942,6 +1061,12 @@ def console_session_guard():
     Customer admin and operator cookies must carry ``email_2fa_ok`` when
     ``two_factor_required_for`` is true. A password-only cookie from before
     email codes were required cannot open the console.
+
+    Idle timeout is checked before the absolute ``SESSION_HOURS`` cap. A quiet
+    console signs out at the idle limit; a console that stays in use still
+    ends when the absolute age is reached. A cookie stamped for another build
+    epoch is cleared even when it is still inside both windows. Static assets
+    do not refresh the idle clock.
     """
     from flask import current_app
 
@@ -959,9 +1084,15 @@ def console_session_guard():
         return _reject_console_session("pending" if pending else "inactive")
     if two_factor_required_for(user) and not _email_2fa_stamp_ok():
         return _reject_console_session("needs_2fa")
+    if _session_epoch_mismatch():
+        return _reject_console_session("epoch")
+    if _session_idle_exceeded():
+        return _reject_console_session("idle")
     if _session_lifetime_exceeded():
         return _reject_console_session("expired")
     session["role"] = user.role
+    if not _request_is_static_asset():
+        session[SESSION_LAST_ACTIVITY_KEY] = _utc_stamp()
     return None
 
 
@@ -1060,16 +1191,20 @@ def start_session(user: User, *, email_2fa_verified: bool = False) -> None:
     leave ``email_2fa_ok`` unset so a later required-2FA policy rejects it.
 
     The cookie is a browser session cookie (not permanent). ``SESSION_HOURS``
-    still caps it if the browser keeps the cookie open.
+    caps total age. ``SESSION_IDLE_MINUTES`` caps quiet time. ``session_epoch``
+    must match the running build or the next request asks for sign-in again.
     """
     clear_login_code_challenge()
+    now = _utc_stamp()
     session["user"] = user.username
     session["role"] = user.role
-    session[SESSION_STARTED_KEY] = _utc_stamp()
+    session[SESSION_STARTED_KEY] = now
+    session[SESSION_LAST_ACTIVITY_KEY] = now
+    session[SESSION_EPOCH_KEY] = _current_session_epoch()
     session.permanent = False
     if email_2fa_verified:
         session[EMAIL_2FA_OK_KEY] = True
-        session[EMAIL_2FA_AT_KEY] = _utc_stamp()
+        session[EMAIL_2FA_AT_KEY] = now
     else:
         session.pop(EMAIL_2FA_OK_KEY, None)
         session.pop(EMAIL_2FA_AT_KEY, None)

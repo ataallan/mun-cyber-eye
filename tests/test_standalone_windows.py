@@ -262,8 +262,12 @@ def test_customer_zip_contains_icon_and_launchers(tmp_path: Path):
     assert count > 0
     with zipfile.ZipFile(dest) as archive:
         names = set(archive.namelist())
+        epoch = archive.read("BUILD_EPOCH").decode("utf-8").strip()
     for rel in build_standalone_zip.REQUIRED_ZIP_PATHS:
         assert rel in names
+    assert "BUILD_EPOCH" in names
+    version = (ROOT / "installer" / "VERSION").read_text(encoding="utf-8").strip()
+    assert epoch.startswith(version + "+")
     assert ".env" not in names
     assert "install.log" not in names
     assert not any(name.endswith(".lnk") for name in names)

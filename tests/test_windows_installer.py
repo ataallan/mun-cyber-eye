@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -30,6 +32,17 @@ def test_iss_creates_one_desktop_shortcut():
     assert runtime["install_subdir"] == "MunCyberEye"
     assert runtime["shortcut_name"] == "Mun Cyber Eye"
     assert runtime["output_exe"] == "MunCyberEyeSetup.exe"
+
+
+def test_build_epoch_changes_when_the_build_clock_changes():
+    one = build_windows_installer.build_epoch_text(
+        "1.0.0", datetime(2026, 9, 23, 1, 2, 3, tzinfo=timezone.utc)
+    )
+    two = build_windows_installer.build_epoch_text(
+        "1.0.0", datetime(2026, 9, 23, 1, 2, 4, tzinfo=timezone.utc)
+    )
+    assert one == "1.0.0+20260923T010203Z"
+    assert two == "1.0.0+20260923T010204Z"
 
 
 def test_embeddable_pth_enables_site_packages():
@@ -67,6 +80,11 @@ def test_stage_payload_copies_app_and_refuses_env(tmp_path: Path):
     assert (dest / "Start Mun Cyber Eye.bat").is_file()
     assert (dest / ".env.example").is_file()
     assert not (dest / ".env").exists()
+    assert "BUILD_EPOCH" in rels
+    epoch = (dest / "BUILD_EPOCH").read_text(encoding="utf-8").strip()
+    version = (ROOT / "installer" / "VERSION").read_text(encoding="utf-8").strip()
+    assert epoch.startswith(version + "+")
+    assert re.fullmatch(r"\d+\.\d+\.\d+\+\d{8}T\d{6}Z", epoch)
     assert len(rels) == len(list(dest.rglob("*"))) - len([p for p in dest.rglob("*") if p.is_dir()])
     assert all((dest / rel).is_file() for rel in rels)
 

@@ -78,7 +78,8 @@ Run it from the Actions tab with **Windows installer**, or open a pull request t
 | `installer/MunCyberEye.iss` | Inno Setup script: per-user dir, one Desktop shortcut, Start Menu, uninstaller |
 | `installer/INSTALL.txt` | Short text shown before install |
 | `installer/runtime.json` | Pinned Python and Inno Setup download URLs |
-| `installer/VERSION` | `major.minor.patch` written into the Setup program |
+| `installer/VERSION` | `major.minor.patch` written into the Setup program and into `BUILD_EPOCH` |
+| `BUILD_EPOCH` | Written at the payload root on each build (`version` + UTC time). Not stored in git. A new Setup.exe rejects console cookies from the previous build. See [AUTH.md](AUTH.md). |
 | `scripts/build_windows_installer.ps1` | Windows build |
 | `scripts/build_windows_installer.py` | Project check, and the Windows entry that calls the PowerShell build |
 | `scripts/stage_windows_payload.py` | Copies the app tree and refuses secrets |
