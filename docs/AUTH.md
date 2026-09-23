@@ -8,7 +8,7 @@ Local operator accounts for the Flask console. **AI detects and alerts. Humans v
 2. **Optional customer env bootstrap** only if you set **both** `ADMIN_USERNAME` and `ADMIN_PASSWORD` in `.env` (plus optional `ADMIN_EMAIL`). If either is empty, nothing is seeded. Seeded `ADMIN_*` / `OPERATOR_*` rows are **active and approved**. `ADMIN_ROLE` may be `admin` (default) or `operator` — it cannot create a developer. Optional `OPERATOR_USERNAME` / `OPERATOR_PASSWORD` / `OPERATOR_EMAIL` is seeded the same way as an `operator` when both username and password are set. Alert notify prefers each user’s optional `security_email`, then login email.
 3. **Developer (Mun Cyber / lab) env seed** only if you set **both** `DEVELOPER_USERNAME` and `DEVELOPER_PASSWORD` (optional `DEVELOPER_EMAIL`). Leave these **empty on customer installs**. Mun Cyber staff set them on lab machines only. Seeded developer rows are **active and approved**. There is no published default password — never `operator` / `changeme`.
 
-Login checks the hashed password in the `users` table **and** that the account is approved and active. Pending accounts see a clear “awaiting admin approval” message (wrong passwords still show “Invalid credentials”). Password reset is not issued for pending or inactive accounts and cannot grant console access while pending. After any optional seed, the database is the source of truth. Session keys are `user` (username), `role`, and — only after a successful email code — `email_2fa_ok` plus `email_2fa_at`.
+Login checks the hashed password in the `users` table **and** that the account is approved and active. Pending accounts see a clear “awaiting admin approval” message (wrong passwords still show “Invalid credentials”). Password reset is not issued for pending or inactive accounts and cannot grant console access while pending. After any optional seed, the database is the source of truth. Session keys are `user` (username), `role`, `session_started_at`, `session_last_activity_at`, `session_epoch`, and — only after a successful email code — `email_2fa_ok` plus `email_2fa_at`.
 
 **Second gate (customers only):** after password + approval succeed, customer `admin` / `operator` accounts must enter a **one-time email code** before cameras, alerts, or Run Pipeline. Site admin and approved operators use the same gate. Pending users are never sent a code. Mun Cyber `developer` lab accounts skip this step unless `DEVELOPER_2FA_REQUIRED=1`. A cookie that never completed the code (including one saved before email codes were required) cannot open the console while `CUSTOMER_2FA_REQUIRED=1`.
 
@@ -64,7 +64,31 @@ The verify page keeps a **Verify and open console** button. With JavaScript, the
 
 Site `admin` and approved `operator` accounts share the email-code gate. Completing `/login-code` sets `email_2fa_ok` and a timestamp. Password-only sign-in (developer skip, or `CUSTOMER_2FA_REQUIRED=0`) does **not** set that stamp. While customer email codes are required, `login_required` rejects a session that lacks it: the cookie is cleared and the next request is the login form. That closes the hole where a session started before email codes were live, or created with password alone, skipped `/login-code` until someone signed out.
 
-**Sign out** (`/logout`, labeled Sign out in the header) ends that held session immediately. Cookies are browser session cookies (not a “remember me” permanent cookie). `SESSION_HOURS` (default 8) also rejects a cookie that stays open longer than that, and `PERMANENT_SESSION_LIFETIME` uses the same cap if a session is ever marked permanent.
+**Sign out** (`/logout`, labeled Sign out in the header) ends that held session immediately. Cookies are browser session cookies (not a “remember me” permanent cookie).
+
+Two clocks apply after sign-in, and idle is checked first:
+
+| Limit | Env | Default | What it measures |
+|-------|-----|---------|------------------|
+| Idle | `SESSION_IDLE_MINUTES` | 15 | Time since the last authenticated console request |
+| Absolute | `SESSION_HOURS` | 8 | Time since sign-in, even if the console stays in use |
+
+`PERMANENT_SESSION_LIFETIME` uses the same hour cap if a session is ever marked permanent. Sign-in leaves the cookie non-permanent.
+
+Each signed-in page, form post, and authenticated API call (including alert JSON) updates `session_last_activity_at`. Requests for `/static/` (CSS, scripts, images) do not. Leaving the dashboard open without those requests is idle: the next navigation clears the cookie, including `email_2fa_ok`, and the login page shows **Sign in again to continue.** An active monitoring tab that keeps calling signed-in APIs stays signed in. `/health` is not an authenticated console request and does not reset the clock.
+
+The absolute cap still applies after the idle check. A session that is in use but older than `SESSION_HOURS` is cleared with **Your sign-in session expired. Sign in again.** Non-positive or unreadable values for either setting fall back to the defaults (15 minutes, 8 hours).
+
+**Build epoch.** Every new sign-in stores `session_epoch`. On each authenticated request the stamp must match the epoch of the process that is running. A mismatch — including a cookie from before epochs existed — clears the session (and `email_2fa_ok`) and shows the same **Sign in again to continue.** flash. A hard refresh of a tab left open across an upgrade therefore lands on login instead of the previous dashboard. Approval and the email-code gate still apply on the next sign-in.
+
+The running process chooses the epoch once at startup:
+
+1. `APP_SESSION_EPOCH` in the environment, when it is non-empty. Capstone and lab machines set this in `.env` and restart the console to force every open tab to sign in again without cutting a new installer.
+2. Otherwise `BUILD_EPOCH` at the install root, when that file exists. `scripts/build_windows_installer.py` writes it into the Setup payload, and `scripts/build_standalone_zip.py` writes it into the zip. The text is `installer/VERSION` plus a UTC timestamp, so each rebuild differs even when the version number stays the same.
+3. Otherwise a source checkout uses `installer/VERSION` plus `git describe --tags --always` when `.git` is present. A new commit changes the epoch. Pull the new code and restart the console; the next request from an old tab requires sign-in.
+4. If none of those are available, the epoch is the version file alone, or `dev`.
+
+Restart the console after changing the epoch. The Desktop launcher starts a new process, which reads the new value.
 
 The login form renders username and password **empty**. It sets `autocomplete="off"` on the form and both fields, and the fields stay read-only until focused, so they are not pre-filled from the server and browsers are asked not to drop a saved password into them. Chrome and other password managers can still refill a saved login for this site (for example `http://127.0.0.1:5055`) until the user removes that saved password. The server never writes the password into the HTML.
 

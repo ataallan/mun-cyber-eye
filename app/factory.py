@@ -13,7 +13,13 @@ from alerts.notify import NotificationService, NotifyConfig
 from alerts.store import AlertStore
 from ingest.cameras import CameraStore
 
-from .auth import CUSTOMER_ROLES, UserStore, can_approve_accounts, can_train
+from .auth import (
+    CUSTOMER_ROLES,
+    UserStore,
+    can_approve_accounts,
+    can_train,
+    resolve_app_session_epoch,
+)
 
 
 def _env_flag(name: str, default: str = "0") -> bool:
@@ -37,6 +43,17 @@ def _session_hours(value) -> float:
     if hours <= 0:
         return 8.0
     return hours
+
+
+def _session_idle_minutes(value) -> float:
+    """Quiet-console timeout. Non-positive or junk values fall back to 15 minutes."""
+    try:
+        minutes = float(value)
+    except (TypeError, ValueError):
+        minutes = 15.0
+    if minutes <= 0:
+        return 15.0
+    return minutes
 
 
 def _customer_bootstrap_role(value: str | None) -> str:
@@ -186,6 +203,8 @@ def create_app(test_config: dict | None = None) -> Flask:
         LOGIN_CODE_MINUTES=int(os.getenv("LOGIN_CODE_MINUTES", "10")),
         LOGIN_CODE_RESEND_SECONDS=int(os.getenv("LOGIN_CODE_RESEND_SECONDS", "45")),
         SESSION_HOURS=_session_hours(os.getenv("SESSION_HOURS", "8")),
+        SESSION_IDLE_MINUTES=os.getenv("SESSION_IDLE_MINUTES", "15"),
+        APP_SESSION_EPOCH=os.getenv("APP_SESSION_EPOCH", ""),
         ENABLE_FACE_AGGRESSION=_env_flag("ENABLE_FACE_AGGRESSION", "0"),
         ENABLE_GUNSHOT_AUDIO=_env_flag("ENABLE_GUNSHOT_AUDIO", "0"),
         ALERT_ON_INTENSE_SPORT=_env_flag("ALERT_ON_INTENSE_SPORT", "0"),
@@ -359,8 +378,17 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     session_hours = _session_hours(app.config.get("SESSION_HOURS", 8))
     app.config["SESSION_HOURS"] = session_hours
+    app.config["SESSION_IDLE_MINUTES"] = _session_idle_minutes(
+        app.config.get("SESSION_IDLE_MINUTES", 15)
+    )
+    raw_epoch = app.config.get("APP_SESSION_EPOCH")
+    app.config["APP_SESSION_EPOCH"] = resolve_app_session_epoch(
+        root,
+        override="" if raw_epoch is None else str(raw_epoch),
+    )
     # Applies only if a session is marked permanent. Sign-in keeps cookies
-    # non-permanent; console_session_guard also enforces this cap.
+    # non-permanent; console_session_guard also enforces this cap and the
+    # idle timeout. Idle is reached first; this lifetime still caps total age.
     app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=session_hours)
 
     Path(app.config["ALERT_DB_PATH"]).parent.mkdir(parents=True, exist_ok=True)

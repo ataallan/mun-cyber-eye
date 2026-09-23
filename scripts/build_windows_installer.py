@@ -23,6 +23,7 @@ import json
 import re
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -119,6 +120,22 @@ def load_runtime() -> dict[str, str]:
 
 def app_version() -> str:
     return VERSION_FILE.read_text(encoding="utf-8").strip()
+
+
+def build_epoch_text(version: str, when: datetime | None = None) -> str:
+    """Version plus UTC time. A new installer or zip build gets a new epoch."""
+    moment = when or datetime.now(timezone.utc)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    stamp = moment.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    cleaned = (version or "").strip() or "0.0.0"
+    return f"{cleaned}+{stamp}"
+
+
+def write_build_epoch(dest_dir: Path, version: str, when: datetime | None = None) -> str:
+    epoch = build_epoch_text(version, when)
+    (dest_dir / "BUILD_EPOCH").write_text(epoch + "\n", encoding="utf-8")
+    return epoch
 
 
 def embeddable_pth_text(stdlib_zip_name: str) -> str:
@@ -306,6 +323,10 @@ def stage_payload(root: Path, dest: Path) -> list[str]:
         target = dest / rel
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(root / rel, target)
+    version_file = root / "installer" / "VERSION"
+    version = version_file.read_text(encoding="utf-8").strip() if version_file.is_file() else "0.0.0"
+    write_build_epoch(dest, version)
+    rels.append("BUILD_EPOCH")
     return rels
 
 
